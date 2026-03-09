@@ -22,12 +22,11 @@ static const char *TAG = "clock_app";
 #define SEC_HAND_LEN    310
 #define TICK_INNER      315
 #define TICK_OUTER      338
-#define SWIPE_THRESHOLD 80
 #define BOTTOM_EDGE_ZONE 96
 #define BRIGHTNESS_SHEET_WIDTH 560
 #define BRIGHTNESS_SHEET_HEIGHT 252
 #define BRIGHTNESS_SHEET_X ((SCREEN_SIZE - BRIGHTNESS_SHEET_WIDTH) / 2)
-#define BRIGHTNESS_SHEET_OPEN_Y (SCREEN_SIZE - BRIGHTNESS_SHEET_HEIGHT - 24)
+#define BRIGHTNESS_SHEET_OPEN_Y (SCREEN_SIZE - BRIGHTNESS_SHEET_HEIGHT - 40)
 #define BRIGHTNESS_SHEET_CLOSED_Y SCREEN_SIZE
 #define BRIGHTNESS_SCRIM_OPA LV_OPA_60
 
@@ -314,12 +313,16 @@ static void create_dots(lv_obj_t *scr)
     lv_obj_set_size(dot_left, 10, 10);
     lv_obj_set_style_radius(dot_left, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(dot_left, 0, 0);
+    lv_obj_set_scrollbar_mode(dot_left, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(dot_left, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(dot_left, LV_ALIGN_BOTTOM_MID, -10, -38);
 
     dot_right = lv_obj_create(scr);
     lv_obj_set_size(dot_right, 10, 10);
     lv_obj_set_style_radius(dot_right, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(dot_right, 0, 0);
+    lv_obj_set_scrollbar_mode(dot_right, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(dot_right, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(dot_right, LV_ALIGN_BOTTOM_MID, 10, -38);
 
     update_dots(0);
@@ -334,7 +337,22 @@ static void create_brightness_pull_hint(lv_obj_t *scr)
     lv_obj_set_style_bg_color(brightness_pull_hint, lv_color_make(0x80, 0x80, 0x80), 0);
     lv_obj_set_style_bg_opa(brightness_pull_hint, LV_OPA_50, 0);
     lv_obj_set_style_shadow_width(brightness_pull_hint, 0, 0);
+    lv_obj_set_scrollbar_mode(brightness_pull_hint, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(brightness_pull_hint, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(brightness_pull_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
+}
+
+static void create_brightness_edge_sensor(lv_obj_t *scr)
+{
+    brightness_edge_sensor = lv_obj_create(scr);
+    lv_obj_set_size(brightness_edge_sensor, SCREEN_SIZE, BOTTOM_EDGE_ZONE);
+    lv_obj_align(brightness_edge_sensor, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_set_style_bg_opa(brightness_edge_sensor, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(brightness_edge_sensor, 0, 0);
+    lv_obj_set_style_radius(brightness_edge_sensor, 0, 0);
+    lv_obj_set_style_pad_all(brightness_edge_sensor, 0, 0);
+    lv_obj_set_scrollbar_mode(brightness_edge_sensor, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(brightness_edge_sensor, LV_OBJ_FLAG_SCROLLABLE);
 }
 
 /* ── Brightness overlay ────────────────────────────────── */
@@ -354,7 +372,7 @@ static int clamp_brightness(int brightness)
 
 static void update_brightness_ui(void)
 {
-    static char buf[8];
+    static char buf[32];
 
     snprintf(buf, sizeof(buf), "%d%%", current_brightness);
     lv_label_set_text(brightness_value, buf);
@@ -374,9 +392,15 @@ static void apply_brightness(int brightness)
     update_brightness_ui();
 }
 
-static bool brightness_swipe_can_open_from_point(const lv_point_t *point)
+static void brightness_update_visual_state(int32_t sheet_y)
 {
-    return point->y >= (SCREEN_SIZE - BOTTOM_EDGE_ZONE);
+    int32_t clamped_y = LV_CLAMP(BRIGHTNESS_SHEET_OPEN_Y, sheet_y, BRIGHTNESS_SHEET_CLOSED_Y);
+    int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
+    int32_t progress = BRIGHTNESS_SHEET_CLOSED_Y - clamped_y;
+    lv_opa_t opa = (lv_opa_t)((progress * BRIGHTNESS_SCRIM_OPA) / travel);
+
+    lv_obj_set_y(brightness_sheet, clamped_y);
+    lv_obj_set_style_bg_opa(brightness_overlay, opa, 0);
 }
 
 static void brightness_scrim_anim_cb(void *obj, int32_t value)
@@ -393,12 +417,14 @@ static void brightness_show_anim_ready_cb(lv_anim_t *a)
 {
     LV_UNUSED(a);
     brightness_animating = false;
+    brightness_dragging = false;
 }
 
 static void brightness_hide_anim_ready_cb(lv_anim_t *a)
 {
     LV_UNUSED(a);
     brightness_animating = false;
+    brightness_dragging = false;
     lv_obj_add_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -406,23 +432,28 @@ static void brightness_overlay_animate(bool show)
 {
     lv_anim_t panel_anim;
     lv_anim_t scrim_anim;
+    int32_t start_y = lv_obj_get_y(brightness_sheet);
+    lv_opa_t start_opa = lv_obj_get_style_bg_opa(brightness_overlay, 0);
 
     brightness_animating = true;
+    brightness_dragging = false;
 
     if (show) {
         update_brightness_ui();
-        lv_obj_set_style_bg_opa(brightness_overlay, LV_OPA_TRANSP, 0);
-        lv_obj_set_y(brightness_sheet, BRIGHTNESS_SHEET_CLOSED_Y);
-        lv_obj_clear_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(brightness_overlay);
+        if (lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+            brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
+            lv_obj_clear_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
+            lv_obj_move_foreground(brightness_overlay);
+            start_y = BRIGHTNESS_SHEET_CLOSED_Y;
+            start_opa = LV_OPA_TRANSP;
+        }
     }
 
     lv_anim_init(&panel_anim);
     lv_anim_set_var(&panel_anim, brightness_sheet);
     lv_anim_set_exec_cb(&panel_anim, brightness_sheet_y_anim_cb);
     lv_anim_set_time(&panel_anim, show ? 220 : 180);
-    lv_anim_set_values(&panel_anim,
-                       show ? BRIGHTNESS_SHEET_CLOSED_Y : lv_obj_get_y(brightness_sheet),
+    lv_anim_set_values(&panel_anim, start_y,
                        show ? BRIGHTNESS_SHEET_OPEN_Y : BRIGHTNESS_SHEET_CLOSED_Y);
     lv_anim_set_path_cb(&panel_anim, show ? lv_anim_path_ease_out : lv_anim_path_ease_in);
     lv_anim_set_ready_cb(&panel_anim, show ? brightness_show_anim_ready_cb : brightness_hide_anim_ready_cb);
@@ -432,8 +463,7 @@ static void brightness_overlay_animate(bool show)
     lv_anim_set_var(&scrim_anim, brightness_overlay);
     lv_anim_set_exec_cb(&scrim_anim, brightness_scrim_anim_cb);
     lv_anim_set_time(&scrim_anim, show ? 220 : 180);
-    lv_anim_set_values(&scrim_anim,
-                       show ? LV_OPA_TRANSP : lv_obj_get_style_bg_opa(brightness_overlay, 0),
+    lv_anim_set_values(&scrim_anim, start_opa,
                        show ? BRIGHTNESS_SCRIM_OPA : LV_OPA_TRANSP);
     lv_anim_set_path_cb(&scrim_anim, show ? lv_anim_path_ease_out : lv_anim_path_ease_in);
     lv_anim_start(&scrim_anim);
@@ -448,13 +478,81 @@ static void brightness_overlay_hide(void)
     brightness_overlay_animate(false);
 }
 
-static void brightness_overlay_show(void)
+static void brightness_prepare_for_drag_from_edge(void)
 {
-    if (brightness_animating || !lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+    if (!lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
 
-    brightness_overlay_animate(true);
+    update_brightness_ui();
+    brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
+    lv_obj_clear_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(brightness_overlay);
+}
+
+static void brightness_begin_drag(const lv_point_t *point, bool from_edge)
+{
+    lv_anim_delete(brightness_sheet, brightness_sheet_y_anim_cb);
+    lv_anim_delete(brightness_overlay, brightness_scrim_anim_cb);
+
+    brightness_animating = false;
+    brightness_dragging = true;
+    brightness_drag_from_edge = from_edge;
+    brightness_drag_start_point = *point;
+
+    if (from_edge) {
+        brightness_prepare_for_drag_from_edge();
+        brightness_drag_start_y = BRIGHTNESS_SHEET_CLOSED_Y;
+    }
+    else {
+        brightness_drag_start_y = lv_obj_get_y(brightness_sheet);
+    }
+}
+
+static void brightness_update_drag(const lv_point_t *point)
+{
+    int32_t dy;
+    int32_t sheet_y;
+
+    if (!brightness_dragging) {
+        return;
+    }
+
+    dy = point->y - brightness_drag_start_point.y;
+    sheet_y = brightness_drag_start_y + dy;
+    brightness_update_visual_state(sheet_y);
+}
+
+static void brightness_finish_drag(void)
+{
+    int32_t midpoint = (BRIGHTNESS_SHEET_OPEN_Y + BRIGHTNESS_SHEET_CLOSED_Y) / 2;
+    int32_t current_y = lv_obj_get_y(brightness_sheet);
+    bool from_edge;
+
+    if (!brightness_dragging) {
+        return;
+    }
+
+    from_edge = brightness_drag_from_edge;
+    brightness_dragging = false;
+    brightness_drag_from_edge = false;
+
+    if (from_edge) {
+        if (current_y < midpoint) {
+            brightness_overlay_animate(true);
+        }
+        else {
+            brightness_overlay_animate(false);
+        }
+        return;
+    }
+
+    if (current_y > midpoint) {
+        brightness_overlay_animate(false);
+    }
+    else {
+        brightness_overlay_animate(true);
+    }
 }
 
 static void brightness_slider_event_cb(lv_event_t *e)
@@ -474,11 +572,13 @@ static void brightness_overlay_event_cb(lv_event_t *e)
     }
 }
 
-static void brightness_swipe_event_cb(lv_event_t *e)
+static void brightness_drag_event_cb(lv_event_t *e)
 {
     lv_event_code_t code = lv_event_get_code(e);
     lv_indev_t *indev = lv_event_get_indev(e);
     lv_point_t point;
+    lv_obj_t *target = lv_event_get_target(e);
+    bool from_edge = (target == brightness_edge_sensor);
 
     if (indev == NULL) {
         return;
@@ -488,48 +588,47 @@ static void brightness_swipe_event_cb(lv_event_t *e)
 
     if (code == LV_EVENT_PRESSED) {
         if (brightness_animating) {
-            swipe_tracking = false;
             return;
         }
 
-        swipe_start_point = point;
-        swipe_tracking = true;
+        if (from_edge && !lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+            return;
+        }
+
+        if (!from_edge && lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+            return;
+        }
+
+        brightness_begin_drag(&point, from_edge);
         return;
     }
 
-    if (!swipe_tracking) {
+    if (!brightness_dragging) {
         return;
     }
 
     if (code == LV_EVENT_PRESS_LOST) {
-        swipe_tracking = false;
-        return;
-    }
-
-    if (code != LV_EVENT_RELEASED) {
-        return;
-    }
-
-    swipe_tracking = false;
-
-    int dx = point.x - swipe_start_point.x;
-    int dy = point.y - swipe_start_point.y;
-    int abs_dx = LV_ABS(dx);
-    int abs_dy = LV_ABS(dy);
-
-    if (abs_dy < SWIPE_THRESHOLD || abs_dy <= abs_dx) {
-        return;
-    }
-
-    if (lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
-        if (dy < 0 && brightness_swipe_can_open_from_point(&swipe_start_point)) {
-            brightness_overlay_show();
+        brightness_dragging = false;
+        brightness_drag_from_edge = false;
+        if (!lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+            if (lv_obj_get_y(brightness_sheet) > ((BRIGHTNESS_SHEET_OPEN_Y + BRIGHTNESS_SHEET_CLOSED_Y) / 2)) {
+                brightness_overlay_animate(false);
+            }
+            else {
+                brightness_overlay_animate(true);
+            }
         }
         return;
     }
 
-    if (dy > 0) {
-        brightness_overlay_hide();
+    if (code == LV_EVENT_PRESSING) {
+        brightness_update_drag(&point);
+        return;
+    }
+
+    if (code == LV_EVENT_RELEASED) {
+        brightness_finish_drag();
+        return;
     }
 }
 
@@ -544,12 +643,11 @@ static void create_brightness_overlay(lv_obj_t *scr)
     lv_obj_set_style_border_width(brightness_overlay, 0, 0);
     lv_obj_set_style_radius(brightness_overlay, 0, 0);
     lv_obj_set_style_pad_all(brightness_overlay, 0, 0);
+    lv_obj_set_scrollbar_mode(brightness_overlay, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(brightness_overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(brightness_overlay, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(brightness_overlay, brightness_overlay_event_cb, LV_EVENT_CLICKED, NULL);
-    lv_obj_add_event_cb(brightness_overlay, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(brightness_overlay, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(brightness_overlay, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     brightness_sheet = lv_obj_create(brightness_overlay);
     lv_obj_set_size(brightness_sheet, BRIGHTNESS_SHEET_WIDTH, BRIGHTNESS_SHEET_HEIGHT);
@@ -565,9 +663,12 @@ static void create_brightness_overlay(lv_obj_t *scr)
     lv_obj_set_style_shadow_width(brightness_sheet, 24, 0);
     lv_obj_set_style_shadow_opa(brightness_sheet, LV_OPA_30, 0);
     lv_obj_set_style_shadow_color(brightness_sheet, lv_color_black(), 0);
-    lv_obj_add_event_cb(brightness_sheet, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(brightness_sheet, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(brightness_sheet, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_set_scrollbar_mode(brightness_sheet, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(brightness_sheet, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(brightness_sheet, brightness_drag_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(brightness_sheet, brightness_drag_event_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(brightness_sheet, brightness_drag_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(brightness_sheet, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     sheet_grabber = lv_obj_create(brightness_sheet);
     lv_obj_set_size(sheet_grabber, 72, 6);
@@ -576,26 +677,29 @@ static void create_brightness_overlay(lv_obj_t *scr)
     lv_obj_set_style_bg_color(sheet_grabber, lv_color_make(0x9C, 0x9C, 0x9C), 0);
     lv_obj_set_style_bg_opa(sheet_grabber, LV_OPA_70, 0);
     lv_obj_set_style_shadow_width(sheet_grabber, 0, 0);
+    lv_obj_set_scrollbar_mode(sheet_grabber, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(sheet_grabber, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(sheet_grabber, LV_ALIGN_TOP_MID, 0, -10);
-    lv_obj_add_event_cb(sheet_grabber, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(sheet_grabber, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(sheet_grabber, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_event_cb(sheet_grabber, brightness_drag_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(sheet_grabber, brightness_drag_event_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(sheet_grabber, brightness_drag_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(sheet_grabber, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     lv_obj_t *title = lv_label_create(brightness_sheet);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_label_set_text(title, "Brightness");
-    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
     brightness_value = lv_label_create(brightness_sheet);
     lv_obj_set_style_text_font(brightness_value, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(brightness_value, lv_color_white(), 0);
-    lv_obj_align(brightness_value, LV_ALIGN_TOP_LEFT, 0, 72);
+    lv_obj_align(brightness_value, LV_ALIGN_TOP_MID, 0, 124);
 
     brightness_slider = lv_slider_create(brightness_sheet);
     lv_obj_set_size(brightness_slider, 100, 16);
     lv_obj_set_width(brightness_slider, lv_pct(100));
-    lv_obj_align(brightness_slider, LV_ALIGN_TOP_MID, 0, 142);
+    lv_obj_align(brightness_slider, LV_ALIGN_TOP_MID, 0, 88);
     lv_slider_set_range(brightness_slider, 0, 100);
     lv_obj_set_style_bg_color(brightness_slider, lv_color_make(0x36, 0x36, 0x36), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(brightness_slider, LV_OPA_COVER, LV_PART_MAIN);
@@ -676,17 +780,13 @@ void app_main(void)
     /* Page dots overlay */
     create_dots(scr);
     create_brightness_pull_hint(scr);
+    create_brightness_edge_sensor(scr);
     create_brightness_overlay(scr);
     lv_obj_add_event_cb(tv, tv_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(tv, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(tv, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(tv, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
-    lv_obj_add_event_cb(tile_digital, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(tile_digital, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(tile_digital, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
-    lv_obj_add_event_cb(tile_analog, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(tile_analog, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(tile_analog, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_event_cb(brightness_edge_sensor, brightness_drag_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(brightness_edge_sensor, brightness_drag_event_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(brightness_edge_sensor, brightness_drag_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(brightness_edge_sensor, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     /* 1-second update timer */
     lv_timer_create(clock_timer_cb, 1000, NULL);
