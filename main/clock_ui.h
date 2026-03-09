@@ -14,6 +14,8 @@ typedef struct {
     void (*on_wifi_sync_requested)(void *user_ctx);
     void (*on_alarm_snooze_requested)(void *user_ctx);
     void (*on_alarm_stop_requested)(void *user_ctx);
+    void (*on_alarm_test_requested)(void *user_ctx);
+    void (*on_next_alarm_cancel_requested)(void *user_ctx);
 } clock_ui_callbacks_t;
 
 esp_err_t clock_ui_init(app_settings_t *settings,

@@ -11,6 +11,7 @@
 #include "freertos/FreeRTOS.h"
 #include "nvs_flash.h"
 
+#include "alarm_audio.h"
 #include "alarm_logic.h"
 #include "app_settings.h"
 #include "clock_ui.h"
@@ -24,6 +25,7 @@ typedef struct {
     lv_timer_t *tick_timer;
     int64_t save_deadline_ms;
     uint8_t applied_brightness;
+    bool audio_available;
     bool settings_dirty;
 } app_context_t;
 
@@ -81,6 +83,9 @@ static void on_settings_changed(void *user_ctx)
     app_context_t *app = (app_context_t *)user_ctx;
 
     app_settings_apply_timezone(&app->settings);
+    if (app->audio_available) {
+        alarm_audio_set_volume(app->settings.alarm_volume);
+    }
     mark_settings_dirty();
 }
 
@@ -115,6 +120,10 @@ static void on_alarm_snooze_requested(void *user_ctx)
 
     time(&now);
     alarm_logic_snooze(&app->runtime, &app->settings, now);
+    if (app->audio_available) {
+        alarm_audio_stop();
+        app->runtime.alarm_test_active = alarm_audio_is_test_active();
+    }
 }
 
 static void on_alarm_stop_requested(void *user_ctx)
@@ -122,6 +131,41 @@ static void on_alarm_stop_requested(void *user_ctx)
     app_context_t *app = (app_context_t *)user_ctx;
 
     alarm_logic_stop(&app->runtime);
+    if (app->audio_available) {
+        alarm_audio_stop();
+        app->runtime.alarm_test_active = alarm_audio_is_test_active();
+    }
+}
+
+static void on_alarm_test_requested(void *user_ctx)
+{
+    app_context_t *app = (app_context_t *)user_ctx;
+
+    if (!app->audio_available) {
+        return;
+    }
+
+    if (alarm_audio_is_test_active()) {
+        alarm_audio_stop();
+    } else {
+        ESP_ERROR_CHECK_WITHOUT_ABORT(alarm_audio_start_test(app->settings.alarm_volume));
+    }
+
+    app->runtime.alarm_test_active = alarm_audio_is_test_active();
+}
+
+static void on_next_alarm_cancel_requested(void *user_ctx)
+{
+    app_context_t *app = (app_context_t *)user_ctx;
+    time_t now;
+
+    time(&now);
+    if (app->runtime.snooze_active) {
+        alarm_logic_stop(&app->runtime);
+        mark_settings_dirty();
+    } else if (alarm_logic_cancel_next_alarm(&app->runtime, &app->settings, now)) {
+        mark_settings_dirty();
+    }
 }
 
 static void clock_tick_cb(lv_timer_t *timer)
@@ -132,7 +176,21 @@ static void clock_tick_cb(lv_timer_t *timer)
 
     time(&now);
     wifi_time_snapshot(&s_app.runtime);
-    alarm_logic_tick(&s_app.runtime, &s_app.settings, now);
+    if (alarm_logic_tick(&s_app.runtime, &s_app.settings, now)) {
+        mark_settings_dirty();
+    }
+    if (s_app.audio_available) {
+        if (s_app.runtime.alarm_ringing) {
+            if (!alarm_audio_is_alarm_active()) {
+                ESP_ERROR_CHECK_WITHOUT_ABORT(alarm_audio_start_alarm(s_app.settings.alarm_volume));
+            }
+        } else if (alarm_audio_is_alarm_active()) {
+            alarm_audio_stop();
+        }
+        s_app.runtime.alarm_test_active = alarm_audio_is_test_active();
+    } else {
+        s_app.runtime.alarm_test_active = false;
+    }
 
     if (s_app.runtime.time_synced &&
         now > 1700000000 &&
@@ -166,6 +224,8 @@ void app_main(void)
         .on_wifi_sync_requested = on_wifi_sync_requested,
         .on_alarm_snooze_requested = on_alarm_snooze_requested,
         .on_alarm_stop_requested = on_alarm_stop_requested,
+        .on_alarm_test_requested = on_alarm_test_requested,
+        .on_next_alarm_cancel_requested = on_next_alarm_cancel_requested,
     };
     struct timeval boot_time = {
         .tv_sec = 1741500000,
@@ -198,6 +258,13 @@ void app_main(void)
 
     bsp_display_start_with_config(&cfg);
     bsp_display_backlight_on();
+
+    err = alarm_audio_init(s_app.settings.alarm_volume);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to initialize alarm audio: %s", esp_err_to_name(err));
+    } else {
+        s_app.audio_available = true;
+    }
 
     ESP_ERROR_CHECK(wifi_time_init(&s_app.settings));
 

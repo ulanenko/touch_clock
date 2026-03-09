@@ -1,6 +1,8 @@
 idf_component_register(
     SRCS
+        alarm_audio.c
         alarm_logic.c
+        alarm_pcm.c
         app_settings.c
         clock_ui.c
         main.c

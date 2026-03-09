@@ -19,11 +19,17 @@ typedef enum {
     CLOCK_FACE_COUNT = 5,
 } clock_face_id_t;
 
+typedef enum {
+    ALARM_REPEAT_WEEKLY = 0,
+    ALARM_REPEAT_ONCE = 1,
+} alarm_repeat_mode_t;
+
 typedef struct {
     bool enabled;
     uint8_t hour;
     uint8_t minute;
     uint8_t days_mask;
+    uint8_t repeat_mode;
 } alarm_config_t;
 
 typedef struct {
@@ -45,12 +51,15 @@ typedef struct {
 typedef struct {
     uint32_t version;
     uint8_t base_brightness;
+    uint8_t alarm_volume;
     uint8_t snooze_minutes;
     clock_face_id_t current_face;
     wifi_settings_t wifi;
     night_mode_config_t night_mode;
     alarm_config_t alarms[MAX_ALARMS];
     time_t last_synced_epoch;
+    time_t skipped_alarm_epoch;
+    int8_t skipped_alarm_index;
 } app_settings_t;
 
 typedef struct {
@@ -62,12 +71,15 @@ typedef struct {
     char wifi_ip[16];
     char wifi_status[96];
     bool alarm_ringing;
+    bool alarm_test_active;
     bool snooze_active;
     time_t snooze_deadline;
     bool sunrise_active;
     bool in_night_mode;
     uint8_t effective_brightness;
     time_t next_alarm_epoch;
+    int8_t next_alarm_index;
+    int8_t active_alarm_index;
     time_t last_trigger_epoch_minute;
 } app_runtime_state_t;
 

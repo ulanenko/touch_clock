@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "touch_clock",
-    "project_version":    "4fd559b-dirty",
+    "project_version":    "d076b3c-dirty",
     "project_path":       "/Users/borysulanenko/PycharmProjects/touch_clock",
     "idf_path":           "/Users/borysulanenko/esp/v5.5.3/esp-idf",
     "build_dir":          "/Users/borysulanenko/PycharmProjects/touch_clock/build",
@@ -1555,7 +1555,7 @@
             "managed_reqs": [ "lvgl__lvgl", "waveshare__esp32_p4_wifi6_touch_lcd_xc" ],
             "managed_priv_reqs": [ "espressif__esp_hosted", "espressif__esp_wifi_remote" ],
             "file": "/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/main/libmain.a",
-            "sources": [ "/Users/borysulanenko/PycharmProjects/touch_clock/main/alarm_logic.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/app_settings.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/main.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/slava_face_img.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/slava_dark_face_img.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/wifi_time.c" ],
+            "sources": [ "/Users/borysulanenko/PycharmProjects/touch_clock/main/alarm_audio.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/alarm_logic.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/alarm_pcm.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/app_settings.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/main.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/slava_face_img.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/slava_dark_face_img.c", "/Users/borysulanenko/PycharmProjects/touch_clock/main/wifi_time.c" ],
             "include_dirs": [ "." ]
         },
         "mbedtls": {

@@ -7,13 +7,17 @@
 #include "nvs.h"
 
 #define SETTINGS_NAMESPACE "clock"
-#define SETTINGS_VERSION 2U
+#define SETTINGS_VERSION 4U
 
 static void clamp_settings(app_settings_t *settings)
 {
     if (settings->base_brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT ||
         settings->base_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
         settings->base_brightness = 50;
+    }
+
+    if (settings->alarm_volume > 100) {
+        settings->alarm_volume = 70;
     }
 
     if (settings->snooze_minutes < 1 || settings->snooze_minutes > 60) {
@@ -56,9 +60,17 @@ static void clamp_settings(app_settings_t *settings)
         if (settings->alarms[i].minute > 59) {
             settings->alarms[i].minute = 0;
         }
+        if (settings->alarms[i].repeat_mode > ALARM_REPEAT_ONCE) {
+            settings->alarms[i].repeat_mode = ALARM_REPEAT_WEEKLY;
+        }
         if (settings->alarms[i].days_mask == 0) {
             settings->alarms[i].days_mask = 0x7F;
         }
+    }
+
+    if (settings->skipped_alarm_index < -1 || settings->skipped_alarm_index >= MAX_ALARMS) {
+        settings->skipped_alarm_index = -1;
+        settings->skipped_alarm_epoch = 0;
     }
 }
 
@@ -67,6 +79,7 @@ void app_settings_set_defaults(app_settings_t *settings)
     memset(settings, 0, sizeof(*settings));
     settings->version = SETTINGS_VERSION;
     settings->base_brightness = 50;
+    settings->alarm_volume = 70;
     settings->snooze_minutes = 10;
     settings->current_face = CLOCK_FACE_DIGITAL;
     settings->wifi.timezone_offset_hours = 0;
@@ -77,12 +90,14 @@ void app_settings_set_defaults(app_settings_t *settings)
     settings->night_mode.end_minute = 0;
     settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
     settings->night_mode.face = CLOCK_FACE_SLAVA_DARK;
+    settings->skipped_alarm_index = -1;
 
     for (size_t i = 0; i < MAX_ALARMS; ++i) {
         settings->alarms[i].enabled = false;
         settings->alarms[i].hour = 7;
         settings->alarms[i].minute = 0;
         settings->alarms[i].days_mask = 0x7F;
+        settings->alarms[i].repeat_mode = ALARM_REPEAT_WEEKLY;
     }
 }
 
