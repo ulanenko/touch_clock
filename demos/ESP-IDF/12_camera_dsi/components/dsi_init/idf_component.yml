@@ -1,0 +1,4 @@
+dependencies:
+  esp_lcd_jd9365: '*'
+  idf:
+    version: ">=5.3.0"

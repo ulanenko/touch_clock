@@ -1,0 +1,2 @@
+source /Users/borysulanenko/PycharmProjects/touch_clock/ESP-IDF/clock_app/build/bootloader/gdbinit/symbols
+source /Users/borysulanenko/PycharmProjects/touch_clock/ESP-IDF/clock_app/build/bootloader/gdbinit/connect
