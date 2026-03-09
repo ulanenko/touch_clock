@@ -1,10 +1,12 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_err.h"
 #include "esp_log.h"
 #include "esp_heap_caps.h"
 #include "lvgl.h"
@@ -20,11 +22,25 @@ static const char *TAG = "clock_app";
 #define SEC_HAND_LEN    310
 #define TICK_INNER      315
 #define TICK_OUTER      338
+#define SWIPE_THRESHOLD 80
+#define BOTTOM_EDGE_ZONE 96
+#define BRIGHTNESS_SHEET_WIDTH 560
+#define BRIGHTNESS_SHEET_HEIGHT 252
+#define BRIGHTNESS_SHEET_X ((SCREEN_SIZE - BRIGHTNESS_SHEET_WIDTH) / 2)
+#define BRIGHTNESS_SHEET_OPEN_Y (SCREEN_SIZE - BRIGHTNESS_SHEET_HEIGHT - 24)
+#define BRIGHTNESS_SHEET_CLOSED_Y SCREEN_SIZE
+#define BRIGHTNESS_SCRIM_OPA LV_OPA_60
 
 /* ── UI handles ─────────────────────────────────────────── */
 static lv_obj_t *tv;                 /* tileview root       */
 static lv_obj_t *tile_digital;       /* tile 0 – digital    */
 static lv_obj_t *tile_analog;        /* tile 1 – analog     */
+static lv_obj_t *brightness_overlay;
+static lv_obj_t *brightness_sheet;
+static lv_obj_t *brightness_slider;
+static lv_obj_t *brightness_value;
+static lv_obj_t *brightness_edge_sensor;
+static lv_obj_t *brightness_pull_hint;
 
 /* Digital face */
 static lv_obj_t *lbl_time;
@@ -43,6 +59,12 @@ static lv_obj_t *center_dot;
 /* Dot indicator */
 static lv_obj_t *dot_left;
 static lv_obj_t *dot_right;
+static int current_brightness = 50;
+static bool brightness_animating = false;
+static bool brightness_dragging = false;
+static bool brightness_drag_from_edge = false;
+static lv_point_t brightness_drag_start_point;
+static int32_t brightness_drag_start_y = BRIGHTNESS_SHEET_CLOSED_Y;
 
 /* ── Styles ─────────────────────────────────────────────── */
 static lv_style_t style_hour;
@@ -292,15 +314,300 @@ static void create_dots(lv_obj_t *scr)
     lv_obj_set_size(dot_left, 10, 10);
     lv_obj_set_style_radius(dot_left, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(dot_left, 0, 0);
-    lv_obj_align(dot_left, LV_ALIGN_BOTTOM_MID, -10, -20);
+    lv_obj_align(dot_left, LV_ALIGN_BOTTOM_MID, -10, -38);
 
     dot_right = lv_obj_create(scr);
     lv_obj_set_size(dot_right, 10, 10);
     lv_obj_set_style_radius(dot_right, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(dot_right, 0, 0);
-    lv_obj_align(dot_right, LV_ALIGN_BOTTOM_MID, 10, -20);
+    lv_obj_align(dot_right, LV_ALIGN_BOTTOM_MID, 10, -38);
 
     update_dots(0);
+}
+
+static void create_brightness_pull_hint(lv_obj_t *scr)
+{
+    brightness_pull_hint = lv_obj_create(scr);
+    lv_obj_set_size(brightness_pull_hint, 88, 6);
+    lv_obj_set_style_radius(brightness_pull_hint, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(brightness_pull_hint, 0, 0);
+    lv_obj_set_style_bg_color(brightness_pull_hint, lv_color_make(0x80, 0x80, 0x80), 0);
+    lv_obj_set_style_bg_opa(brightness_pull_hint, LV_OPA_50, 0);
+    lv_obj_set_style_shadow_width(brightness_pull_hint, 0, 0);
+    lv_obj_align(brightness_pull_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
+}
+
+/* ── Brightness overlay ────────────────────────────────── */
+
+static int clamp_brightness(int brightness)
+{
+    if (brightness < 0) {
+        return 0;
+    }
+
+    if (brightness > 100) {
+        return 100;
+    }
+
+    return brightness;
+}
+
+static void update_brightness_ui(void)
+{
+    static char buf[8];
+
+    snprintf(buf, sizeof(buf), "%d%%", current_brightness);
+    lv_label_set_text(brightness_value, buf);
+    lv_slider_set_value(brightness_slider, current_brightness, LV_ANIM_OFF);
+}
+
+static void apply_brightness(int brightness)
+{
+    current_brightness = clamp_brightness(brightness);
+
+    esp_err_t err = bsp_display_brightness_set(current_brightness);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Failed to set brightness to %d%%: %s",
+                 current_brightness, esp_err_to_name(err));
+    }
+
+    update_brightness_ui();
+}
+
+static bool brightness_swipe_can_open_from_point(const lv_point_t *point)
+{
+    return point->y >= (SCREEN_SIZE - BOTTOM_EDGE_ZONE);
+}
+
+static void brightness_scrim_anim_cb(void *obj, int32_t value)
+{
+    lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)value, 0);
+}
+
+static void brightness_sheet_y_anim_cb(void *obj, int32_t value)
+{
+    lv_obj_set_y((lv_obj_t *)obj, value);
+}
+
+static void brightness_show_anim_ready_cb(lv_anim_t *a)
+{
+    LV_UNUSED(a);
+    brightness_animating = false;
+}
+
+static void brightness_hide_anim_ready_cb(lv_anim_t *a)
+{
+    LV_UNUSED(a);
+    brightness_animating = false;
+    lv_obj_add_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void brightness_overlay_animate(bool show)
+{
+    lv_anim_t panel_anim;
+    lv_anim_t scrim_anim;
+
+    brightness_animating = true;
+
+    if (show) {
+        update_brightness_ui();
+        lv_obj_set_style_bg_opa(brightness_overlay, LV_OPA_TRANSP, 0);
+        lv_obj_set_y(brightness_sheet, BRIGHTNESS_SHEET_CLOSED_Y);
+        lv_obj_clear_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_move_foreground(brightness_overlay);
+    }
+
+    lv_anim_init(&panel_anim);
+    lv_anim_set_var(&panel_anim, brightness_sheet);
+    lv_anim_set_exec_cb(&panel_anim, brightness_sheet_y_anim_cb);
+    lv_anim_set_time(&panel_anim, show ? 220 : 180);
+    lv_anim_set_values(&panel_anim,
+                       show ? BRIGHTNESS_SHEET_CLOSED_Y : lv_obj_get_y(brightness_sheet),
+                       show ? BRIGHTNESS_SHEET_OPEN_Y : BRIGHTNESS_SHEET_CLOSED_Y);
+    lv_anim_set_path_cb(&panel_anim, show ? lv_anim_path_ease_out : lv_anim_path_ease_in);
+    lv_anim_set_ready_cb(&panel_anim, show ? brightness_show_anim_ready_cb : brightness_hide_anim_ready_cb);
+    lv_anim_start(&panel_anim);
+
+    lv_anim_init(&scrim_anim);
+    lv_anim_set_var(&scrim_anim, brightness_overlay);
+    lv_anim_set_exec_cb(&scrim_anim, brightness_scrim_anim_cb);
+    lv_anim_set_time(&scrim_anim, show ? 220 : 180);
+    lv_anim_set_values(&scrim_anim,
+                       show ? LV_OPA_TRANSP : lv_obj_get_style_bg_opa(brightness_overlay, 0),
+                       show ? BRIGHTNESS_SCRIM_OPA : LV_OPA_TRANSP);
+    lv_anim_set_path_cb(&scrim_anim, show ? lv_anim_path_ease_out : lv_anim_path_ease_in);
+    lv_anim_start(&scrim_anim);
+}
+
+static void brightness_overlay_hide(void)
+{
+    if (brightness_animating || lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+
+    brightness_overlay_animate(false);
+}
+
+static void brightness_overlay_show(void)
+{
+    if (brightness_animating || !lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+
+    brightness_overlay_animate(true);
+}
+
+static void brightness_slider_event_cb(lv_event_t *e)
+{
+    lv_obj_t *slider = lv_event_get_target(e);
+    apply_brightness(lv_slider_get_value(slider));
+}
+
+static void brightness_overlay_event_cb(lv_event_t *e)
+{
+    if (lv_event_get_target(e) != lv_event_get_current_target(e)) {
+        return;
+    }
+
+    if (lv_event_get_code(e) == LV_EVENT_CLICKED) {
+        brightness_overlay_hide();
+    }
+}
+
+static void brightness_swipe_event_cb(lv_event_t *e)
+{
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = lv_event_get_indev(e);
+    lv_point_t point;
+
+    if (indev == NULL) {
+        return;
+    }
+
+    lv_indev_get_point(indev, &point);
+
+    if (code == LV_EVENT_PRESSED) {
+        if (brightness_animating) {
+            swipe_tracking = false;
+            return;
+        }
+
+        swipe_start_point = point;
+        swipe_tracking = true;
+        return;
+    }
+
+    if (!swipe_tracking) {
+        return;
+    }
+
+    if (code == LV_EVENT_PRESS_LOST) {
+        swipe_tracking = false;
+        return;
+    }
+
+    if (code != LV_EVENT_RELEASED) {
+        return;
+    }
+
+    swipe_tracking = false;
+
+    int dx = point.x - swipe_start_point.x;
+    int dy = point.y - swipe_start_point.y;
+    int abs_dx = LV_ABS(dx);
+    int abs_dy = LV_ABS(dy);
+
+    if (abs_dy < SWIPE_THRESHOLD || abs_dy <= abs_dx) {
+        return;
+    }
+
+    if (lv_obj_has_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN)) {
+        if (dy < 0 && brightness_swipe_can_open_from_point(&swipe_start_point)) {
+            brightness_overlay_show();
+        }
+        return;
+    }
+
+    if (dy > 0) {
+        brightness_overlay_hide();
+    }
+}
+
+static void create_brightness_overlay(lv_obj_t *scr)
+{
+    lv_obj_t *sheet_grabber;
+
+    brightness_overlay = lv_obj_create(scr);
+    lv_obj_set_size(brightness_overlay, SCREEN_SIZE, SCREEN_SIZE);
+    lv_obj_set_style_bg_color(brightness_overlay, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(brightness_overlay, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(brightness_overlay, 0, 0);
+    lv_obj_set_style_radius(brightness_overlay, 0, 0);
+    lv_obj_set_style_pad_all(brightness_overlay, 0, 0);
+    lv_obj_align(brightness_overlay, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_flag(brightness_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(brightness_overlay, brightness_overlay_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_add_event_cb(brightness_overlay, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(brightness_overlay, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(brightness_overlay, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+
+    brightness_sheet = lv_obj_create(brightness_overlay);
+    lv_obj_set_size(brightness_sheet, BRIGHTNESS_SHEET_WIDTH, BRIGHTNESS_SHEET_HEIGHT);
+    lv_obj_set_pos(brightness_sheet, BRIGHTNESS_SHEET_X, BRIGHTNESS_SHEET_CLOSED_Y);
+    lv_obj_set_style_bg_color(brightness_sheet, lv_color_make(0x16, 0x16, 0x16), 0);
+    lv_obj_set_style_bg_opa(brightness_sheet, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(brightness_sheet, 0, 0);
+    lv_obj_set_style_radius(brightness_sheet, 32, 0);
+    lv_obj_set_style_pad_top(brightness_sheet, 28, 0);
+    lv_obj_set_style_pad_bottom(brightness_sheet, 24, 0);
+    lv_obj_set_style_pad_left(brightness_sheet, 28, 0);
+    lv_obj_set_style_pad_right(brightness_sheet, 28, 0);
+    lv_obj_set_style_shadow_width(brightness_sheet, 24, 0);
+    lv_obj_set_style_shadow_opa(brightness_sheet, LV_OPA_30, 0);
+    lv_obj_set_style_shadow_color(brightness_sheet, lv_color_black(), 0);
+    lv_obj_add_event_cb(brightness_sheet, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(brightness_sheet, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(brightness_sheet, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+
+    sheet_grabber = lv_obj_create(brightness_sheet);
+    lv_obj_set_size(sheet_grabber, 72, 6);
+    lv_obj_set_style_radius(sheet_grabber, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(sheet_grabber, 0, 0);
+    lv_obj_set_style_bg_color(sheet_grabber, lv_color_make(0x9C, 0x9C, 0x9C), 0);
+    lv_obj_set_style_bg_opa(sheet_grabber, LV_OPA_70, 0);
+    lv_obj_set_style_shadow_width(sheet_grabber, 0, 0);
+    lv_obj_align(sheet_grabber, LV_ALIGN_TOP_MID, 0, -10);
+    lv_obj_add_event_cb(sheet_grabber, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(sheet_grabber, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(sheet_grabber, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+
+    lv_obj_t *title = lv_label_create(brightness_sheet);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_label_set_text(title, "Brightness");
+    lv_obj_align(title, LV_ALIGN_TOP_LEFT, 0, 0);
+
+    brightness_value = lv_label_create(brightness_sheet);
+    lv_obj_set_style_text_font(brightness_value, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(brightness_value, lv_color_white(), 0);
+    lv_obj_align(brightness_value, LV_ALIGN_TOP_LEFT, 0, 72);
+
+    brightness_slider = lv_slider_create(brightness_sheet);
+    lv_obj_set_size(brightness_slider, 100, 16);
+    lv_obj_set_width(brightness_slider, lv_pct(100));
+    lv_obj_align(brightness_slider, LV_ALIGN_TOP_MID, 0, 142);
+    lv_slider_set_range(brightness_slider, 0, 100);
+    lv_obj_set_style_bg_color(brightness_slider, lv_color_make(0x36, 0x36, 0x36), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(brightness_slider, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_radius(brightness_slider, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(brightness_slider, lv_color_white(), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(brightness_slider, LV_OPA_COVER, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(brightness_slider, lv_color_white(), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(brightness_slider, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_outline_width(brightness_slider, 0, LV_PART_KNOB);
+    lv_obj_add_event_cb(brightness_slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+
+    update_brightness_ui();
 }
 
 /* ── Timer callback (1 Hz) ──────────────────────────────── */
@@ -343,6 +650,7 @@ void app_main(void)
     lv_obj_t *scr = lv_screen_active();
     lv_obj_set_style_bg_color(scr, lv_color_black(), 0);
     lv_obj_set_style_pad_all(scr, 0, 0);
+    lv_obj_remove_flag(scr, LV_OBJ_FLAG_SCROLLABLE);
 
     /* Tileview: horizontal swipe between two tiles */
     tv = lv_tileview_create(scr);
@@ -367,7 +675,18 @@ void app_main(void)
 
     /* Page dots overlay */
     create_dots(scr);
+    create_brightness_pull_hint(scr);
+    create_brightness_overlay(scr);
     lv_obj_add_event_cb(tv, tv_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(tv, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(tv, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(tv, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_event_cb(tile_digital, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(tile_digital, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(tile_digital, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_event_cb(tile_analog, brightness_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(tile_analog, brightness_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(tile_analog, brightness_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     /* 1-second update timer */
     lv_timer_create(clock_timer_cb, 1000, NULL);

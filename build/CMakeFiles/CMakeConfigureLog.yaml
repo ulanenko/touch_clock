@@ -513,3 +513,70 @@ events:
         implicit fwks: []
       
       
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/Internal/CheckSourceCompiles.cmake:101 (try_compile)"
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/CheckCSourceCompiles.cmake:52 (cmake_check_source_compiles)"
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/FindThreads.cmake:97 (CHECK_C_SOURCE_COMPILES)"
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/FindThreads.cmake:163 (_threads_check_libc)"
+      - "/Users/borysulanenko/esp/v5.5.3/esp-idf/components/mbedtls/mbedtls/CMakeLists.txt:139 (find_package)"
+    checks:
+      - "Performing Test CMAKE_HAVE_LIBC_PTHREAD"
+    directories:
+      source: "/Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-jYl7v0"
+      binary: "/Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-jYl7v0"
+    cmakeVariables:
+      CMAKE_C_FLAGS: "-march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f "
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-nostartfiles -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f "
+      CMAKE_MODULE_PATH: "/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/espressif__cmake_utilities;/Users/borysulanenko/esp/v5.5.3/esp-idf/tools/cmake;/Users/borysulanenko/esp/v5.5.3/esp-idf/tools/cmake/third_party"
+    buildResult:
+      variable: "CMAKE_HAVE_LIBC_PTHREAD"
+      cached: true
+      stdout: |
+        Change Dir: '/Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-jYl7v0'
+        
+        Run Build Command(s): /Users/borysulanenko/.espressif/tools/ninja/1.12.1/ninja -v cmTC_f17d9
+        [1/2] /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/riscv32-esp-elf-gcc -DCMAKE_HAVE_LIBC_PTHREAD  -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f -o CMakeFiles/cmTC_f17d9.dir/src.c.obj -c /Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-jYl7v0/src.c
+        [2/2] : && /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/riscv32-esp-elf-gcc -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f -nostartfiles -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f CMakeFiles/cmTC_f17d9.dir/src.c.obj -o cmTC_f17d9   && :
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: CMakeFiles/cmTC_f17d9.dir/src.c.obj: in function `main':
+        src.c:(.text+0x6e): warning: pthread_atfork is not implemented and will always fail
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: src.c:(.text+0x50): warning: pthread_cancel is not implemented and will always fail
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: src.c:(.text+0x34): warning: pthread_create is not implemented and will always fail
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: src.c:(.text+0x42): warning: pthread_detach is not implemented and will always fail
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: src.c:(.text+0x78): warning: pthread_exit is not implemented and will always fail
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: src.c:(.text+0x60): warning: pthread_join is not implemented and will always fail
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: warning: cannot find entry symbol _start; defaulting to 00010094
+        
+      exitCode: 0
+  -
+    kind: "try_compile-v1"
+    backtrace:
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/Internal/CheckSourceCompiles.cmake:101 (try_compile)"
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/Internal/CheckCompilerFlag.cmake:18 (cmake_check_source_compiles)"
+      - "/Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/share/cmake-3.30/Modules/CheckCCompilerFlag.cmake:51 (cmake_check_compiler_flag)"
+      - "/Users/borysulanenko/esp/v5.5.3/esp-idf/components/mbedtls/mbedtls/CMakeLists.txt:222 (CHECK_C_COMPILER_FLAG)"
+    checks:
+      - "Performing Test C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS"
+    directories:
+      source: "/Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-OyQFRb"
+      binary: "/Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-OyQFRb"
+    cmakeVariables:
+      CMAKE_C_FLAGS: "-march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f  -Wall -Wextra -Wwrite-strings -Wmissing-prototypes -Wformat=2 -Wno-format-nonliteral -Wvla -Wlogical-op -Wshadow"
+      CMAKE_C_FLAGS_DEBUG: "-g"
+      CMAKE_EXE_LINKER_FLAGS: "-nostartfiles -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f "
+      CMAKE_MODULE_PATH: "/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/espressif__cmake_utilities;/Users/borysulanenko/esp/v5.5.3/esp-idf/tools/cmake;/Users/borysulanenko/esp/v5.5.3/esp-idf/tools/cmake/third_party"
+    buildResult:
+      variable: "C_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS"
+      cached: true
+      stdout: |
+        Change Dir: '/Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-OyQFRb'
+        
+        Run Build Command(s): /Users/borysulanenko/.espressif/tools/ninja/1.12.1/ninja -v cmTC_61180
+        [1/2] /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/riscv32-esp-elf-gcc -DC_COMPILER_SUPPORTS_WFORMAT_SIGNEDNESS  -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f  -Wall -Wextra -Wwrite-strings -Wmissing-prototypes -Wformat=2 -Wno-format-nonliteral -Wvla -Wlogical-op -Wshadow    -Wformat-signedness -o CMakeFiles/cmTC_61180.dir/src.c.obj -c /Users/borysulanenko/PycharmProjects/touch_clock/build/CMakeFiles/CMakeScratch/TryCompile-OyQFRb/src.c
+        [2/2] : && /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/riscv32-esp-elf-gcc -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f  -Wall -Wextra -Wwrite-strings -Wmissing-prototypes -Wformat=2 -Wno-format-nonliteral -Wvla -Wlogical-op -Wshadow -nostartfiles -march=rv32imafc_zicsr_zifencei_xesploop_xespv -mabi=ilp32f CMakeFiles/cmTC_61180.dir/src.c.obj -o cmTC_61180   && :
+        /Users/borysulanenko/.espressif/tools/riscv32-esp-elf/esp-14.2.0_20251107/riscv32-esp-elf/bin/../lib/gcc/riscv32-esp-elf/14.2.0/../../../../riscv32-esp-elf/bin/ld: warning: cannot find entry symbol _start; defaulting to 00010094
+        
+      exitCode: 0
+...

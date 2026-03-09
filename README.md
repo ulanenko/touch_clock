@@ -19,6 +19,7 @@ Built with ESP-IDF v5.5+ and LVGL 9.3.
 - **Digital clock face** — large HH:MM, seconds, date
 - **Analog clock face** — traditional dial with hour/minute/second hands, pre-rendered onto a canvas for performance
 - **Swipe left/right** to switch between faces (reversible mid-swipe)
+- **Swipe up** to open a brightness menu with a slider for display backlight control
 - Page indicator dots
 
 ## Project structure
