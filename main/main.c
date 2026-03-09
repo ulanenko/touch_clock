@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdbool.h>
+#include <string.h>
 #include <math.h>
 #include <time.h>
 #include <sys/time.h>
@@ -13,6 +14,8 @@
 #include "bsp/esp-bsp.h"
 
 static const char *TAG = "clock_app";
+extern const lv_img_dsc_t slava_face_img;
+extern const lv_img_dsc_t slava_dark_face_img;
 
 #define SCREEN_SIZE     720
 #define CENTER          (SCREEN_SIZE / 2)
@@ -29,11 +32,46 @@ static const char *TAG = "clock_app";
 #define BRIGHTNESS_SHEET_OPEN_Y (SCREEN_SIZE - BRIGHTNESS_SHEET_HEIGHT - 40)
 #define BRIGHTNESS_SHEET_CLOSED_Y SCREEN_SIZE
 #define BRIGHTNESS_SCRIM_OPA LV_OPA_60
+#define FACE_COUNT 6
+
+#define SLAVA_HOUR_HAND_LEN 128
+#define SLAVA_MIN_HAND_LEN  180
+#define SLAVA_SEC_HAND_LEN  204
+#define SLAVA_SEC_TAIL_LEN  38
+#define SLAVA_HAND_COL      0x1A1A1A
+#define SLAVA_DARK_HAND_COL 0xD0D0D0
+#define SLAVA_SEC_COL       0xCC1111
+
+#define MTX_GRID_X    31
+#define MTX_GRID_Y    33
+#define MTX_DIGIT_H   7
+#define MTX_DOT_SIZE  16
+#define MTX_DOT_GAP   6
+#define MTX_PITCH     (MTX_DOT_SIZE + MTX_DOT_GAP)
+#define MTX_DOT_RAD   5
+#define MTX_COL_ON    0x00CC44
+#define MTX_COL_OFF   0x071107
+
+#define WH_RING_DOTS   60
+#define WH_RING_R      324
+#define WH_DOT_LIT_R   8
+#define WH_DOT_DIM_R   5
+#define WH_DOT_SZ      16
+#define WH_DOT_GAP     6
+#define WH_DOT_PITCH   (WH_DOT_SZ + WH_DOT_GAP)
+#define WH_DIGIT_COLS  5
+#define WH_DIGIT_ROWS  7
+#define WH_COL_ON      0xD4A017
+#define WH_COL_OFF     0x1E1600
 
 /* ── UI handles ─────────────────────────────────────────── */
 static lv_obj_t *tv;                 /* tileview root       */
 static lv_obj_t *tile_digital;       /* tile 0 – digital    */
 static lv_obj_t *tile_analog;        /* tile 1 – analog     */
+static lv_obj_t *tile_matrix;        /* tile 2 – matrix     */
+static lv_obj_t *tile_wharton;       /* tile 3 – wharton    */
+static lv_obj_t *tile_slava;         /* tile 4 – slava      */
+static lv_obj_t *tile_slava_dark;    /* tile 5 – slava dark */
 static lv_obj_t *brightness_overlay;
 static lv_obj_t *brightness_sheet;
 static lv_obj_t *brightness_slider;
@@ -55,9 +93,38 @@ static lv_obj_t *line_min;
 static lv_obj_t *line_sec;
 static lv_obj_t *center_dot;
 
+/* Slava face */
+static lv_point_precise_t slava_hour_pts[2];
+static lv_point_precise_t slava_min_pts[2];
+static lv_point_precise_t slava_sec_pts[2];
+static lv_obj_t *slava_line_hour;
+static lv_obj_t *slava_line_min;
+static lv_obj_t *slava_line_sec;
+static lv_obj_t *slava_center_dot;
+static lv_point_precise_t slava_dark_hour_pts[2];
+static lv_point_precise_t slava_dark_min_pts[2];
+static lv_point_precise_t slava_dark_sec_pts[2];
+static lv_obj_t *slava_dark_line_hour;
+static lv_obj_t *slava_dark_line_min;
+static lv_obj_t *slava_dark_line_sec;
+static lv_obj_t *slava_dark_center_dot;
+
+/* Matrix face */
+static lv_obj_t *matrix_face_obj;
+static bool matrix_on[MTX_GRID_X][MTX_GRID_Y];
+static int matrix_x0;
+static int matrix_y0;
+static void *matrix_face_buf;
+
+/* Wharton face */
+static lv_obj_t *wharton_face_obj;
+static bool wharton_digit_dots[4][WH_DIGIT_COLS][WH_DIGIT_ROWS];
+static bool wharton_colon_on;
+static int wharton_second_count;
+static void *wharton_face_buf;
+
 /* Dot indicator */
-static lv_obj_t *dot_left;
-static lv_obj_t *dot_right;
+static lv_obj_t *page_dots[FACE_COUNT];
 static int current_brightness = 50;
 static bool brightness_animating = false;
 static bool brightness_dragging = false;
@@ -98,6 +165,17 @@ static void hand_endpoint(int cx, int cy, int length, float angle_deg,
     p0->y = cy;
     p1->x = cx + (int)(length * cosf(rad));
     p1->y = cy + (int)(length * sinf(rad));
+}
+
+static void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
+                                float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
+{
+    float rad = (angle_deg - 90.0f) * (M_PI / 180.0f);
+
+    p0->x = cx - (int)(tail_length * cosf(rad));
+    p0->y = cy - (int)(tail_length * sinf(rad));
+    p1->x = cx + (int)(head_length * cosf(rad));
+    p1->y = cy + (int)(head_length * sinf(rad));
 }
 
 static struct tm get_local_time(void)
@@ -289,6 +367,357 @@ static void update_analog_face(void)
     lv_line_set_points(line_sec,  sec_pts,  2);
 }
 
+/* ── Matrix face ────────────────────────────────────────── */
+
+static const uint8_t matrix_font[10][MTX_DIGIT_H] = {
+    {0x0E,0x11,0x13,0x15,0x19,0x11,0x0E},
+    {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
+    {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},
+    {0x0E,0x11,0x01,0x06,0x01,0x11,0x0E},
+    {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
+    {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E},
+    {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E},
+    {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
+    {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},
+    {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C},
+};
+
+static const uint8_t matrix_digit_col[4] = {2, 8, 18, 24};
+static const uint8_t matrix_colon_col = 15;
+static const uint8_t matrix_digit_row0 = (MTX_GRID_Y - MTX_DIGIT_H) / 2;
+
+static void build_matrix_state(void)
+{
+    struct tm ti = get_local_time();
+    int digits[4] = {ti.tm_hour / 10, ti.tm_hour % 10, ti.tm_min / 10, ti.tm_min % 10};
+
+    memset(matrix_on, 0, sizeof(matrix_on));
+
+    for (int d = 0; d < 4; d++) {
+        const uint8_t *glyph = matrix_font[digits[d]];
+        int col0 = matrix_digit_col[d];
+        for (int r = 0; r < MTX_DIGIT_H; r++) {
+            uint8_t row = glyph[r];
+            for (int c = 0; c < 5; c++) {
+                if ((row >> (4 - c)) & 1) {
+                    matrix_on[col0 + c][matrix_digit_row0 + r] = true;
+                }
+            }
+        }
+    }
+
+    if ((ti.tm_sec & 1) == 0) {
+        matrix_on[matrix_colon_col][matrix_digit_row0 + 2] = true;
+        matrix_on[matrix_colon_col][matrix_digit_row0 + 4] = true;
+    }
+}
+
+static void render_matrix_face(void)
+{
+    lv_layer_t layer;
+    lv_draw_rect_dsc_t dsc;
+
+    if (!matrix_face_obj) {
+        return;
+    }
+
+    lv_canvas_fill_bg(matrix_face_obj, lv_color_hex(0x050505), LV_OPA_COVER);
+    lv_canvas_init_layer(matrix_face_obj, &layer);
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.radius = MTX_DOT_RAD;
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.border_width = 0;
+    dsc.shadow_width = 0;
+    dsc.outline_width = 0;
+
+    for (int c = 0; c < MTX_GRID_X; c++) {
+        for (int r = 0; r < MTX_GRID_Y; r++) {
+            lv_area_t area;
+            area.x1 = matrix_x0 + c * MTX_PITCH;
+            area.y1 = matrix_y0 + r * MTX_PITCH;
+            area.x2 = area.x1 + MTX_DOT_SIZE - 1;
+            area.y2 = area.y1 + MTX_DOT_SIZE - 1;
+            dsc.bg_color = lv_color_hex(matrix_on[c][r] ? MTX_COL_ON : MTX_COL_OFF);
+            lv_draw_rect(&layer, &dsc, &area);
+        }
+    }
+
+    lv_canvas_finish_layer(matrix_face_obj, &layer);
+}
+
+static void create_matrix_face(lv_obj_t *parent)
+{
+    int total_w;
+    int total_h;
+
+    lv_obj_set_style_bg_color(parent, lv_color_hex(0x050505), 0);
+
+    total_w = (MTX_GRID_X - 1) * MTX_PITCH + MTX_DOT_SIZE;
+    total_h = (MTX_GRID_Y - 1) * MTX_PITCH + MTX_DOT_SIZE;
+    matrix_x0 = (SCREEN_SIZE - total_w) / 2;
+    matrix_y0 = (SCREEN_SIZE - total_h) / 2;
+
+    if (!matrix_face_buf) {
+        matrix_face_buf = heap_caps_malloc(SCREEN_SIZE * SCREEN_SIZE * sizeof(lv_color16_t),
+                                           MALLOC_CAP_SPIRAM);
+    }
+
+    matrix_face_obj = lv_canvas_create(parent);
+    lv_canvas_set_buffer(matrix_face_obj, matrix_face_buf, SCREEN_SIZE, SCREEN_SIZE,
+                         LV_COLOR_FORMAT_RGB565);
+    lv_obj_set_pos(matrix_face_obj, 0, 0);
+    lv_obj_clear_flag(matrix_face_obj, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static void update_matrix_face(void)
+{
+    build_matrix_state();
+    render_matrix_face();
+}
+
+/* ── Wharton face ───────────────────────────────────────── */
+
+static const uint8_t wharton_font[10][WH_DIGIT_ROWS] = {
+    {0x0E,0x11,0x11,0x11,0x11,0x11,0x0E},
+    {0x04,0x0C,0x04,0x04,0x04,0x04,0x0E},
+    {0x0E,0x11,0x01,0x02,0x04,0x08,0x1F},
+    {0x0E,0x11,0x01,0x06,0x01,0x11,0x0E},
+    {0x02,0x06,0x0A,0x12,0x1F,0x02,0x02},
+    {0x1F,0x10,0x1E,0x01,0x01,0x11,0x0E},
+    {0x06,0x08,0x10,0x1E,0x11,0x11,0x0E},
+    {0x1F,0x01,0x02,0x04,0x08,0x08,0x08},
+    {0x0E,0x11,0x11,0x0E,0x11,0x11,0x0E},
+    {0x0E,0x11,0x11,0x0F,0x01,0x02,0x0C},
+};
+
+static void build_wharton_state(void)
+{
+    struct tm ti = get_local_time();
+    int digits[4] = {ti.tm_hour / 10, ti.tm_hour % 10, ti.tm_min / 10, ti.tm_min % 10};
+
+    for (int d = 0; d < 4; d++) {
+        const uint8_t *glyph = wharton_font[digits[d]];
+        for (int r = 0; r < WH_DIGIT_ROWS; r++) {
+            for (int c = 0; c < WH_DIGIT_COLS; c++) {
+                wharton_digit_dots[d][c][r] = (glyph[r] >> (4 - c)) & 1;
+            }
+        }
+    }
+
+    wharton_colon_on = ((ti.tm_sec & 1) == 0);
+    wharton_second_count = ti.tm_sec;
+}
+
+static void render_wharton_face(void)
+{
+    lv_layer_t layer;
+    lv_draw_rect_dsc_t dsc;
+
+    if (!wharton_face_obj) {
+        return;
+    }
+
+    lv_canvas_fill_bg(wharton_face_obj, lv_color_black(), LV_OPA_COVER);
+    lv_canvas_init_layer(wharton_face_obj, &layer);
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.border_width = 0;
+    dsc.shadow_width = 0;
+    dsc.outline_width = 0;
+
+    for (int i = 0; i < WH_RING_DOTS; i++) {
+        float angle = (i * 6.0f - 90.0f) * (M_PI / 180.0f);
+        int cx = CENTER + (int)(WH_RING_R * cosf(angle));
+        int cy = CENTER + (int)(WH_RING_R * sinf(angle));
+        int radius = (i < wharton_second_count) ? WH_DOT_LIT_R : WH_DOT_DIM_R;
+        lv_area_t area;
+        area.x1 = cx - radius;
+        area.y1 = cy - radius;
+        area.x2 = cx + radius;
+        area.y2 = cy + radius;
+        dsc.radius = radius;
+        dsc.bg_color = lv_color_hex((i < wharton_second_count) ? WH_COL_ON : WH_COL_OFF);
+        lv_draw_rect(&layer, &dsc, &area);
+    }
+
+    int digit_w = WH_DIGIT_COLS * WH_DOT_PITCH - WH_DOT_GAP;
+    int colon_w = WH_DOT_SZ;
+    int pair_gap = WH_DOT_PITCH;
+    int colon_gap = WH_DOT_PITCH + 2;
+    int total_w = 4 * digit_w + 2 * pair_gap + colon_w + 2 * colon_gap;
+    int digit_h = WH_DIGIT_ROWS * WH_DOT_PITCH - WH_DOT_GAP;
+    int base_x = (SCREEN_SIZE - total_w) / 2;
+    int base_y = (SCREEN_SIZE - digit_h) / 2 - 8;
+    int digit_x[4];
+    int colon_x;
+
+    digit_x[0] = base_x;
+    digit_x[1] = digit_x[0] + digit_w + pair_gap;
+    colon_x = digit_x[1] + digit_w + colon_gap;
+    digit_x[2] = colon_x + colon_w + colon_gap;
+    digit_x[3] = digit_x[2] + digit_w + pair_gap;
+
+    dsc.radius = WH_DOT_SZ / 2;
+    for (int d = 0; d < 4; d++) {
+        for (int c = 0; c < WH_DIGIT_COLS; c++) {
+            for (int r = 0; r < WH_DIGIT_ROWS; r++) {
+                lv_area_t area;
+                area.x1 = digit_x[d] + c * WH_DOT_PITCH;
+                area.y1 = base_y + r * WH_DOT_PITCH;
+                area.x2 = area.x1 + WH_DOT_SZ - 1;
+                area.y2 = area.y1 + WH_DOT_SZ - 1;
+                dsc.bg_color = lv_color_hex(wharton_digit_dots[d][c][r] ? WH_COL_ON : WH_COL_OFF);
+                lv_draw_rect(&layer, &dsc, &area);
+            }
+        }
+    }
+
+    dsc.bg_color = lv_color_hex(wharton_colon_on ? WH_COL_ON : WH_COL_OFF);
+    for (int i = 0; i < 2; i++) {
+        int colon_y = base_y + (i == 0 ? 2 : 4) * WH_DOT_PITCH;
+        lv_area_t area;
+        area.x1 = colon_x;
+        area.y1 = colon_y;
+        area.x2 = colon_x + WH_DOT_SZ - 1;
+        area.y2 = colon_y + WH_DOT_SZ - 1;
+        lv_draw_rect(&layer, &dsc, &area);
+    }
+
+    lv_canvas_finish_layer(wharton_face_obj, &layer);
+}
+
+static void create_wharton_face(lv_obj_t *parent)
+{
+    lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
+
+    if (!wharton_face_buf) {
+        wharton_face_buf = heap_caps_malloc(SCREEN_SIZE * SCREEN_SIZE * sizeof(lv_color16_t),
+                                            MALLOC_CAP_SPIRAM);
+    }
+
+    wharton_face_obj = lv_canvas_create(parent);
+    lv_canvas_set_buffer(wharton_face_obj, wharton_face_buf, SCREEN_SIZE, SCREEN_SIZE,
+                         LV_COLOR_FORMAT_RGB565);
+    lv_obj_set_pos(wharton_face_obj, 0, 0);
+    lv_obj_clear_flag(wharton_face_obj, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static void update_wharton_face(void)
+{
+    build_wharton_state();
+    render_wharton_face();
+}
+
+/* ── Slava face ─────────────────────────────────────────── */
+
+static void create_slava_face(lv_obj_t *parent)
+{
+    lv_obj_t *face;
+
+    lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
+
+    face = lv_image_create(parent);
+    lv_image_set_src(face, &slava_face_img);
+    lv_obj_remove_flag(face, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(face);
+
+    slava_line_hour = lv_line_create(parent);
+    lv_obj_set_style_line_width(slava_line_hour, 7, 0);
+    lv_obj_set_style_line_color(slava_line_hour, lv_color_hex(SLAVA_HAND_COL), 0);
+    lv_obj_set_style_line_rounded(slava_line_hour, true, 0);
+
+    slava_line_min = lv_line_create(parent);
+    lv_obj_set_style_line_width(slava_line_min, 5, 0);
+    lv_obj_set_style_line_color(slava_line_min, lv_color_hex(SLAVA_HAND_COL), 0);
+    lv_obj_set_style_line_rounded(slava_line_min, true, 0);
+
+    slava_line_sec = lv_line_create(parent);
+    lv_obj_set_style_line_width(slava_line_sec, 3, 0);
+    lv_obj_set_style_line_color(slava_line_sec, lv_color_hex(SLAVA_SEC_COL), 0);
+    lv_obj_set_style_line_rounded(slava_line_sec, true, 0);
+
+    slava_center_dot = lv_obj_create(parent);
+    lv_obj_set_size(slava_center_dot, 16, 16);
+    lv_obj_set_style_radius(slava_center_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(slava_center_dot, lv_color_hex(SLAVA_HAND_COL), 0);
+    lv_obj_set_style_border_width(slava_center_dot, 0, 0);
+    lv_obj_set_style_pad_all(slava_center_dot, 0, 0);
+    lv_obj_align(slava_center_dot, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void update_slava_face(void)
+{
+    struct tm ti = get_local_time();
+    float hour_angle = ((ti.tm_hour % 12) + ti.tm_min / 60.0f) * 30.0f;
+    float min_angle = (ti.tm_min + ti.tm_sec / 60.0f) * 6.0f;
+    float sec_angle = ti.tm_sec * 6.0f;
+
+    hand_endpoint(CENTER, CENTER, SLAVA_HOUR_HAND_LEN,
+                  hour_angle, &slava_hour_pts[0], &slava_hour_pts[1]);
+    hand_endpoint(CENTER, CENTER, SLAVA_MIN_HAND_LEN,
+                  min_angle, &slava_min_pts[0], &slava_min_pts[1]);
+    hand_line_endpoints(CENTER, CENTER, SLAVA_SEC_TAIL_LEN, SLAVA_SEC_HAND_LEN,
+                        sec_angle, &slava_sec_pts[0], &slava_sec_pts[1]);
+
+    lv_line_set_points(slava_line_hour, slava_hour_pts, 2);
+    lv_line_set_points(slava_line_min, slava_min_pts, 2);
+    lv_line_set_points(slava_line_sec, slava_sec_pts, 2);
+}
+
+static void create_slava_dark_face(lv_obj_t *parent)
+{
+    lv_obj_t *face;
+
+    lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
+
+    face = lv_image_create(parent);
+    lv_image_set_src(face, &slava_dark_face_img);
+    lv_obj_remove_flag(face, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(face);
+
+    slava_dark_line_hour = lv_line_create(parent);
+    lv_obj_set_style_line_width(slava_dark_line_hour, 7, 0);
+    lv_obj_set_style_line_color(slava_dark_line_hour, lv_color_hex(SLAVA_DARK_HAND_COL), 0);
+    lv_obj_set_style_line_rounded(slava_dark_line_hour, true, 0);
+
+    slava_dark_line_min = lv_line_create(parent);
+    lv_obj_set_style_line_width(slava_dark_line_min, 5, 0);
+    lv_obj_set_style_line_color(slava_dark_line_min, lv_color_hex(SLAVA_DARK_HAND_COL), 0);
+    lv_obj_set_style_line_rounded(slava_dark_line_min, true, 0);
+
+    slava_dark_line_sec = lv_line_create(parent);
+    lv_obj_set_style_line_width(slava_dark_line_sec, 3, 0);
+    lv_obj_set_style_line_color(slava_dark_line_sec, lv_color_hex(SLAVA_SEC_COL), 0);
+    lv_obj_set_style_line_rounded(slava_dark_line_sec, true, 0);
+
+    slava_dark_center_dot = lv_obj_create(parent);
+    lv_obj_set_size(slava_dark_center_dot, 16, 16);
+    lv_obj_set_style_radius(slava_dark_center_dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(slava_dark_center_dot, lv_color_hex(SLAVA_DARK_HAND_COL), 0);
+    lv_obj_set_style_border_width(slava_dark_center_dot, 0, 0);
+    lv_obj_set_style_pad_all(slava_dark_center_dot, 0, 0);
+    lv_obj_align(slava_dark_center_dot, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void update_slava_dark_face(void)
+{
+    struct tm ti = get_local_time();
+    float hour_angle = ((ti.tm_hour % 12) + ti.tm_min / 60.0f) * 30.0f;
+    float min_angle = (ti.tm_min + ti.tm_sec / 60.0f) * 6.0f;
+    float sec_angle = ti.tm_sec * 6.0f;
+
+    hand_endpoint(CENTER, CENTER, SLAVA_HOUR_HAND_LEN,
+                  hour_angle, &slava_dark_hour_pts[0], &slava_dark_hour_pts[1]);
+    hand_endpoint(CENTER, CENTER, SLAVA_MIN_HAND_LEN,
+                  min_angle, &slava_dark_min_pts[0], &slava_dark_min_pts[1]);
+    hand_line_endpoints(CENTER, CENTER, SLAVA_SEC_TAIL_LEN, SLAVA_SEC_HAND_LEN,
+                        sec_angle, &slava_dark_sec_pts[0], &slava_dark_sec_pts[1]);
+
+    lv_line_set_points(slava_dark_line_hour, slava_dark_hour_pts, 2);
+    lv_line_set_points(slava_dark_line_min, slava_dark_min_pts, 2);
+    lv_line_set_points(slava_dark_line_sec, slava_dark_sec_pts, 2);
+}
+
 /* ── Page indicator dots ────────────────────────────────── */
 
 static void update_dots(int active_page)
@@ -296,34 +725,50 @@ static void update_dots(int active_page)
     lv_color_t on  = lv_color_white();
     lv_color_t off = lv_color_make(0x55, 0x55, 0x55);
 
-    lv_obj_set_style_bg_color(dot_left,  (active_page == 0) ? on : off, 0);
-    lv_obj_set_style_bg_color(dot_right, (active_page == 1) ? on : off, 0);
+    for (int i = 0; i < FACE_COUNT; i++) {
+        lv_obj_set_style_bg_color(page_dots[i], (active_page == i) ? on : off, 0);
+    }
 }
 
 static void tv_value_changed_cb(lv_event_t *e)
 {
     lv_obj_t *active = lv_tileview_get_tile_active(tv);
-    int page = (active == tile_analog) ? 1 : 0;
+    int page = 0;
+
+    LV_UNUSED(e);
+
+    if (active == tile_analog) {
+        page = 1;
+    }
+    else if (active == tile_matrix) {
+        page = 2;
+    }
+    else if (active == tile_wharton) {
+        page = 3;
+    }
+    else if (active == tile_slava) {
+        page = 4;
+    }
+    else if (active == tile_slava_dark) {
+        page = 5;
+    }
+
     update_dots(page);
 }
 
 static void create_dots(lv_obj_t *scr)
 {
-    dot_left = lv_obj_create(scr);
-    lv_obj_set_size(dot_left, 10, 10);
-    lv_obj_set_style_radius(dot_left, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(dot_left, 0, 0);
-    lv_obj_set_scrollbar_mode(dot_left, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(dot_left, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(dot_left, LV_ALIGN_BOTTOM_MID, -10, -38);
+    int start_x = -((FACE_COUNT - 1) * 18) / 2;
 
-    dot_right = lv_obj_create(scr);
-    lv_obj_set_size(dot_right, 10, 10);
-    lv_obj_set_style_radius(dot_right, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(dot_right, 0, 0);
-    lv_obj_set_scrollbar_mode(dot_right, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(dot_right, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(dot_right, LV_ALIGN_BOTTOM_MID, 10, -38);
+    for (int i = 0; i < FACE_COUNT; i++) {
+        page_dots[i] = lv_obj_create(scr);
+        lv_obj_set_size(page_dots[i], 10, 10);
+        lv_obj_set_style_radius(page_dots[i], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(page_dots[i], 0, 0);
+        lv_obj_set_scrollbar_mode(page_dots[i], LV_SCROLLBAR_MODE_OFF);
+        lv_obj_remove_flag(page_dots[i], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_align(page_dots[i], LV_ALIGN_BOTTOM_MID, start_x + i * 18, -38);
+    }
 
     update_dots(0);
 }
@@ -718,8 +1163,14 @@ static void create_brightness_overlay(lv_obj_t *scr)
 
 static void clock_timer_cb(lv_timer_t *timer)
 {
+    LV_UNUSED(timer);
+
     update_digital_face();
     update_analog_face();
+    update_matrix_face();
+    update_wharton_face();
+    update_slava_face();
+    update_slava_dark_face();
 }
 
 /* ── Entry point ────────────────────────────────────────── */
@@ -768,14 +1219,30 @@ void app_main(void)
 
     tile_digital = lv_tileview_add_tile(tv, 0, 0, LV_DIR_HOR);
     tile_analog  = lv_tileview_add_tile(tv, 1, 0, LV_DIR_HOR);
+    tile_matrix  = lv_tileview_add_tile(tv, 2, 0, LV_DIR_HOR);
+    tile_wharton = lv_tileview_add_tile(tv, 3, 0, LV_DIR_HOR);
+    tile_slava   = lv_tileview_add_tile(tv, 4, 0, LV_DIR_HOR);
+    tile_slava_dark = lv_tileview_add_tile(tv, 5, 0, LV_DIR_HOR);
 
     lv_obj_set_style_pad_all(tile_digital, 0, 0);
     lv_obj_set_style_border_width(tile_digital, 0, 0);
     lv_obj_set_style_pad_all(tile_analog, 0, 0);
     lv_obj_set_style_border_width(tile_analog, 0, 0);
+    lv_obj_set_style_pad_all(tile_matrix, 0, 0);
+    lv_obj_set_style_border_width(tile_matrix, 0, 0);
+    lv_obj_set_style_pad_all(tile_wharton, 0, 0);
+    lv_obj_set_style_border_width(tile_wharton, 0, 0);
+    lv_obj_set_style_pad_all(tile_slava, 0, 0);
+    lv_obj_set_style_border_width(tile_slava, 0, 0);
+    lv_obj_set_style_pad_all(tile_slava_dark, 0, 0);
+    lv_obj_set_style_border_width(tile_slava_dark, 0, 0);
 
     create_digital_face(tile_digital);
     create_analog_face(tile_analog);
+    create_matrix_face(tile_matrix);
+    create_wharton_face(tile_wharton);
+    create_slava_face(tile_slava);
+    create_slava_dark_face(tile_slava_dark);
 
     /* Page dots overlay */
     create_dots(scr);
@@ -794,6 +1261,10 @@ void app_main(void)
     /* Initial render */
     update_digital_face();
     update_analog_face();
+    update_matrix_face();
+    update_wharton_face();
+    update_slava_face();
+    update_slava_dark_face();
 
     bsp_display_unlock();
 

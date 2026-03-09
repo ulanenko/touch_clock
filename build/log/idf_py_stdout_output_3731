@@ -1,0 +1,72 @@
+Command: ninja flash
+[1/5] cd /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esptool_py && /Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python /Users/borysulanenko/esp/v5.5.3/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/borysulanenko/PycharmProjects/touch_clock/build/partition_table/partition-table.bin /Users/borysulanenko/PycharmProjects/touch_clock/build/touch_clock.bin
+touch_clock.bin binary size 0xda9c0 bytes. Smallest app partition is 0x800000 bytes. 0x725640 bytes (89%) free.
+[2/5] Performing build step for 'bootloader'
+[1/1] cd /Users/borysulanenko/PycharmProjects/touch_clock/build/bootloader/esp-idf/esptool_py && /Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python /Users/borysulanenko/esp/v5.5.3/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x2000 /Users/borysulanenko/PycharmProjects/touch_clock/build/bootloader/bootloader.bin
+Bootloader binary size 0x5dd0 bytes. 0x230 bytes (2%) free.
+[3/5] No install step for 'bootloader'
+[4/5] Completed 'bootloader'
+[4/5] cd /Users/borysulanenko/esp/v5.5.3/esp-idf/components/esptool_py && /Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/bin/cmake -D IDF_PATH=/Users/borysulanenko/esp/v5.5.3/esp-idf -D "SERIAL_TOOL=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python;;/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32p4" -D "SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args" -D WORKING_DIRECTORY=/Users/borysulanenko/PycharmProjects/touch_clock/build -P /Users/borysulanenko/esp/v5.5.3/esp-idf/components/esptool_py/run_serial_tool.cmake
+esptool.py --chip esp32p4 -p /dev/cu.usbmodem2101 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size 32MB 0x2000 bootloader/bootloader.bin 0x10000 touch_clock.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.12.dev1
+Serial port /dev/cu.usbmodem2101
+Connecting...
+Chip is ESP32-P4 (revision v1.3)
+Features: High-Performance MCU
+Crystal is 40MHz
+USB mode: USB-Serial/JTAG
+MAC: 30:ed:a0:e3:35:c1
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00002000 to 0x00007fff...
+Flash will be erased from 0x00010000 to 0x000eafff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+SHA digest in image updated
+Compressed 24016 bytes to 14863...
+Writing at 0x00002000... (100 %)
+Wrote 24016 bytes (14863 compressed) at 0x00002000 in 0.3 seconds (effective 587.4 kbit/s)...
+Hash of data verified.
+Compressed 895424 bytes to 484922...
+Writing at 0x00010000... (3 %)
+Writing at 0x0001ca23... (6 %)
+Writing at 0x00024ed9... (10 %)
+Writing at 0x0002e193... (13 %)
+Writing at 0x0003a64a... (16 %)
+Writing at 0x00047d75... (20 %)
+Writing at 0x00059cb4... (23 %)
+Writing at 0x0005f8b7... (26 %)
+Writing at 0x000654d2... (30 %)
+Writing at 0x0006bc44... (33 %)
+Writing at 0x00071d2c... (36 %)
+Writing at 0x00078067... (40 %)
+Writing at 0x0007db6f... (43 %)
+Writing at 0x00083271... (46 %)
+Writing at 0x000883e7... (50 %)
+Writing at 0x0008dd36... (53 %)
+Writing at 0x00094d02... (56 %)
+Writing at 0x00099fe6... (60 %)
+Writing at 0x0009f7b6... (63 %)
+Writing at 0x000a4e3e... (66 %)
+Writing at 0x000ab0ef... (70 %)
+Writing at 0x000b1e78... (73 %)
+Writing at 0x000b817c... (76 %)
+Writing at 0x000bfa8f... (80 %)
+Writing at 0x000c62da... (83 %)
+Writing at 0x000cc74f... (86 %)
+Writing at 0x000d273d... (90 %)
+Writing at 0x000d8100... (93 %)
+Writing at 0x000de5b2... (96 %)
+Writing at 0x000e4956... (100 %)
+Wrote 895424 bytes (484922 compressed) at 0x00010000 in 5.6 seconds (effective 1287.5 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 120...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (120 compressed) at 0x00008000 in 0.1 seconds (effective 410.2 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...

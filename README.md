@@ -18,7 +18,11 @@ Built with ESP-IDF v5.5+ and LVGL 9.3.
 
 - **Digital clock face** — large HH:MM, seconds, date
 - **Analog clock face** — traditional dial with hour/minute/second hands, pre-rendered onto a canvas for performance
-- **Swipe left/right** to switch between faces (reversible mid-swipe)
+- **Matrix face** — full-screen green dot-matrix time display
+- **Wharton face** — amber LED ring with dot-matrix HH:MM center
+- **Slava face** — ported light analog Slava dial, scaled from the original art for the 720x720 round panel
+- **Slava Dark face** — dark analog Slava dial matched to the same round-display crop
+- **Swipe left/right** to switch between six faces
 - **Swipe up** to open a brightness menu with a slider for display backlight control
 - Page indicator dots
 
