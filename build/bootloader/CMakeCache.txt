@@ -254,7 +254,7 @@ IGNORE_EXTRA_COMPONENT:UNINITIALIZED=
 PROJECT_SOURCE_DIR:UNINITIALIZED=/Users/borysulanenko/PycharmProjects/touch_clock
 
 //No help, variable specified on the command line.
-PYTHON:UNINITIALIZED=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python
+PYTHON:UNINITIALIZED=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python
 
 //No help, variable specified on the command line.
 PYTHON_DEPS_CHECKED:UNINITIALIZED=1

@@ -1,0 +1,110 @@
+Command: ninja flash
+[1/5] cd /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esptool_py && /Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python /Users/borysulanenko/esp/v5.5.3/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 partition --type app /Users/borysulanenko/PycharmProjects/touch_clock/build/partition_table/partition-table.bin /Users/borysulanenko/PycharmProjects/touch_clock/build/touch_clock.bin
+touch_clock.bin binary size 0x3436a0 bytes. Smallest app partition is 0x800000 bytes. 0x4bc960 bytes (59%) free.
+[2/5] Performing build step for 'bootloader'
+[1/1] cd /Users/borysulanenko/PycharmProjects/touch_clock/build/bootloader/esp-idf/esptool_py && /Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python /Users/borysulanenko/esp/v5.5.3/esp-idf/components/partition_table/check_sizes.py --offset 0x8000 bootloader 0x2000 /Users/borysulanenko/PycharmProjects/touch_clock/build/bootloader/bootloader.bin
+Bootloader binary size 0x5dd0 bytes. 0x230 bytes (2%) free.
+[3/5] No install step for 'bootloader'
+[4/5] Completed 'bootloader'
+[4/5] cd /Users/borysulanenko/esp/v5.5.3/esp-idf/components/esptool_py && /Users/borysulanenko/.espressif/tools/cmake/3.30.2/CMake.app/Contents/bin/cmake -D IDF_PATH=/Users/borysulanenko/esp/v5.5.3/esp-idf -D "SERIAL_TOOL=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python;;/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esptool_py/esptool/esptool.py;--chip;esp32p4" -D "SERIAL_TOOL_ARGS=--before=default_reset;--after=hard_reset;write_flash;@flash_args" -D WORKING_DIRECTORY=/Users/borysulanenko/PycharmProjects/touch_clock/build -P /Users/borysulanenko/esp/v5.5.3/esp-idf/components/esptool_py/run_serial_tool.cmake
+esptool.py --chip esp32p4 -p /dev/cu.usbmodem2101 -b 460800 --before=default_reset --after=hard_reset write_flash --flash_mode dio --flash_freq 40m --flash_size 32MB 0x2000 bootloader/bootloader.bin 0x10000 touch_clock.bin 0x8000 partition_table/partition-table.bin
+esptool.py v4.12.dev1
+Serial port /dev/cu.usbmodem2101
+Connecting...
+Chip is ESP32-P4 (revision v1.3)
+Features: High-Performance MCU
+Crystal is 40MHz
+USB mode: USB-Serial/JTAG
+MAC: 30:ed:a0:e3:35:c1
+Uploading stub...
+Running stub...
+Stub running...
+Changing baud rate to 460800
+Changed.
+Configuring flash size...
+Flash will be erased from 0x00002000 to 0x00007fff...
+Flash will be erased from 0x00010000 to 0x00353fff...
+Flash will be erased from 0x00008000 to 0x00008fff...
+SHA digest in image updated
+Compressed 24016 bytes to 14860...
+Writing at 0x00002000... (100 %)
+Wrote 24016 bytes (14860 compressed) at 0x00002000 in 0.3 seconds (effective 584.0 kbit/s)...
+Hash of data verified.
+Compressed 3421856 bytes to 1102595...
+Writing at 0x00010000... (1 %)
+Writing at 0x0001f400... (2 %)
+Writing at 0x0002bfb5... (4 %)
+Writing at 0x00037f68... (5 %)
+Writing at 0x000572be... (7 %)
+Writing at 0x00073ce3... (8 %)
+Writing at 0x0008c396... (10 %)
+Writing at 0x0009efa4... (11 %)
+Writing at 0x000b7278... (13 %)
+Writing at 0x000caf8b... (14 %)
+Writing at 0x000e389d... (16 %)
+Writing at 0x000f67aa... (17 %)
+Writing at 0x00111336... (19 %)
+Writing at 0x0012907a... (20 %)
+Writing at 0x0014a1aa... (22 %)
+Writing at 0x0015f258... (23 %)
+Writing at 0x00171a28... (25 %)
+Writing at 0x001863dd... (26 %)
+Writing at 0x001932fe... (27 %)
+Writing at 0x001a37d8... (29 %)
+Writing at 0x001b6810... (30 %)
+Writing at 0x001c6088... (32 %)
+Writing at 0x001d7bd1... (33 %)
+Writing at 0x001e9431... (35 %)
+Writing at 0x001f7c1a... (36 %)
+Writing at 0x0020b0e8... (38 %)
+Writing at 0x0021c94e... (39 %)
+Writing at 0x0022dc9c... (41 %)
+Writing at 0x00241320... (42 %)
+Writing at 0x002498c0... (44 %)
+Writing at 0x0025423c... (45 %)
+Writing at 0x00261e9f... (47 %)
+Writing at 0x0027520c... (48 %)
+Writing at 0x0027d4ae... (50 %)
+Writing at 0x00282f04... (51 %)
+Writing at 0x002893b3... (52 %)
+Writing at 0x00291428... (54 %)
+Writing at 0x00299bbc... (55 %)
+Writing at 0x002a16e0... (57 %)
+Writing at 0x002a7c62... (58 %)
+Writing at 0x002adb76... (60 %)
+Writing at 0x002b3de2... (61 %)
+Writing at 0x002b96ea... (63 %)
+Writing at 0x002bec88... (64 %)
+Writing at 0x002c3e82... (66 %)
+Writing at 0x002c9740... (67 %)
+Writing at 0x002d0706... (69 %)
+Writing at 0x002d59be... (70 %)
+Writing at 0x002db217... (72 %)
+Writing at 0x002e0aeb... (73 %)
+Writing at 0x002e72f0... (75 %)
+Writing at 0x002edd43... (76 %)
+Writing at 0x002f391c... (77 %)
+Writing at 0x002f9a1b... (79 %)
+Writing at 0x002ff75e... (80 %)
+Writing at 0x00305531... (82 %)
+Writing at 0x0030b55e... (83 %)
+Writing at 0x00311a94... (85 %)
+Writing at 0x00318128... (86 %)
+Writing at 0x0031ded7... (88 %)
+Writing at 0x003242d0... (89 %)
+Writing at 0x0032aa2c... (91 %)
+Writing at 0x00330c26... (92 %)
+Writing at 0x00336c8e... (94 %)
+Writing at 0x0033cc89... (95 %)
+Writing at 0x003429a0... (97 %)
+Writing at 0x0034918c... (98 %)
+Writing at 0x0034fb54... (100 %)
+Wrote 3421856 bytes (1102595 compressed) at 0x00010000 in 19.3 seconds (effective 1414.9 kbit/s)...
+Hash of data verified.
+Compressed 3072 bytes to 120...
+Writing at 0x00008000... (100 %)
+Wrote 3072 bytes (120 compressed) at 0x00008000 in 0.1 seconds (effective 402.7 kbit/s)...
+Hash of data verified.
+
+Leaving...
+Hard resetting via RTS pin...

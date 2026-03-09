@@ -1,0 +1,54 @@
+Command: /Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python /Users/borysulanenko/esp/v5.5.3/esp-idf/tools/idf_monitor.py -p /dev/cu.usbmodem2101 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32p4 --revision 0 --decode-panic backtrace /Users/borysulanenko/PycharmProjects/touch_clock/build/touch_clock.elf /Users/borysulanenko/PycharmProjects/touch_clock/build/bootloader/bootloader.elf -m '/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python' '/Users/borysulanenko/esp/v5.5.3/esp-idf/tools/idf.py' '-p' '/dev/cu.usbmodem2101'
+[0;33m--- esp-idf-monitor 1.9.0 on /dev/cu.usbmodem2101 115200[0m
+[0;33m--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x4ff13c5e: [0;33mesp_cpu_wait_for_intr[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esp_hw_support/cpu.c[0m[0m:[1;31m57[0m
+[0m--- 0x4ff29ed0: [0;33mesp_bootloader_get_description[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esp_bootloader_format/esp_bootloader_desc.c[0m[0m:[1;31m39[0m
+[0m--- 0x4ff2cbd0: [0;33mesp_flash_encryption_enabled[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/bootloader_support/src/flash_encrypt.c[0m[0m:[1;31m89[0m
+[0m--- 0x4ff29eda: [0;33mcall_start_cpu0[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/bootloader/subproject/main/bootloader_start.c[0m[0m:[1;31m27[0m
+[0;33m--- Stack dump detected[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x48038c04: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m277[0m
+[0m--- 0x48038b62: [0;33mlv_inv_area[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/core/lv_refr.c[0m[0m:[1;31m264[0m
+[0m--- 0x480397e8: [0;33mlv_display_send_event[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/display/lv_display.c[0m[0m:[1;31m892[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m--- 0x4ff1b9e6: [0;33mvPortExitCriticalMultiCore[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/freertos/FreeRTOS-Kernel/portable/riscv/port.c[0m[0m:[1;31m569[0m
+[0m--- 0x48040dfa: [0;33mlv_memzero[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/draw/sw/../../misc/../stdlib/lv_string.h[0m[0m:[1;31m75[0m
+[0m--- (inlined by) [0;33mlv_draw_sw_mask_cleanup[0m[0m at [0;32m/Users/borysulanenko/PycharmProjects/touch_clock/managed_components/lvgl__lvgl/src/draw/sw/lv_draw_sw_mask.c[0m[0m:[1;31m137[0m
+[0m--- 0x4fc1a058: [0;33m_printf_i[0m[0m in [0;32mROM[0m
+[0m--- 0x4ff226f2: [0;33mlog_level_get[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/log/src/log_level/tag_log_level/tag_log_level.c[0m[0m:[1;31m80[0m
+[0m--- (inlined by) [0;33mesp_log_level_get_timeout[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/log/src/log_level/tag_log_level/tag_log_level.c[0m[0m:[1;31m102[0m
+[0m--- 0x4fc10a5c: [0;33mCache_WriteBack_All_Gid[0m[0m in [0;32mROM[0m
+[0m--- 0x4ff00003: [0;33m_vector_table[0m[0m at [0;32m??[0m[0m:[1;31m?[0m
+[0m

@@ -16,14 +16,19 @@ Built with ESP-IDF v5.5+ and LVGL 9.3.
 
 ## Features
 
-- **Digital clock face** — large HH:MM, seconds, date
-- **Analog clock face** — traditional dial with hour/minute/second hands, pre-rendered onto a canvas for performance
+- **Digital clock face** — oversized HH:MM with a larger date readout
+- **Analog face** — classic dial with hour, minute, and second hands
 - **Matrix face** — full-screen green dot-matrix time display
 - **Wharton face** — amber LED ring with dot-matrix HH:MM center
 - **Slava face** — ported light analog Slava dial, scaled from the original art for the 720x720 round panel
 - **Slava Dark face** — dark analog Slava dial matched to the same round-display crop
 - **Swipe left/right** to switch between six faces
 - **Swipe up** to open a brightness menu with a slider for display backlight control
+- **Touch settings UI** for Wi-Fi onboarding, timezone selection, alarms, snooze, and night mode
+- **Wi-Fi station mode + SNTP** time sync through the onboard ESP32-C6 companion radio
+- **Five configurable alarms** with weekday masks and snooze
+- **Sunrise ramp** that increases brightness during the 30 minutes before the next alarm
+- **Night mode** with its own clock face and dimmed brightness window
 - Page indicator dots
 
 ## Project structure
@@ -35,8 +40,12 @@ touch_clock/
 ├── sdkconfig.defaults      # Target: esp32p4, 4-inch 720x720
 ├── main/
 │   ├── CMakeLists.txt
-│   ├── idf_component.yml   # LVGL 9.3, Waveshare BSP
-│   └── main.c              # Clock application
+│   ├── idf_component.yml   # LVGL, Waveshare BSP, hosted Wi-Fi
+│   ├── app_settings.c      # Persistent settings + timezone handling
+│   ├── alarm_logic.c       # Alarm, snooze, sunrise, night mode runtime
+│   ├── wifi_time.c         # Wi-Fi station + SNTP integration
+│   ├── clock_ui.c          # Faces and touch settings UI
+│   └── main.c              # App bootstrap and glue
 ├── demos/                  # Waveshare sample projects (reference)
 │   ├── Arduino/
 │   └── ESP-IDF/
@@ -115,7 +124,7 @@ Check that `CONFIG_BSP_LCD_TYPE_720_720_4_INCH=y` is set in `sdkconfig.defaults`
 
 ## Time
 
-The clock initializes to a hardcoded epoch (~March 2025) and counts forward from boot. There is no NTP in this MVP. To add network time sync, connect WiFi via the ESP32-C6 co-processor and use `esp_sntp`.
+The clock boots from the last successfully synced timestamp when one is stored. Once Wi-Fi connects, SNTP refreshes the system clock; until then, the app falls back to a fixed seed epoch so the UI never starts at Unix epoch zero.
 
 ## Key dependencies
 

@@ -68,6 +68,9 @@
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/mbedtls/libmbedtls.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_wifi/libesp_wifi.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_netif/libesp_netif.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_wifi_remote/libespressif__esp_wifi_remote.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_hosted/libespressif__esp_hosted.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/console/libconsole.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_https_ota/libesp_https_ota.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_security/libesp_security.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/pthread/libpthread.a
@@ -147,7 +150,6 @@
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/protobuf-c/libprotobuf-c.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/protocomm/libprotocomm.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/protobuf-c/libprotobuf-c.a
-/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/console/libconsole.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_local_ctrl/libesp_local_ctrl.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/protocomm/libprotocomm.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_https_server/libesp_https_server.a
@@ -192,5 +194,11 @@
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/fatfs/libfatfs.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_lcd_jd9365/libespressif__esp_lcd_jd9365.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_lcd_touch_gt911/libespressif__esp_lcd_touch_gt911.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_hosted/libespressif__esp_hosted.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_serial_slave_link/libespressif__esp_serial_slave_link.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__eppp_link/libespressif__eppp_link.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/esp_eth/libesp_eth.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_serial_slave_link/libespressif__esp_serial_slave_link.a
+/Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/espressif__esp_wifi_remote/libespressif__esp_wifi_remote.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/main/libmain.a
 /Users/borysulanenko/PycharmProjects/touch_clock/build/esp-idf/waveshare__esp32_p4_wifi6_touch_lcd_xc/libwaveshare__esp32_p4_wifi6_touch_lcd_xc.a

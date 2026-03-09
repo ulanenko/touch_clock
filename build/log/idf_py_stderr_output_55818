@@ -1,0 +1,9 @@
+Command: /Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python /Users/borysulanenko/esp/v5.5.3/esp-idf/tools/idf_monitor.py -p /dev/cu.usbmodem2101 -b 115200 --toolchain-prefix riscv32-esp-elf- --target esp32p4 --revision 0 --decode-panic backtrace /Users/borysulanenko/PycharmProjects/touch_clock/build/touch_clock.elf /Users/borysulanenko/PycharmProjects/touch_clock/build/bootloader/bootloader.elf -m '/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python' '/Users/borysulanenko/esp/v5.5.3/esp-idf/tools/idf.py' '-p' '/dev/cu.usbmodem2101'
+[0;33m--- esp-idf-monitor 1.9.0 on /dev/cu.usbmodem2101 115200[0m
+[0;33m--- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H[0m
+[0m--- 0x4ff13c5e: [0;33mesp_cpu_wait_for_intr[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esp_hw_support/cpu.c[0m[0m:[1;31m57[0m
+[0m--- 0x4ff13c5e: [0;33mesp_cpu_wait_for_intr[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esp_hw_support/cpu.c[0m[0m:[1;31m57[0m
+[0m--- 0x4ff29ed0: [0;33mesp_bootloader_get_description[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/esp_bootloader_format/esp_bootloader_desc.c[0m[0m:[1;31m39[0m
+[0m--- 0x4ff2cbd0: [0;33mesp_flash_encryption_enabled[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/bootloader_support/src/flash_encrypt.c[0m[0m:[1;31m89[0m
+[0m--- 0x4ff29eda: [0;33mcall_start_cpu0[0m[0m at [0;32m/Users/borysulanenko/esp/v5.5.3/esp-idf/components/bootloader/subproject/main/bootloader_start.c[0m[0m:[1;31m27[0m
+[0m
