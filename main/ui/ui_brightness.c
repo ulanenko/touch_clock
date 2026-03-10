@@ -558,7 +558,7 @@ static void create_brightness_overlay(void)
 
     actions = lv_obj_create(s_ui.brightness.sheet);
     lv_obj_set_size(actions, lv_pct(100), 144);
-    lv_obj_align(actions, LV_ALIGN_TOP_MID, 0, 34);
+    lv_obj_align(actions, LV_ALIGN_TOP_MID, 0, 24);
     lv_obj_set_style_bg_opa(actions, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(actions, 0, 0);
     lv_obj_set_style_radius(actions, 0, 0);
@@ -595,7 +595,8 @@ static void create_brightness_panel(void)
 
     panel = lv_obj_create(s_ui.brightness.panel_overlay);
     s_ui.brightness.panel = panel;
-    lv_obj_set_size(panel, 560, 280);
+    lv_obj_set_width(panel, 560);
+    lv_obj_set_height(panel, LV_SIZE_CONTENT);
     lv_obj_center(panel);
     lv_obj_set_style_bg_color(panel, lv_color_hex(0x151515), 0);
     lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
