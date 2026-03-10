@@ -121,6 +121,103 @@ static void make_face_layer_passive(lv_obj_t *obj)
     }
 }
 
+static void digital_face_swipe_event_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_indev_t *indev = lv_indev_active();
+    lv_point_t point;
+    lv_coord_t dx;
+    lv_coord_t dy;
+    clock_face_id_t current_face;
+    clock_face_id_t target_face;
+
+    if (indev == NULL) {
+        s_ui.faces.digital_swipe_tracking = false;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSED) {
+        lv_indev_get_point(indev, &s_ui.faces.digital_swipe_start_point);
+        s_ui.faces.digital_swipe_tracking = true;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESS_LOST) {
+        s_ui.faces.digital_swipe_tracking = false;
+        return;
+    }
+
+    if (code != LV_EVENT_RELEASED || !s_ui.faces.digital_swipe_tracking) {
+        return;
+    }
+
+    s_ui.faces.digital_swipe_tracking = false;
+    lv_indev_get_point(indev, &point);
+    dx = point.x - s_ui.faces.digital_swipe_start_point.x;
+    dy = point.y - s_ui.faces.digital_swipe_start_point.y;
+
+    if (LV_ABS(dx) < 56 || LV_ABS(dx) <= LV_ABS(dy) + 20) {
+        return;
+    }
+
+    current_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face
+                                               : tile_to_face(lv_tileview_get_tile_active(s_ui.tileview));
+    target_face = current_face;
+    if (dx < 0 && current_face < (CLOCK_FACE_COUNT - 1)) {
+        target_face = (clock_face_id_t)(current_face + 1);
+    } else if (dx > 0 && current_face > 0) {
+        target_face = (clock_face_id_t)(current_face - 1);
+    }
+
+    if (target_face == current_face) {
+        return;
+    }
+
+    set_active_face(target_face, LV_ANIM_ON);
+    show_affordances_temporarily();
+    if (!s_ui.runtime->in_night_mode && s_ui.settings->current_face != target_face) {
+        s_ui.settings->current_face = target_face;
+        notify_settings_changed();
+    }
+}
+
+static void refresh_digital_face_snapshot(void)
+{
+    lv_coord_t ext_draw;
+
+    if (s_ui.faces.digital_live_root == NULL || s_ui.faces.digital_snapshot_img == NULL) {
+        return;
+    }
+
+    lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+
+    if (s_ui.faces.digital_snapshot_buf == NULL) {
+        s_ui.faces.digital_snapshot_buf = lv_snapshot_create_draw_buf(s_ui.faces.digital_live_root,
+                                                                      LV_COLOR_FORMAT_RGB565);
+        if (s_ui.faces.digital_snapshot_buf == NULL) {
+            lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+            return;
+        }
+    }
+
+    if (lv_snapshot_take_to_draw_buf(s_ui.faces.digital_live_root,
+                                     LV_COLOR_FORMAT_RGB565,
+                                     s_ui.faces.digital_snapshot_buf) != LV_RESULT_OK) {
+        lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    ext_draw = (lv_coord_t)((int32_t)s_ui.faces.digital_snapshot_buf->header.w - SCREEN_SIZE) / 2;
+    if (ext_draw < 0) {
+        ext_draw = 0;
+    }
+    s_ui.faces.digital_snapshot_ext_draw = ext_draw;
+    lv_image_set_src(s_ui.faces.digital_snapshot_img, s_ui.faces.digital_snapshot_buf);
+    lv_obj_set_pos(s_ui.faces.digital_snapshot_img, -ext_draw, -ext_draw);
+    lv_obj_clear_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void create_digital_face(lv_obj_t *parent)
 {
     lv_obj_t *clock_center;
@@ -128,12 +225,37 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_t *side_holder;
     lv_obj_t *days_bar;
 
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0x020403), 0);
-    lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x09160B), 0);
-    lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_VER, 0);
+    lv_obj_set_style_bg_color(parent, lv_color_hex(0x010401), 0);
+    lv_obj_set_style_bg_grad_opa(parent, LV_OPA_TRANSP, 0);
     s_ui.faces.digital_glow = NULL;
+    s_ui.faces.digital_snapshot_buf = NULL;
+    s_ui.faces.digital_snapshot_ext_draw = 0;
+    s_ui.faces.digital_snapshot_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(s_ui.faces.digital_snapshot_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.digital_snapshot_img, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.digital_snapshot_img, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    s_ui.faces.digital_live_root = lv_obj_create(parent);
+    lv_obj_set_size(s_ui.faces.digital_live_root, SCREEN_SIZE, SCREEN_SIZE);
+    lv_obj_set_style_bg_color(s_ui.faces.digital_live_root, lv_color_hex(0x010401), 0);
+    lv_obj_set_style_bg_grad_opa(s_ui.faces.digital_live_root, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.digital_live_root, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.digital_live_root, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_SCROLLABLE);
+    s_ui.faces.digital_swipe_layer = lv_obj_create(parent);
+    lv_obj_set_size(s_ui.faces.digital_swipe_layer, SCREEN_SIZE, SCREEN_SIZE - BOTTOM_EDGE_ZONE - 8);
+    lv_obj_align(s_ui.faces.digital_swipe_layer, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_opa(s_ui.faces.digital_swipe_layer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.digital_swipe_layer, 0, 0);
+    lv_obj_set_style_radius(s_ui.faces.digital_swipe_layer, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.digital_swipe_layer, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.digital_swipe_layer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(s_ui.faces.digital_swipe_layer, digital_face_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_ui.faces.digital_swipe_layer, digital_face_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_ui.faces.digital_swipe_layer, digital_face_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
-    clock_center = lv_obj_create(parent);
+    clock_center = lv_obj_create(s_ui.faces.digital_live_root);
     lv_obj_set_size(clock_center, 664, 328);
     lv_obj_set_style_bg_opa(clock_center, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(clock_center, 0, 0);
@@ -194,7 +316,7 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_align(s_ui.faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_seconds_fg, -120);
 
-    days_bar = lv_obj_create(parent);
+    days_bar = lv_obj_create(s_ui.faces.digital_live_root);
     lv_obj_set_size(days_bar, 580, 36);
     lv_obj_set_style_bg_opa(days_bar, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(days_bar, 0, 0);
@@ -212,7 +334,7 @@ static void create_digital_face(lv_obj_t *parent)
 
     s_ui.faces.digital_date_glow = NULL;
 
-    s_ui.faces.digital_date_label = create_digital_text_label(parent, &dseg14_classic_italic_24, lv_color_hex(0x5CFB5C), LV_OPA_90, 1);
+    s_ui.faces.digital_date_label = create_digital_text_label(s_ui.faces.digital_live_root, &dseg14_classic_italic_24, lv_color_hex(0x5CFB5C), LV_OPA_90, 1);
     lv_label_set_text(s_ui.faces.digital_date_label, "SUN, FEB 11");
     lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
     apply_digital_italic(s_ui.faces.digital_date_label, -60);
@@ -220,6 +342,8 @@ static void create_digital_face(lv_obj_t *parent)
     make_face_layer_passive(clock_center);
     make_face_layer_passive(days_bar);
     make_face_layer_passive(s_ui.faces.digital_date_label);
+    make_face_layer_passive(s_ui.faces.digital_live_root);
+    lv_obj_move_foreground(s_ui.faces.digital_swipe_layer);
 }
 
 static void update_digital_face(void)
@@ -284,6 +408,8 @@ static void update_digital_face(void)
                      x - lv_obj_get_width(s_ui.faces.digital_day_label[i]) / 2,
                      s_digital_day_y_offsets[i]);
     }
+
+    refresh_digital_face_snapshot();
 }
 
 static void update_face(clock_face_id_t face)

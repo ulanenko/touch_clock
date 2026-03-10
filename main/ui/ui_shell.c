@@ -18,6 +18,15 @@ static clock_face_id_t tile_to_face(lv_obj_t *tile)
     return CLOCK_FACE_DIGITAL;
 }
 
+static void apply_face_navigation_mode(clock_face_id_t face)
+{
+    if (face == CLOCK_FACE_DIGITAL) {
+        lv_obj_set_scroll_dir(s_ui.tileview, LV_DIR_NONE);
+    } else {
+        lv_obj_set_scroll_dir(s_ui.tileview, LV_DIR_HOR);
+    }
+}
+
 static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
 {
     if (!clock_face_is_valid(face)) {
@@ -25,6 +34,7 @@ static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
     }
 
     s_ui.suppress_events = true;
+    apply_face_navigation_mode(face);
     lv_tileview_set_tile_by_index(s_ui.tileview, face, 0, anim);
     update_dots(face);
     sync_alarm_banner_style(face);
@@ -44,6 +54,7 @@ static void tileview_value_changed_cb(lv_event_t *event)
 
     active_tile = lv_tileview_get_tile_active(s_ui.tileview);
     face = tile_to_face(active_tile);
+    apply_face_navigation_mode(face);
     update_dots(face);
     sync_alarm_banner_style(face);
     show_affordances_temporarily();
@@ -116,7 +127,10 @@ static void build_root_ui(void)
     lv_obj_set_style_pad_all(s_ui.tileview, 0, 0);
     lv_obj_set_style_border_width(s_ui.tileview, 0, 0);
     lv_obj_set_scrollbar_mode(s_ui.tileview, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_remove_flag(s_ui.tileview, LV_OBJ_FLAG_SCROLL_ONE);
+    lv_obj_add_flag(s_ui.tileview, LV_OBJ_FLAG_SCROLL_ONE);
+    lv_obj_remove_flag(s_ui.tileview, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+    lv_obj_set_scroll_snap_x(s_ui.tileview, LV_SCROLL_SNAP_CENTER);
+    lv_obj_set_scroll_snap_y(s_ui.tileview, LV_SCROLL_SNAP_NONE);
     lv_obj_align(s_ui.tileview, LV_ALIGN_CENTER, 0, 0);
 
     for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {

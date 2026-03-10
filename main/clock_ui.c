@@ -10,6 +10,7 @@
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "lvgl.h"
+#include "others/snapshot/lv_snapshot.h"
 #include "ui/ui_controls.h"
 #include "ui/ui_surface.h"
 #include "wifi_time.h"
@@ -233,6 +234,11 @@ typedef struct {
 
 typedef struct {
     lv_obj_t *digital_glow;
+    lv_obj_t *digital_live_root;
+    lv_obj_t *digital_snapshot_img;
+    lv_draw_buf_t *digital_snapshot_buf;
+    lv_coord_t digital_snapshot_ext_draw;
+    lv_obj_t *digital_swipe_layer;
     lv_obj_t *digital_time_bg;
     lv_obj_t *digital_time_glow;
     lv_obj_t *digital_time_fg;
@@ -281,6 +287,8 @@ typedef struct {
     lv_obj_t *segment_panel;
     lv_obj_t *segment_face_obj;
     lv_obj_t *segment_date_label;
+    bool digital_swipe_tracking;
+    lv_point_t digital_swipe_start_point;
 } clock_ui_face_state_t;
 
 typedef struct {
@@ -324,6 +332,10 @@ static const uint8_t s_matrix_font[10][MTX_DIGIT_H] = {
     {0x0E, 0x11, 0x11, 0x0E, 0x11, 0x11, 0x0E},
     {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
 };
+
+static clock_face_id_t tile_to_face(lv_obj_t *tile);
+static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim);
+static void show_affordances_temporarily(void);
 
 static const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
     {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
