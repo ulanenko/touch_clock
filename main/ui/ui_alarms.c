@@ -1,6 +1,6 @@
 static void sync_alarm_banner_style(clock_face_id_t face)
 {
-    bool dark_badge = (face == CLOCK_FACE_SLAVA);
+    bool dark_badge = (face == CLOCK_FACE_SLAVA || face == CLOCK_FACE_SEVEN_SEGMENT);
 
     lv_obj_set_style_bg_color(s_ui.alarms.banner,
                               dark_badge ? lv_color_hex(0x101010) : lv_color_hex(0xF0E7D2),

@@ -22,7 +22,8 @@ Built with ESP-IDF v5.5+ and LVGL 9.3.
 - **Wharton face** — amber LED ring with dot-matrix HH:MM center
 - **Slava face** — ported light analog Slava dial, scaled from the original art for the 720x720 round panel
 - **Slava Dark face** — dark analog Slava dial matched to the same round-display crop
-- **Swipe left/right** to switch between six faces
+- **7 Segment face** — retro green vacuum-fluorescent style HH:MM display with a glowing date line
+- **Swipe left/right** to switch between seven faces
 - **Swipe up** to open a brightness menu with a slider for display backlight control
 - **Touch settings UI** for Wi-Fi onboarding, timezone selection, alarms, snooze, and night mode
 - **Wi-Fi station mode + SNTP** time sync through the onboard ESP32-C6 companion radio

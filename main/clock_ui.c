@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "assets/slava_assets.h"
+#include "assets/seven_segment_font.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "lvgl.h"
@@ -76,6 +77,24 @@
 #define WH_COL_ON 0xD4A017
 #define WH_COL_OFF 0x1E1600
 
+#define SEG_PANEL_W 648
+#define SEG_PANEL_H 324
+#define SEG_CANVAS_W 620
+#define SEG_CANVAS_H 248
+#define SEG_DIGIT_W 108
+#define SEG_DIGIT_H 176
+#define SEG_DIGIT_THICK 28
+#define SEG_DIGIT_GAP 22
+#define SEG_DIGIT_PAIR_GAP 34
+#define SEG_COLON_GAP 34
+#define SEG_COLON_SIZE 22
+#define SEG_COL_ON 0x5FFFB2
+#define SEG_COL_HIGHLIGHT 0xD8FFE8
+#define SEG_COL_GLOW 0x29C978
+#define SEG_COL_OFF 0x163523
+#define SEG_PANEL_BG 0x08110D
+#define SEG_CANVAS_BG 0x040B08
+
 #define WIFI_DIALOG_WIDTH 620
 #define WIFI_DIALOG_HEIGHT 440
 #define QUICK_ACTION_SYMBOL_BRIGHTNESS LV_SYMBOL_TINT
@@ -124,9 +143,15 @@ typedef struct {
     lv_point_t close_drag_start_point;
     lv_obj_t *overlay;
     lv_obj_t *panel;
-    lv_obj_t *tabview;
+    lv_obj_t *content;
     lv_obj_t *top_sensor;
     lv_obj_t *bottom_sensor;
+    lv_obj_t *left_sensor;
+    lv_obj_t *right_sensor;
+    lv_obj_t *wifi_card;
+    lv_obj_t *timezone_card;
+    lv_obj_t *networks_card;
+    lv_obj_t *night_card;
     lv_obj_t *wifi_dialog_overlay;
     lv_obj_t *wifi_dialog;
     lv_obj_t *wifi_dialog_title;
@@ -141,8 +166,6 @@ typedef struct {
     lv_obj_t *night_start_min_dd;
     lv_obj_t *night_end_hour_dd;
     lv_obj_t *night_end_min_dd;
-    lv_obj_t *night_brightness_slider;
-    lv_obj_t *night_brightness_label;
     lv_obj_t *night_face_dd;
     lv_obj_t *night_status_label;
     network_ctx_t network_ctx[WIFI_TIME_MAX_SCAN_RESULTS];
@@ -209,7 +232,16 @@ typedef struct {
 } clock_ui_alarm_state_t;
 
 typedef struct {
-    lv_obj_t *digital_time_label;
+    lv_obj_t *digital_glow;
+    lv_obj_t *digital_time_bg;
+    lv_obj_t *digital_time_glow;
+    lv_obj_t *digital_time_fg;
+    lv_obj_t *digital_seconds_bg;
+    lv_obj_t *digital_seconds_glow;
+    lv_obj_t *digital_seconds_fg;
+    lv_obj_t *digital_ampm_label;
+    lv_obj_t *digital_day_label[7];
+    lv_obj_t *digital_date_label;
     lv_point_precise_t hour_pts[2];
     lv_point_precise_t min_pts[2];
     lv_point_precise_t sec_pts[2];
@@ -242,6 +274,10 @@ typedef struct {
     int wharton_second_count;
     void *wharton_face_buf;
     lv_obj_t *wharton_face_obj;
+    void *segment_face_buf;
+    lv_obj_t *segment_panel;
+    lv_obj_t *segment_face_obj;
+    lv_obj_t *segment_date_label;
 } clock_ui_face_state_t;
 
 typedef struct {
@@ -299,10 +335,19 @@ static const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
     {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
 };
 
+static const uint8_t s_segment_font[10] = {
+    0x3F, 0x06, 0x5B, 0x4F, 0x66,
+    0x6D, 0x7D, 0x07, 0x7F, 0x6F,
+};
+
 static const uint8_t s_matrix_digit_col[4] = {3, 9, 19, 25};
 static const uint8_t s_matrix_colon_col = 16;
 static const uint8_t s_matrix_digit_row0 = (MTX_GRID_Y - MTX_DIGIT_H) / 2;
 static const char *s_day_short[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+static const char *s_month_short[12] = {
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+};
 
 enum {
     ALARM_REPEAT_PRESET_ONCE = 0,
@@ -316,6 +361,7 @@ static void update_matrix_face(void);
 static void update_wharton_face(void);
 static void update_slava_face(void);
 static void update_slava_dark_face(void);
+static void update_seven_segment_face(void);
 static bool brightness_panel_is_open(void);
 static void open_settings_tab(uint32_t tab_idx);
 static void sync_alarm_controls(void);

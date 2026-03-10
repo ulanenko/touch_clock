@@ -1,11 +1,74 @@
+static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
+{
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_text_color(label, color, 0);
+    if (font != NULL) {
+        lv_obj_set_style_text_font(label, font, 0);
+    }
+}
+
+static void create_centered_card_title(lv_obj_t *parent, const char *title)
+{
+    lv_obj_t *label = lv_label_create(parent);
+
+    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
+    lv_label_set_text(label, title);
+}
+
+static void center_card_children(lv_obj_t *card)
+{
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+}
+
+static lv_obj_t *create_network_button(lv_obj_t *parent, const char *ssid, const char *meta, network_ctx_t *ctx)
+{
+    lv_obj_t *button = lv_button_create(parent);
+    lv_obj_t *title = lv_label_create(button);
+    lv_obj_t *subtitle = lv_label_create(button);
+
+    lv_obj_set_width(button, lv_pct(100));
+    lv_obj_set_height(button, LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(button, 22, 0);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x232323), 0);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x343434), LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(button, 0, 0);
+    lv_obj_set_style_pad_hor(button, 22, 0);
+    lv_obj_set_style_pad_ver(button, 18, 0);
+    lv_obj_set_style_pad_row(button, 8, 0);
+    lv_obj_set_style_shadow_width(button, 16, 0);
+    lv_obj_set_style_shadow_opa(button, LV_OPA_10, 0);
+    lv_obj_set_style_shadow_color(button, lv_color_black(), 0);
+    lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_layout(button, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(button, LV_FLEX_FLOW_COLUMN);
+
+    lv_obj_set_width(title, lv_pct(100));
+    lv_obj_set_style_text_color(title, lv_color_white(), 0);
+    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
+    lv_label_set_text(title, ssid);
+
+    lv_obj_set_width(subtitle, lv_pct(100));
+    lv_obj_set_style_text_color(subtitle, lv_color_hex(0xA8A8A8), 0);
+    lv_label_set_text(subtitle, meta);
+
+    lv_obj_add_event_cb(button, wifi_network_btn_event_cb, LV_EVENT_CLICKED, ctx);
+    return button;
+}
+
 static void sync_wifi_list(void)
 {
     wifi_scan_result_t results[WIFI_TIME_MAX_SCAN_RESULTS];
     uint32_t generation = 0;
     size_t count;
 
+    if (s_ui.settings_ui.wifi_network_list == NULL) {
+        return;
+    }
+
     count = wifi_time_get_scan_results(results, WIFI_TIME_MAX_SCAN_RESULTS, &generation);
-    if (generation == s_ui.settings_ui.scan_generation && lv_obj_get_child_count(s_ui.settings_ui.wifi_network_list) != 0) {
+    if (generation == s_ui.settings_ui.scan_generation &&
+        lv_obj_get_child_count(s_ui.settings_ui.wifi_network_list) != 0) {
         return;
     }
 
@@ -14,31 +77,29 @@ static void sync_wifi_list(void)
 
     if (count == 0) {
         lv_obj_t *label = lv_label_create(s_ui.settings_ui.wifi_network_list);
-        lv_label_set_text(label, "No scan results yet");
-        lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
-        lv_obj_set_width(label, lv_pct(100));
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+
+        style_centered_label(label, NULL, lv_color_hex(0xA8A8A8));
+        lv_label_set_text(label, "No networks yet");
         return;
     }
 
     for (size_t i = 0; i < count; ++i) {
-        char row[96];
+        char meta[64];
+        const char *ssid = results[i].ssid[0] ? results[i].ssid : "<hidden>";
 
         s_ui.settings_ui.network_ctx[i].network_index = i;
-        snprintf(row, sizeof(row), "%s  %ddBm", results[i].ssid[0] ? results[i].ssid : "<hidden>", results[i].rssi);
-        lv_obj_t *btn = lv_list_add_button(s_ui.settings_ui.wifi_network_list, LV_SYMBOL_WIFI, row);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x242424), 0);
-        lv_obj_set_style_bg_color(btn, lv_color_hex(0x343434), LV_STATE_PRESSED);
-        lv_obj_set_style_text_color(btn, lv_color_white(), 0);
-        lv_obj_set_style_border_width(btn, 0, 0);
-        lv_obj_set_style_radius(btn, 16, 0);
-        lv_obj_add_event_cb(btn, wifi_network_btn_event_cb, LV_EVENT_CLICKED, &s_ui.settings_ui.network_ctx[i]);
+        snprintf(meta, sizeof(meta), "%ddBm", results[i].rssi);
+        create_network_button(s_ui.settings_ui.wifi_network_list, ssid, meta, &s_ui.settings_ui.network_ctx[i]);
     }
 }
 
 static void sync_night_controls(void)
 {
     char status[96];
+
+    if (s_ui.settings_ui.night_enabled_sw == NULL) {
+        return;
+    }
 
     s_ui.suppress_events = true;
     if (s_ui.settings->night_mode.enabled) {
@@ -64,16 +125,21 @@ static void sync_wifi_controls(void)
 {
     char saved[160];
 
+    if (s_ui.settings_ui.wifi_timezone_dd == NULL) {
+        return;
+    }
+
     s_ui.suppress_events = true;
     lv_dropdown_set_selected(s_ui.settings_ui.wifi_timezone_dd, s_ui.settings->wifi.timezone_offset_hours + 12);
     s_ui.suppress_events = false;
 
-    lv_label_set_text(s_ui.settings_ui.wifi_status_label, s_ui.runtime->wifi_status[0] ? s_ui.runtime->wifi_status : "Wi-Fi idle");
+    lv_label_set_text(s_ui.settings_ui.wifi_status_label,
+                      s_ui.runtime->wifi_status[0] ? s_ui.runtime->wifi_status : "Wi-Fi idle");
 
     if (s_ui.settings->wifi.ssid[0] != '\0') {
-        snprintf(saved, sizeof(saved), "Saved network: %s", s_ui.settings->wifi.ssid);
+        snprintf(saved, sizeof(saved), "Saved: %s", s_ui.settings->wifi.ssid);
     } else {
-        snprintf(saved, sizeof(saved), "Saved network: none");
+        snprintf(saved, sizeof(saved), "Saved: none");
     }
     lv_label_set_text(s_ui.settings_ui.wifi_saved_label, saved);
 
@@ -143,6 +209,7 @@ static void wifi_dialog_close_event_cb(lv_event_t *event)
         return;
     }
 
+    s_ui.settings_ui.pending_ssid[0] = '\0';
     lv_keyboard_set_textarea(s_ui.settings_ui.wifi_keyboard, NULL);
     lv_obj_add_flag(s_ui.settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(s_ui.settings_ui.wifi_dialog_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -172,9 +239,7 @@ static void wifi_dialog_connect_event_cb(lv_event_t *event)
 
 static void wifi_ta_focus_event_cb(lv_event_t *event)
 {
-    lv_event_code_t code = lv_event_get_code(event);
-
-    if (code == LV_EVENT_FOCUSED) {
+    if (lv_event_get_code(event) == LV_EVENT_FOCUSED) {
         lv_keyboard_set_textarea(s_ui.settings_ui.wifi_keyboard, s_ui.settings_ui.wifi_password_ta);
         lv_obj_clear_flag(s_ui.settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
     }
@@ -189,6 +254,24 @@ static void wifi_keyboard_event_cb(lv_event_t *event)
     }
 }
 
+static void settings_scroll_to_section(uint32_t tab_idx)
+{
+    if (s_ui.settings_ui.content == NULL) {
+        return;
+    }
+
+    if (tab_idx == SETTINGS_TAB_NIGHT && s_ui.settings_ui.night_card != NULL) {
+        lv_obj_scroll_to_view(s_ui.settings_ui.night_card, LV_ANIM_OFF);
+        return;
+    }
+
+    if (s_ui.settings_ui.wifi_card != NULL) {
+        lv_obj_scroll_to_view(s_ui.settings_ui.wifi_card, LV_ANIM_OFF);
+    } else {
+        lv_obj_scroll_to_y(s_ui.settings_ui.content, 0, LV_ANIM_OFF);
+    }
+}
+
 static void open_settings_tab(uint32_t tab_idx)
 {
     brightness_overlay_hide_immediately();
@@ -199,16 +282,16 @@ static void open_settings_tab(uint32_t tab_idx)
     if (s_ui.alarms.open) {
         alarm_management_close();
     }
+
     s_ui.settings_ui.open = true;
     refresh_settings_controls();
     if (s_ui.settings_ui.scan_generation == 0 && s_ui.callbacks.on_wifi_scan_requested != NULL) {
         s_ui.callbacks.on_wifi_scan_requested(s_ui.user_ctx);
     }
-    if (s_ui.settings_ui.tabview != NULL) {
-        lv_tabview_set_active(s_ui.settings_ui.tabview, tab_idx, LV_ANIM_OFF);
-    }
+
     lv_obj_clear_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_ui.settings_ui.overlay);
+    settings_scroll_to_section(tab_idx);
 }
 
 static void settings_button_event_cb(lv_event_t *event)
@@ -222,6 +305,13 @@ static void settings_close_event_cb(lv_event_t *event)
     LV_UNUSED(event);
     s_ui.settings_ui.open = false;
     s_ui.settings_ui.close_dragging = false;
+    if (s_ui.settings_ui.wifi_dialog_overlay != NULL) {
+        lv_obj_add_flag(s_ui.settings_ui.wifi_dialog_overlay, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_ui.settings_ui.wifi_keyboard != NULL) {
+        lv_keyboard_set_textarea(s_ui.settings_ui.wifi_keyboard, NULL);
+        lv_obj_add_flag(s_ui.settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
+    }
     lv_obj_add_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     show_affordances_temporarily();
 }
@@ -324,114 +414,108 @@ static void night_face_event_cb(lv_event_t *event)
     notify_settings_changed();
 }
 
-static void create_wifi_tab(lv_obj_t *tab)
+static void create_wifi_card(void)
 {
-    lv_obj_t *card;
     lv_obj_t *row;
-    lv_obj_t *title;
-    lv_obj_t *subtitle;
 
-    lv_obj_set_style_bg_color(tab, lv_color_hex(0x0D0D0D), 0);
-    lv_obj_set_style_bg_opa(tab, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(tab, 20, 0);
-    lv_obj_set_style_pad_bottom(tab, 32, 0);
-    lv_obj_set_style_pad_row(tab, 18, 0);
-    lv_obj_set_layout(tab, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(tab, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(tab, LV_DIR_VER);
+    s_ui.settings_ui.wifi_card = create_card(s_ui.settings_ui.content);
+    center_card_children(s_ui.settings_ui.wifi_card);
+    create_centered_card_title(s_ui.settings_ui.wifi_card, "Wi-Fi");
 
-    card = create_card(tab);
-    create_section_title(card, "Wi-Fi & time", "Scan networks, save credentials, and sync from NTP.");
-
-    s_ui.settings_ui.wifi_status_label = lv_label_create(card);
-    lv_obj_set_style_text_color(s_ui.settings_ui.wifi_status_label, lv_color_white(), 0);
+    s_ui.settings_ui.wifi_status_label = lv_label_create(s_ui.settings_ui.wifi_card);
+    style_centered_label(s_ui.settings_ui.wifi_status_label, &lv_font_montserrat_20, lv_color_white());
     lv_label_set_text(s_ui.settings_ui.wifi_status_label, "Wi-Fi idle");
 
-    s_ui.settings_ui.wifi_saved_label = lv_label_create(card);
-    lv_obj_set_style_text_color(s_ui.settings_ui.wifi_saved_label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(s_ui.settings_ui.wifi_saved_label, "Saved network: none");
+    s_ui.settings_ui.wifi_saved_label = lv_label_create(s_ui.settings_ui.wifi_card);
+    style_centered_label(s_ui.settings_ui.wifi_saved_label, NULL, lv_color_hex(0xA8A8A8));
+    lv_label_set_text(s_ui.settings_ui.wifi_saved_label, "Saved: none");
 
-    row = create_row(card);
+    row = create_row(s_ui.settings_ui.wifi_card);
+    center_row(row);
     create_action_button(row, "Scan", wifi_scan_event_cb, NULL);
     create_action_button(row, "Sync time", wifi_sync_event_cb, NULL);
     create_action_button(row, "Forget", wifi_forget_event_cb, NULL);
-
-    title = lv_label_create(card);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_label_set_text(title, "Time zone");
-
-    s_ui.settings_ui.wifi_timezone_dd = create_dropdown(card, s_ui.timezone_options, 220);
-    lv_obj_add_event_cb(s_ui.settings_ui.wifi_timezone_dd, timezone_dd_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-
-    subtitle = lv_label_create(card);
-    lv_obj_set_style_text_color(subtitle, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(subtitle, "Tap a network below to enter the password.");
-
-    s_ui.settings_ui.wifi_network_list = lv_list_create(card);
-    lv_obj_set_width(s_ui.settings_ui.wifi_network_list, lv_pct(100));
-    lv_obj_set_height(s_ui.settings_ui.wifi_network_list, 280);
-    lv_obj_set_style_bg_color(s_ui.settings_ui.wifi_network_list, lv_color_hex(0x111111), 0);
-    lv_obj_set_style_bg_opa(s_ui.settings_ui.wifi_network_list, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(s_ui.settings_ui.wifi_network_list, lv_color_white(), 0);
-    lv_obj_set_style_border_width(s_ui.settings_ui.wifi_network_list, 0, 0);
-    lv_obj_set_style_radius(s_ui.settings_ui.wifi_network_list, 18, 0);
 }
 
-static void create_night_tab(lv_obj_t *tab)
+static void create_timezone_card(void)
 {
-    lv_obj_t *card;
+    lv_obj_t *row;
+
+    s_ui.settings_ui.timezone_card = create_card(s_ui.settings_ui.content);
+    center_card_children(s_ui.settings_ui.timezone_card);
+    create_centered_card_title(s_ui.settings_ui.timezone_card, "Time zone");
+
+    row = create_row(s_ui.settings_ui.timezone_card);
+    center_row(row);
+    s_ui.settings_ui.wifi_timezone_dd = create_dropdown(row, s_ui.timezone_options, 240);
+    lv_obj_add_event_cb(s_ui.settings_ui.wifi_timezone_dd, timezone_dd_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+}
+
+static void create_networks_card(void)
+{
+    s_ui.settings_ui.networks_card = create_card(s_ui.settings_ui.content);
+    create_centered_card_title(s_ui.settings_ui.networks_card, "Networks");
+
+    s_ui.settings_ui.wifi_network_list = lv_obj_create(s_ui.settings_ui.networks_card);
+    lv_obj_set_width(s_ui.settings_ui.wifi_network_list, lv_pct(100));
+    lv_obj_set_height(s_ui.settings_ui.wifi_network_list, LV_SIZE_CONTENT);
+    lv_obj_set_style_bg_opa(s_ui.settings_ui.wifi_network_list, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.settings_ui.wifi_network_list, 0, 0);
+    lv_obj_set_style_radius(s_ui.settings_ui.wifi_network_list, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.settings_ui.wifi_network_list, 0, 0);
+    lv_obj_set_style_pad_row(s_ui.settings_ui.wifi_network_list, 14, 0);
+    lv_obj_set_layout(s_ui.settings_ui.wifi_network_list, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(s_ui.settings_ui.wifi_network_list, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(s_ui.settings_ui.wifi_network_list, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static void create_night_card(void)
+{
     lv_obj_t *row;
     lv_obj_t *label;
 
-    lv_obj_set_style_bg_color(tab, lv_color_hex(0x0D0D0D), 0);
-    lv_obj_set_style_bg_opa(tab, LV_OPA_COVER, 0);
-    lv_obj_set_style_pad_all(tab, 20, 0);
-    lv_obj_set_style_pad_bottom(tab, 32, 0);
-    lv_obj_set_style_pad_row(tab, 18, 0);
-    lv_obj_set_layout(tab, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(tab, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(tab, LV_DIR_VER);
+    s_ui.settings_ui.night_card = create_card(s_ui.settings_ui.content);
+    center_card_children(s_ui.settings_ui.night_card);
+    create_centered_card_title(s_ui.settings_ui.night_card, "Night mode");
 
-    card = create_card(tab);
-    create_section_title(card, "Night mode", "Switch face and dim the display in the configured window.");
-
-    row = create_row(card);
+    row = create_row(s_ui.settings_ui.night_card);
+    center_row(row);
     label = lv_label_create(row);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, "Enable");
+    lv_label_set_text(label, "Enabled");
     s_ui.settings_ui.night_enabled_sw = lv_switch_create(row);
     lv_obj_add_event_cb(s_ui.settings_ui.night_enabled_sw, night_enabled_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    s_ui.settings_ui.night_status_label = lv_label_create(card);
-    lv_obj_set_style_text_color(s_ui.settings_ui.night_status_label, lv_color_hex(0xA8A8A8), 0);
+    s_ui.settings_ui.night_status_label = lv_label_create(s_ui.settings_ui.night_card);
+    style_centered_label(s_ui.settings_ui.night_status_label, NULL, lv_color_hex(0xA8A8A8));
     lv_label_set_text(s_ui.settings_ui.night_status_label, "Night mode disabled");
 
-    label = lv_label_create(card);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    label = lv_label_create(s_ui.settings_ui.night_card);
+    style_centered_label(label, NULL, lv_color_white());
     lv_label_set_text(label, "Start");
-    row = create_row(card);
+    row = create_row(s_ui.settings_ui.night_card);
+    center_row(row);
     s_ui.settings_ui.night_start_hour_dd = create_dropdown(row, s_ui.hour_options, 120);
     s_ui.settings_ui.night_start_min_dd = create_dropdown(row, s_ui.minute_options, 120);
     lv_obj_add_event_cb(s_ui.settings_ui.night_start_hour_dd, night_hour_minute_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_ui.settings_ui.night_start_min_dd, night_hour_minute_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    label = lv_label_create(card);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    label = lv_label_create(s_ui.settings_ui.night_card);
+    style_centered_label(label, NULL, lv_color_white());
     lv_label_set_text(label, "End");
-    row = create_row(card);
+    row = create_row(s_ui.settings_ui.night_card);
+    center_row(row);
     s_ui.settings_ui.night_end_hour_dd = create_dropdown(row, s_ui.hour_options, 120);
     s_ui.settings_ui.night_end_min_dd = create_dropdown(row, s_ui.minute_options, 120);
     lv_obj_add_event_cb(s_ui.settings_ui.night_end_hour_dd, night_hour_minute_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_ui.settings_ui.night_end_min_dd, night_hour_minute_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
-    label = lv_label_create(card);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    label = lv_label_create(s_ui.settings_ui.night_card);
+    style_centered_label(label, NULL, lv_color_white());
     lv_label_set_text(label, "Night face");
-    row = create_row(card);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_margin_bottom(row, 12, 0);
-    s_ui.settings_ui.night_face_dd = create_dropdown(row, s_ui.face_options, 240);
+    row = create_row(s_ui.settings_ui.night_card);
+    center_row(row);
+    s_ui.settings_ui.night_face_dd = create_dropdown(row, s_ui.face_options, 260);
     lv_obj_add_event_cb(s_ui.settings_ui.night_face_dd, night_face_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
@@ -465,8 +549,7 @@ static void create_wifi_dialog(void)
     lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);
 
     s_ui.settings_ui.wifi_dialog_title = lv_label_create(panel);
-    lv_obj_set_style_text_font(s_ui.settings_ui.wifi_dialog_title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(s_ui.settings_ui.wifi_dialog_title, lv_color_white(), 0);
+    style_centered_label(s_ui.settings_ui.wifi_dialog_title, &lv_font_montserrat_24, lv_color_white());
     lv_label_set_text(s_ui.settings_ui.wifi_dialog_title, "Join network");
 
     s_ui.settings_ui.wifi_password_ta = lv_textarea_create(panel);
@@ -483,7 +566,7 @@ static void create_wifi_dialog(void)
     lv_obj_add_event_cb(s_ui.settings_ui.wifi_password_ta, wifi_ta_focus_event_cb, LV_EVENT_FOCUSED, NULL);
 
     row = create_row(panel);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    center_row(row);
     create_action_button(row, "Cancel", wifi_dialog_close_event_cb, NULL);
     create_action_button(row, "Connect", wifi_dialog_connect_event_cb, NULL);
 
@@ -503,9 +586,6 @@ static void create_settings_overlay(void)
 {
     ui_surface_t surface;
     lv_obj_t *title;
-    lv_obj_t *tab_wifi;
-    lv_obj_t *tab_night;
-    lv_obj_t *content;
 
     ui_surface_create_fullscreen(&surface,
                                  s_ui.screen,
@@ -513,46 +593,20 @@ static void create_settings_overlay(void)
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Clock settings",
+                                 "Settings",
                                  settings_overlay_event_cb,
                                  settings_close_event_cb);
     s_ui.settings_ui.overlay = surface.overlay;
     s_ui.settings_ui.panel = surface.panel;
+    s_ui.settings_ui.content = surface.content;
     title = surface.title;
-    content = surface.content;
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
-    s_ui.settings_ui.tabview = lv_tabview_create(content);
-    lv_obj_set_width(s_ui.settings_ui.tabview, lv_pct(100));
-    lv_obj_set_flex_grow(s_ui.settings_ui.tabview, 1);
-    lv_obj_set_style_bg_color(s_ui.settings_ui.tabview, lv_color_hex(0x0D0D0D), 0);
-    lv_obj_set_style_bg_opa(s_ui.settings_ui.tabview, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_ui.settings_ui.tabview, 0, 0);
-    lv_tabview_set_tab_bar_size(s_ui.settings_ui.tabview, 54);
-    lv_obj_t *tab_bar = lv_tabview_get_tab_bar(s_ui.settings_ui.tabview);
-    lv_obj_set_style_bg_color(tab_bar, lv_color_hex(0x131313), 0);
-    lv_obj_set_style_bg_opa(tab_bar, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(tab_bar, 0, 0);
-    lv_obj_set_style_pad_left(tab_bar, 24, 0);
-    lv_obj_set_style_pad_right(tab_bar, 24, 0);
-    lv_obj_set_style_text_color(tab_bar, lv_color_hex(0xA8A8A8), LV_PART_ITEMS);
-    lv_obj_set_style_text_color(tab_bar, lv_color_hex(0xA8A8A8), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(tab_bar, lv_color_hex(0x232323), LV_PART_ITEMS);
-    lv_obj_set_style_bg_opa(tab_bar, LV_OPA_COVER, LV_PART_ITEMS);
-    lv_obj_set_style_radius(tab_bar, 0, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(tab_bar, 0, LV_PART_ITEMS);
-    lv_obj_set_style_border_width(tab_bar, 0, LV_PART_MAIN);
-    lv_obj_set_style_text_font(tab_bar, &lv_font_montserrat_20, LV_PART_ITEMS);
-    lv_obj_set_style_text_color(tab_bar, lv_color_black(), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(tab_bar, lv_color_hex(0xC4A24C), LV_PART_ITEMS | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_opa(tab_bar, LV_OPA_COVER, LV_PART_ITEMS | LV_STATE_CHECKED);
-
-    tab_wifi = lv_tabview_add_tab(s_ui.settings_ui.tabview, "Wi-Fi");
-    tab_night = lv_tabview_add_tab(s_ui.settings_ui.tabview, "Night");
-
-    create_wifi_tab(tab_wifi);
-    create_night_tab(tab_night);
+    create_wifi_card();
+    create_timezone_card();
+    create_networks_card();
+    create_night_card();
 
     ui_surface_create_edge_sensor(s_ui.settings_ui.overlay,
                                   &s_ui.settings_ui.top_sensor,
@@ -566,6 +620,18 @@ static void create_settings_overlay(void)
                                   SETTINGS_CLOSE_EDGE_ZONE,
                                   settings_close_swipe_event_cb,
                                   (void *)UI_SURFACE_EDGE_BOTTOM);
+    ui_surface_create_edge_sensor(s_ui.settings_ui.overlay,
+                                  &s_ui.settings_ui.left_sensor,
+                                  UI_SURFACE_EDGE_LEFT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  settings_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_LEFT);
+    ui_surface_create_edge_sensor(s_ui.settings_ui.overlay,
+                                  &s_ui.settings_ui.right_sensor,
+                                  UI_SURFACE_EDGE_RIGHT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  settings_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_RIGHT);
 
     create_wifi_dialog();
 }

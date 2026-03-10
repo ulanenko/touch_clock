@@ -18,6 +18,8 @@ const char *clock_face_name(clock_face_id_t face)
         return "Slava";
     case CLOCK_FACE_SLAVA_DARK:
         return "Slava Dark";
+    case CLOCK_FACE_SEVEN_SEGMENT:
+        return "7 Segment";
     default:
         return "Unknown";
     }

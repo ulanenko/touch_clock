@@ -9,6 +9,7 @@ idf_component_register(
         app_controller.c
         wifi_time.c
         assets/alarm_pcm.c
+        assets/seven_segment_font.c
         assets/slava_face_img.c
         assets/slava_dark_face_img.c
         ui/ui_controls.c

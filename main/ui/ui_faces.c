@@ -1,26 +1,194 @@
+static const char *s_day_caps[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
+static const char *s_month_caps[12] = {
+    "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
+    "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
+};
+static const lv_coord_t s_digital_day_y_offsets[7] = {-8, -5, -2, 0, -2, -5, -8};
+
+static lv_obj_t *create_digital_segment_label(lv_obj_t *parent,
+                                              const lv_font_t *font,
+                                              lv_color_t color,
+                                              lv_coord_t letter_space)
+{
+    lv_obj_t *label = lv_label_create(parent);
+
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, color, 0);
+    lv_obj_set_style_text_letter_space(label, letter_space, 0);
+    lv_label_set_text(label, "");
+    return label;
+}
+
+static void apply_digital_italic(lv_obj_t *obj, int32_t skew)
+{
+    LV_UNUSED(obj);
+    LV_UNUSED(skew);
+}
+
+static void make_face_layer_passive(lv_obj_t *obj)
+{
+    uint32_t child_count;
+
+    if (obj == NULL) {
+        return;
+    }
+
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+
+    child_count = lv_obj_get_child_count(obj);
+    for (uint32_t i = 0; i < child_count; ++i) {
+        make_face_layer_passive(lv_obj_get_child(obj, i));
+    }
+}
+
 static void create_digital_face(lv_obj_t *parent)
 {
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0x0D0D0D), 0);
-    lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x0D0D0D), 0);
-    lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_NONE, 0);
+    lv_obj_t *clock_center;
+    lv_obj_t *time_holder;
+    lv_obj_t *side_holder;
+    lv_obj_t *days_bar;
 
-    s_ui.faces.digital_time_label = lv_label_create(parent);
-    lv_obj_set_style_text_font(s_ui.faces.digital_time_label, &lv_font_montserrat_48, 0);
-    lv_obj_set_style_text_color(s_ui.faces.digital_time_label, lv_color_hex(0xE0E0E0), 0);
-    lv_obj_set_style_text_letter_space(s_ui.faces.digital_time_label, 3, 0);
-    lv_label_set_text(s_ui.faces.digital_time_label, "--:--");
-    lv_obj_center(s_ui.faces.digital_time_label);
+    lv_obj_set_style_bg_color(parent, lv_color_hex(0x020403), 0);
+    lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x09160B), 0);
+    lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_VER, 0);
+    s_ui.faces.digital_glow = NULL;
+
+    clock_center = lv_obj_create(parent);
+    lv_obj_set_size(clock_center, 640, 300);
+    lv_obj_set_style_bg_opa(clock_center, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(clock_center, 0, 0);
+    lv_obj_set_style_pad_all(clock_center, 0, 0);
+    lv_obj_clear_flag(clock_center, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(clock_center, LV_ALIGN_CENTER, 0, -76);
+
+    time_holder = lv_obj_create(clock_center);
+    lv_obj_set_size(time_holder, 540, 176);
+    lv_obj_set_style_bg_opa(time_holder, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(time_holder, 0, 0);
+    lv_obj_set_style_pad_all(time_holder, 0, 0);
+    lv_obj_clear_flag(time_holder, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(time_holder, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+
+    s_ui.faces.digital_time_bg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x17361A), 8);
+    lv_label_set_text(s_ui.faces.digital_time_bg, "88:88");
+    lv_obj_align(s_ui.faces.digital_time_bg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_time_bg, -120);
+
+    s_ui.faces.digital_time_glow = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x32FF72), 8);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_time_glow, LV_OPA_40, 0);
+    lv_obj_align(s_ui.faces.digital_time_glow, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_time_glow, -120);
+
+    s_ui.faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0xB6FFD0), 8);
+    lv_obj_align(s_ui.faces.digital_time_fg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_time_fg, -120);
+
+    side_holder = lv_obj_create(clock_center);
+    lv_obj_set_size(side_holder, 90, 186);
+    lv_obj_set_style_bg_opa(side_holder, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(side_holder, 0, 0);
+    lv_obj_set_style_pad_all(side_holder, 0, 0);
+    lv_obj_clear_flag(side_holder, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align_to(side_holder, time_holder, LV_ALIGN_OUT_RIGHT_BOTTOM, -18, -2);
+
+    s_ui.faces.digital_ampm_label = lv_label_create(side_holder);
+    lv_obj_set_style_text_font(s_ui.faces.digital_ampm_label, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_letter_space(s_ui.faces.digital_ampm_label, 3, 0);
+    lv_obj_set_style_text_color(s_ui.faces.digital_ampm_label, lv_color_hex(0x9BFFB0), 0);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_ampm_label, LV_OPA_80, 0);
+    lv_label_set_text(s_ui.faces.digital_ampm_label, "PM");
+    lv_obj_align(s_ui.faces.digital_ampm_label, LV_ALIGN_TOP_RIGHT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_ampm_label, -80);
+
+    s_ui.faces.digital_seconds_bg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x17361A), 4);
+    lv_label_set_text(s_ui.faces.digital_seconds_bg, "88");
+    lv_obj_align(s_ui.faces.digital_seconds_bg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_seconds_bg, -120);
+
+    s_ui.faces.digital_seconds_glow = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x32FF72), 4);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_glow, LV_OPA_40, 0);
+    lv_obj_align(s_ui.faces.digital_seconds_glow, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_seconds_glow, -120);
+
+    s_ui.faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0xB6FFD0), 4);
+    lv_obj_align(s_ui.faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    apply_digital_italic(s_ui.faces.digital_seconds_fg, -120);
+
+    days_bar = lv_obj_create(parent);
+    lv_obj_set_size(days_bar, 580, 36);
+    lv_obj_set_style_bg_opa(days_bar, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(days_bar, 0, 0);
+    lv_obj_set_style_pad_all(days_bar, 0, 0);
+    lv_obj_clear_flag(days_bar, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(days_bar, LV_ALIGN_BOTTOM_MID, 0, -134);
+
+    for (int i = 0; i < 7; ++i) {
+        s_ui.faces.digital_day_label[i] = lv_label_create(days_bar);
+        lv_obj_set_style_text_font(s_ui.faces.digital_day_label[i], &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_letter_space(s_ui.faces.digital_day_label[i], 2, 0);
+        lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i], lv_color_hex(0x27442D), 0);
+        lv_label_set_text(s_ui.faces.digital_day_label[i], s_day_caps[i]);
+        apply_digital_italic(s_ui.faces.digital_day_label[i], -60);
+    }
+
+    s_ui.faces.digital_date_label = lv_label_create(parent);
+    lv_obj_set_style_text_font(s_ui.faces.digital_date_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_letter_space(s_ui.faces.digital_date_label, 2, 0);
+    lv_obj_set_style_text_color(s_ui.faces.digital_date_label, lv_color_hex(0x8FD7AF), 0);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_date_label, LV_OPA_90, 0);
+    lv_label_set_text(s_ui.faces.digital_date_label, "SUN, FEB 11");
+    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_BOTTOM_LEFT, 72, -80);
+    apply_digital_italic(s_ui.faces.digital_date_label, -60);
+
+    make_face_layer_passive(clock_center);
+    make_face_layer_passive(days_bar);
+    make_face_layer_passive(s_ui.faces.digital_date_label);
 }
 
 static void update_digital_face(void)
 {
     struct tm ti = get_local_time_now();
     char buf_time[16];
+    char buf_seconds[8];
+    char buf_date[32];
+    int hour12 = ti.tm_hour % 12;
 
-    snprintf(buf_time, sizeof(buf_time), "%02d:%02d", ti.tm_hour, ti.tm_min);
+    if (hour12 == 0) {
+        hour12 = 12;
+    }
 
-    lv_label_set_text(s_ui.faces.digital_time_label, buf_time);
-    lv_obj_center(s_ui.faces.digital_time_label);
+    snprintf(buf_time, sizeof(buf_time), "%2d:%02d", hour12, ti.tm_min);
+    snprintf(buf_seconds, sizeof(buf_seconds), "%02d", ti.tm_sec);
+    snprintf(buf_date, sizeof(buf_date), "%s, %s %d",
+             s_day_caps[ti.tm_wday],
+             s_month_caps[ti.tm_mon],
+             ti.tm_mday);
+
+    lv_label_set_text(s_ui.faces.digital_time_glow, buf_time);
+    lv_label_set_text(s_ui.faces.digital_time_fg, buf_time);
+    lv_label_set_text(s_ui.faces.digital_seconds_glow, buf_seconds);
+    lv_label_set_text(s_ui.faces.digital_seconds_fg, buf_seconds);
+    lv_label_set_text(s_ui.faces.digital_ampm_label, (ti.tm_hour >= 12) ? "PM" : "AM");
+    lv_label_set_text(s_ui.faces.digital_date_label, buf_date);
+    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_BOTTOM_MID, 0, -80);
+
+    for (int i = 0; i < 7; ++i) {
+        bool active = (i == ti.tm_wday);
+        lv_coord_t slot_w = 580 / 7;
+        lv_coord_t x = (lv_coord_t)(i * slot_w + slot_w / 2);
+
+        lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i],
+                                    active ? lv_color_hex(0xA8FFBE) : lv_color_hex(0x27442D),
+                                    0);
+        lv_obj_set_style_text_opa(s_ui.faces.digital_day_label[i],
+                                  active ? LV_OPA_COVER : LV_OPA_80,
+                                  0);
+        lv_obj_align(s_ui.faces.digital_day_label[i],
+                     LV_ALIGN_TOP_LEFT,
+                     x - lv_obj_get_width(s_ui.faces.digital_day_label[i]) / 2,
+                     s_digital_day_y_offsets[i]);
+    }
 }
 
 static void update_face(clock_face_id_t face)
@@ -40,6 +208,9 @@ static void update_face(clock_face_id_t face)
         break;
     case CLOCK_FACE_SLAVA_DARK:
         update_slava_dark_face();
+        break;
+    case CLOCK_FACE_SEVEN_SEGMENT:
+        update_seven_segment_face();
         break;
     default:
         update_digital_face();
@@ -236,6 +407,190 @@ static void update_wharton_face(void)
     lv_canvas_finish_layer(s_ui.faces.wharton_face_obj, &layer);
 }
 
+static void draw_segment_bar(lv_layer_t *layer, int x1, int y1, int x2, int y2, bool on)
+{
+    lv_draw_line_dsc_t dsc;
+
+    lv_draw_line_dsc_init(&dsc);
+    dsc.round_start = 1;
+    dsc.round_end = 1;
+    dsc.p1.x = x1;
+    dsc.p1.y = y1;
+    dsc.p2.x = x2;
+    dsc.p2.y = y2;
+
+    if (on) {
+        dsc.color = lv_color_hex(SEG_COL_GLOW);
+        dsc.width = SEG_DIGIT_THICK + 18;
+        dsc.opa = LV_OPA_30;
+        lv_draw_line(layer, &dsc);
+
+        dsc.color = lv_color_hex(SEG_COL_ON);
+        dsc.width = SEG_DIGIT_THICK;
+        dsc.opa = LV_OPA_COVER;
+        lv_draw_line(layer, &dsc);
+
+        dsc.color = lv_color_hex(SEG_COL_HIGHLIGHT);
+        dsc.width = SEG_DIGIT_THICK / 3;
+        dsc.opa = LV_OPA_70;
+        lv_draw_line(layer, &dsc);
+    } else {
+        dsc.color = lv_color_hex(SEG_COL_OFF);
+        dsc.width = SEG_DIGIT_THICK;
+        dsc.opa = LV_OPA_80;
+        lv_draw_line(layer, &dsc);
+    }
+}
+
+static void draw_segment_colon_dot(lv_layer_t *layer, int cx, int cy, bool on)
+{
+    lv_draw_rect_dsc_t dsc;
+    lv_area_t area;
+    int glow_r = SEG_COLON_SIZE / 2 + 8;
+    int dot_r = SEG_COLON_SIZE / 2;
+
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.border_width = 0;
+    dsc.shadow_width = 0;
+    dsc.outline_width = 0;
+
+    area.x1 = cx - glow_r;
+    area.y1 = cy - glow_r;
+    area.x2 = cx + glow_r;
+    area.y2 = cy + glow_r;
+    dsc.radius = glow_r;
+    dsc.bg_color = lv_color_hex(on ? SEG_COL_GLOW : SEG_COL_OFF);
+    dsc.bg_opa = on ? LV_OPA_20 : LV_OPA_60;
+    lv_draw_rect(layer, &dsc, &area);
+
+    area.x1 = cx - dot_r;
+    area.y1 = cy - dot_r;
+    area.x2 = cx + dot_r;
+    area.y2 = cy + dot_r;
+    dsc.radius = dot_r;
+    dsc.bg_color = lv_color_hex(on ? SEG_COL_ON : SEG_COL_OFF);
+    dsc.bg_opa = on ? LV_OPA_COVER : LV_OPA_80;
+    lv_draw_rect(layer, &dsc, &area);
+}
+
+static void draw_segment_digit(lv_layer_t *layer, int x, int y, uint8_t mask)
+{
+    int left = x;
+    int right = x + SEG_DIGIT_W;
+    int top = y;
+    int middle = y + SEG_DIGIT_H / 2;
+    int bottom = y + SEG_DIGIT_H;
+    int inner_left = x + SEG_DIGIT_THICK / 2;
+    int inner_right = x + SEG_DIGIT_W - SEG_DIGIT_THICK / 2;
+    int upper_top = y + SEG_DIGIT_THICK / 2 + 6;
+    int upper_bottom = middle - SEG_DIGIT_THICK / 2 - 6;
+    int lower_top = middle + SEG_DIGIT_THICK / 2 + 6;
+    int lower_bottom = bottom - SEG_DIGIT_THICK / 2 - 6;
+
+    draw_segment_bar(layer, inner_left, top, inner_right, top, (mask & 0x01U) != 0);
+    draw_segment_bar(layer, right, upper_top, right, upper_bottom, (mask & 0x02U) != 0);
+    draw_segment_bar(layer, right, lower_top, right, lower_bottom, (mask & 0x04U) != 0);
+    draw_segment_bar(layer, inner_left, bottom, inner_right, bottom, (mask & 0x08U) != 0);
+    draw_segment_bar(layer, left, lower_top, left, lower_bottom, (mask & 0x10U) != 0);
+    draw_segment_bar(layer, left, upper_top, left, upper_bottom, (mask & 0x20U) != 0);
+    draw_segment_bar(layer, inner_left, middle, inner_right, middle, (mask & 0x40U) != 0);
+}
+
+static void create_seven_segment_face(lv_obj_t *parent)
+{
+    lv_obj_set_style_bg_color(parent, lv_color_hex(0x020403), 0);
+    lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x0B1410), 0);
+    lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_VER, 0);
+
+    s_ui.faces.segment_panel = lv_obj_create(parent);
+    lv_obj_set_size(s_ui.faces.segment_panel, SEG_PANEL_W, SEG_PANEL_H);
+    lv_obj_set_style_radius(s_ui.faces.segment_panel, 34, 0);
+    lv_obj_set_style_bg_color(s_ui.faces.segment_panel, lv_color_hex(SEG_PANEL_BG), 0);
+    lv_obj_set_style_bg_opa(s_ui.faces.segment_panel, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(s_ui.faces.segment_panel, 2, 0);
+    lv_obj_set_style_border_color(s_ui.faces.segment_panel, lv_color_hex(0x1E6A44), 0);
+    lv_obj_set_style_shadow_width(s_ui.faces.segment_panel, 42, 0);
+    lv_obj_set_style_shadow_spread(s_ui.faces.segment_panel, 0, 0);
+    lv_obj_set_style_shadow_color(s_ui.faces.segment_panel, lv_color_hex(0x1D8D56), 0);
+    lv_obj_set_style_shadow_opa(s_ui.faces.segment_panel, LV_OPA_20, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.segment_panel, 0, 0);
+    lv_obj_set_style_outline_width(s_ui.faces.segment_panel, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.segment_panel, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_align(s_ui.faces.segment_panel, LV_ALIGN_CENTER, 0, -28);
+
+    if (s_ui.faces.segment_face_buf == NULL) {
+        s_ui.faces.segment_face_buf = heap_caps_malloc(SEG_CANVAS_W * SEG_CANVAS_H * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
+    }
+
+    s_ui.faces.segment_face_obj = lv_canvas_create(s_ui.faces.segment_panel);
+    lv_canvas_set_buffer(s_ui.faces.segment_face_obj, s_ui.faces.segment_face_buf, SEG_CANVAS_W, SEG_CANVAS_H, LV_COLOR_FORMAT_RGB565);
+    lv_obj_clear_flag(s_ui.faces.segment_face_obj, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_center(s_ui.faces.segment_face_obj);
+
+    s_ui.faces.segment_date_label = lv_label_create(parent);
+    lv_obj_set_style_text_font(s_ui.faces.segment_date_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(s_ui.faces.segment_date_label, lv_color_hex(0x8FD7AF), 0);
+    lv_obj_set_style_text_letter_space(s_ui.faces.segment_date_label, 6, 0);
+    lv_label_set_text(s_ui.faces.segment_date_label, "--- -- ---");
+    lv_obj_align_to(s_ui.faces.segment_date_label, s_ui.faces.segment_panel, LV_ALIGN_OUT_BOTTOM_MID, 0, 24);
+}
+
+static void update_seven_segment_face(void)
+{
+    struct tm ti = get_local_time_now();
+    lv_layer_t layer;
+    lv_draw_rect_dsc_t frame_dsc;
+    char date_buf[32];
+    int digits[4] = {ti.tm_hour / 10, ti.tm_hour % 10, ti.tm_min / 10, ti.tm_min % 10};
+    int total_w = 4 * SEG_DIGIT_W + 2 * SEG_DIGIT_GAP + SEG_DIGIT_PAIR_GAP + 2 * SEG_COLON_GAP + SEG_COLON_SIZE;
+    int start_x = (SEG_CANVAS_W - total_w) / 2;
+    int y = (SEG_CANVAS_H - SEG_DIGIT_H) / 2;
+    int digit_x[4];
+    int colon_x;
+    lv_area_t frame_area = {
+        .x1 = 10,
+        .y1 = 10,
+        .x2 = SEG_CANVAS_W - 11,
+        .y2 = SEG_CANVAS_H - 11,
+    };
+
+    digit_x[0] = start_x;
+    digit_x[1] = digit_x[0] + SEG_DIGIT_W + SEG_DIGIT_GAP;
+    colon_x = digit_x[1] + SEG_DIGIT_W + SEG_COLON_GAP + SEG_COLON_SIZE / 2;
+    digit_x[2] = digit_x[1] + SEG_DIGIT_W + 2 * SEG_COLON_GAP + SEG_COLON_SIZE + SEG_DIGIT_PAIR_GAP;
+    digit_x[3] = digit_x[2] + SEG_DIGIT_W + SEG_DIGIT_GAP;
+
+    lv_canvas_fill_bg(s_ui.faces.segment_face_obj, lv_color_hex(SEG_CANVAS_BG), LV_OPA_COVER);
+    lv_canvas_init_layer(s_ui.faces.segment_face_obj, &layer);
+
+    lv_draw_rect_dsc_init(&frame_dsc);
+    frame_dsc.bg_opa = LV_OPA_TRANSP;
+    frame_dsc.border_width = 2;
+    frame_dsc.border_opa = LV_OPA_20;
+    frame_dsc.border_color = lv_color_hex(0x24553A);
+    frame_dsc.radius = 28;
+    frame_dsc.shadow_width = 0;
+    frame_dsc.outline_width = 0;
+    lv_draw_rect(&layer, &frame_dsc, &frame_area);
+
+    draw_segment_digit(&layer, digit_x[0], y, s_segment_font[digits[0]]);
+    draw_segment_digit(&layer, digit_x[1], y, s_segment_font[digits[1]]);
+    draw_segment_colon_dot(&layer, colon_x, y + SEG_DIGIT_H / 2 - 34, (ti.tm_sec & 1) == 0);
+    draw_segment_colon_dot(&layer, colon_x, y + SEG_DIGIT_H / 2 + 34, (ti.tm_sec & 1) == 0);
+    draw_segment_digit(&layer, digit_x[2], y, s_segment_font[digits[2]]);
+    draw_segment_digit(&layer, digit_x[3], y, s_segment_font[digits[3]]);
+
+    lv_canvas_finish_layer(s_ui.faces.segment_face_obj, &layer);
+
+    snprintf(date_buf, sizeof(date_buf), "%s %02d %s",
+             s_day_short[ti.tm_wday],
+             ti.tm_mday,
+             s_month_short[ti.tm_mon]);
+    lv_label_set_text(s_ui.faces.segment_date_label, date_buf);
+    lv_obj_align_to(s_ui.faces.segment_date_label, s_ui.faces.segment_panel, LV_ALIGN_OUT_BOTTOM_MID, 0, 24);
+}
+
 static void create_slava_face(lv_obj_t *parent)
 {
     lv_obj_t *face = lv_image_create(parent);
@@ -333,4 +688,3 @@ static void update_slava_dark_face(void)
     lv_line_set_points(s_ui.faces.slava_dark_line_min, s_ui.faces.slava_dark_min_pts, 2);
     lv_line_set_points(s_ui.faces.slava_dark_line_sec, s_ui.faces.slava_dark_sec_pts, 2);
 }
-
