@@ -148,9 +148,11 @@ typedef struct {
 } clock_ui_settings_state_t;
 
 typedef struct {
+    bool close_dragging;
     bool open;
     bool editor_open;
     bool editor_is_new;
+    lv_point_t close_drag_start_point;
     lv_obj_t *banner;
     lv_obj_t *banner_label;
     lv_obj_t *management_overlay;
@@ -176,6 +178,10 @@ typedef struct {
     lv_obj_t *editor_repeat_btn[4];
     lv_obj_t *editor_day_btn[7];
     lv_obj_t *editor_delete_btn;
+    lv_obj_t *top_sensor;
+    lv_obj_t *bottom_sensor;
+    lv_obj_t *left_sensor;
+    lv_obj_t *right_sensor;
     lv_obj_t *overlay;
     lv_obj_t *overlay_label;
     lv_obj_t *overlay_subtitle;
@@ -428,6 +434,7 @@ static void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t m
 
 static void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm)
 {
+    static const uint8_t s_day_display_order[7] = {1, 2, 3, 4, 5, 6, 0};
     size_t pos = 0;
 
     if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {
@@ -451,7 +458,9 @@ static void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_c
     }
 
     buffer[0] = '\0';
-    for (int day = 0; day < 7; ++day) {
+    for (int idx = 0; idx < 7; ++idx) {
+        int day = s_day_display_order[idx];
+
         if ((alarm->days_mask & (1U << day)) == 0) {
             continue;
         }
@@ -529,59 +538,6 @@ static void apply_repeat_preset_to_alarm(alarm_config_t *alarm, uint8_t preset)
     default:
         break;
     }
-}
-
-static time_t compute_alarm_occurrence_for_ui(const alarm_config_t *alarm, time_t now)
-{
-    struct tm now_tm;
-
-    localtime_r(&now, &now_tm);
-
-    if (!alarm->enabled) {
-        return 0;
-    }
-
-    if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {
-        for (int day_offset = 0; day_offset < 2; ++day_offset) {
-            struct tm candidate_tm = now_tm;
-            time_t candidate;
-
-            candidate_tm.tm_mday += day_offset;
-            candidate_tm.tm_hour = alarm->hour;
-            candidate_tm.tm_min = alarm->minute;
-            candidate_tm.tm_sec = 0;
-            candidate = mktime(&candidate_tm);
-            if (candidate > now) {
-                return candidate;
-            }
-        }
-
-        return 0;
-    }
-
-    for (int day_offset = 0; day_offset < 8; ++day_offset) {
-        struct tm candidate_tm = now_tm;
-        struct tm normalized;
-        time_t candidate;
-
-        candidate_tm.tm_mday += day_offset;
-        candidate_tm.tm_hour = alarm->hour;
-        candidate_tm.tm_min = alarm->minute;
-        candidate_tm.tm_sec = 0;
-        candidate = mktime(&candidate_tm);
-        if (candidate <= now) {
-            continue;
-        }
-
-        localtime_r(&candidate, &normalized);
-        if ((alarm->days_mask & (1U << normalized.tm_wday)) == 0) {
-            continue;
-        }
-
-        return candidate;
-    }
-
-    return 0;
 }
 
 static void create_section_title(lv_obj_t *parent, const char *title, const char *subtitle)
