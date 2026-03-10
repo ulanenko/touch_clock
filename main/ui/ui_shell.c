@@ -147,5 +147,7 @@ static void build_root_ui(void)
     create_alarm_editor_overlay();
     create_alarm_overlay();
     create_settings_overlay();
+    lv_obj_move_foreground(s_ui.brightness.pull_hint);
+    lv_obj_move_foreground(s_ui.brightness.edge_sensor);
     set_active_face(s_ui.settings->current_face, LV_ANIM_OFF);
 }

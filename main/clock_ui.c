@@ -239,8 +239,11 @@ typedef struct {
     lv_obj_t *digital_seconds_bg;
     lv_obj_t *digital_seconds_glow;
     lv_obj_t *digital_seconds_fg;
+    lv_obj_t *digital_ampm_glow;
     lv_obj_t *digital_ampm_label;
+    lv_obj_t *digital_day_glow[7];
     lv_obj_t *digital_day_label[7];
+    lv_obj_t *digital_date_glow;
     lv_obj_t *digital_date_label;
     lv_point_precise_t hour_pts[2];
     lv_point_precise_t min_pts[2];

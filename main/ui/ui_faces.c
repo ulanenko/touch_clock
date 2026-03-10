@@ -19,6 +19,22 @@ static lv_obj_t *create_digital_segment_label(lv_obj_t *parent,
     return label;
 }
 
+static lv_obj_t *create_digital_text_label(lv_obj_t *parent,
+                                           const lv_font_t *font,
+                                           lv_color_t color,
+                                           lv_opa_t opa,
+                                           lv_coord_t letter_space)
+{
+    lv_obj_t *label = lv_label_create(parent);
+
+    lv_obj_set_style_text_font(label, font, 0);
+    lv_obj_set_style_text_color(label, color, 0);
+    lv_obj_set_style_text_opa(label, opa, 0);
+    lv_obj_set_style_text_letter_space(label, letter_space, 0);
+    lv_label_set_text(label, "");
+    return label;
+}
+
 static void apply_digital_italic(lv_obj_t *obj, int32_t skew)
 {
     LV_UNUSED(obj);
@@ -115,7 +131,6 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_bg_color(parent, lv_color_hex(0x020403), 0);
     lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x09160B), 0);
     lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_VER, 0);
-    lv_obj_add_event_cb(parent, digital_face_texture_draw_cb, LV_EVENT_DRAW_POST, NULL);
     s_ui.faces.digital_glow = NULL;
 
     clock_center = lv_obj_create(parent);
@@ -140,7 +155,10 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_text_opa(s_ui.faces.digital_time_bg, LV_OPA_40, 0);
     apply_digital_italic(s_ui.faces.digital_time_bg, -120);
 
-    s_ui.faces.digital_time_glow = NULL;
+    s_ui.faces.digital_time_glow = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
+    lv_obj_align(s_ui.faces.digital_time_glow, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_time_glow, 30, 0);
+    apply_digital_italic(s_ui.faces.digital_time_glow, -120);
 
     s_ui.faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
     lv_obj_align(s_ui.faces.digital_time_fg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
@@ -154,11 +172,9 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_clear_flag(side_holder, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align_to(side_holder, time_holder, LV_ALIGN_OUT_RIGHT_BOTTOM, -58, -4);
 
-    s_ui.faces.digital_ampm_label = lv_label_create(side_holder);
-    lv_obj_set_style_text_font(s_ui.faces.digital_ampm_label, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_letter_space(s_ui.faces.digital_ampm_label, 3, 0);
-    lv_obj_set_style_text_color(s_ui.faces.digital_ampm_label, lv_color_hex(0x5CFB5C), 0);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_ampm_label, LV_OPA_80, 0);
+    s_ui.faces.digital_ampm_glow = NULL;
+
+    s_ui.faces.digital_ampm_label = create_digital_text_label(side_holder, &dseg14_classic_italic_36, lv_color_hex(0x5CFB5C), LV_OPA_80, 2);
     lv_label_set_text(s_ui.faces.digital_ampm_label, "PM");
     lv_obj_align(s_ui.faces.digital_ampm_label, LV_ALIGN_TOP_RIGHT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_ampm_label, -80);
@@ -169,7 +185,10 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_bg, LV_OPA_40, 0);
     apply_digital_italic(s_ui.faces.digital_seconds_bg, -120);
 
-    s_ui.faces.digital_seconds_glow = NULL;
+    s_ui.faces.digital_seconds_glow = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
+    lv_obj_align(s_ui.faces.digital_seconds_glow, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_glow, 30, 0);
+    apply_digital_italic(s_ui.faces.digital_seconds_glow, -120);
 
     s_ui.faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
     lv_obj_align(s_ui.faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -184,20 +203,16 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_align(days_bar, LV_ALIGN_BOTTOM_MID, 0, -136);
 
     for (int i = 0; i < 7; ++i) {
-        s_ui.faces.digital_day_label[i] = lv_label_create(days_bar);
-        lv_obj_set_style_text_font(s_ui.faces.digital_day_label[i], &lv_font_montserrat_20, 0);
-        lv_obj_set_style_text_letter_space(s_ui.faces.digital_day_label[i], 2, 0);
-        lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i], lv_color_hex(0x143C14), 0);
-        lv_obj_set_style_text_opa(s_ui.faces.digital_day_label[i], LV_OPA_40, 0);
+        s_ui.faces.digital_day_glow[i] = NULL;
+
+        s_ui.faces.digital_day_label[i] = create_digital_text_label(days_bar, &dseg14_classic_italic_20, lv_color_hex(0x143C14), LV_OPA_40, 1);
         lv_label_set_text(s_ui.faces.digital_day_label[i], s_day_caps[i]);
         apply_digital_italic(s_ui.faces.digital_day_label[i], -60);
     }
 
-    s_ui.faces.digital_date_label = lv_label_create(parent);
-    lv_obj_set_style_text_font(s_ui.faces.digital_date_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_letter_space(s_ui.faces.digital_date_label, 2, 0);
-    lv_obj_set_style_text_color(s_ui.faces.digital_date_label, lv_color_hex(0x5CFB5C), 0);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_date_label, LV_OPA_90, 0);
+    s_ui.faces.digital_date_glow = NULL;
+
+    s_ui.faces.digital_date_label = create_digital_text_label(parent, &dseg14_classic_italic_24, lv_color_hex(0x5CFB5C), LV_OPA_90, 1);
     lv_label_set_text(s_ui.faces.digital_date_label, "SUN, FEB 11");
     lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
     apply_digital_italic(s_ui.faces.digital_date_label, -60);
@@ -234,7 +249,14 @@ static void update_digital_face(void)
         lv_label_set_text(s_ui.faces.digital_seconds_glow, buf_seconds);
     }
     lv_label_set_text(s_ui.faces.digital_seconds_fg, buf_seconds);
+    if (s_ui.faces.digital_ampm_glow != NULL) {
+        lv_label_set_text(s_ui.faces.digital_ampm_glow, (ti.tm_hour >= 12) ? "PM" : "AM");
+    }
     lv_label_set_text(s_ui.faces.digital_ampm_label, (ti.tm_hour >= 12) ? "PM" : "AM");
+    if (s_ui.faces.digital_date_glow != NULL) {
+        lv_label_set_text(s_ui.faces.digital_date_glow, buf_date);
+        lv_obj_align(s_ui.faces.digital_date_glow, LV_ALIGN_TOP_MID, 0, 98);
+    }
     lv_label_set_text(s_ui.faces.digital_date_label, buf_date);
     lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
 
@@ -243,6 +265,14 @@ static void update_digital_face(void)
         lv_coord_t slot_w = 580 / 7;
         lv_coord_t x = (lv_coord_t)(i * slot_w + slot_w / 2);
 
+        if (s_ui.faces.digital_day_glow[i] != NULL) {
+            lv_obj_set_style_text_color(s_ui.faces.digital_day_glow[i], lv_color_hex(0x5CFB5C), 0);
+            lv_obj_set_style_text_opa(s_ui.faces.digital_day_glow[i], active ? 28 : 0, 0);
+            lv_obj_align(s_ui.faces.digital_day_glow[i],
+                         LV_ALIGN_TOP_LEFT,
+                         x - lv_obj_get_width(s_ui.faces.digital_day_glow[i]) / 2,
+                         s_digital_day_y_offsets[i]);
+        }
         lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i],
                                     active ? lv_color_hex(0x5CFB5C) : lv_color_hex(0x143C14),
                                     0);

@@ -11,6 +11,9 @@ idf_component_register(
         assets/alarm_pcm.c
         assets/dseg7_classic_italic_112.c
         assets/dseg7_classic_italic_56.c
+        assets/dseg14_classic_italic_36.c
+        assets/dseg14_classic_italic_24.c
+        assets/dseg14_classic_italic_20.c
         assets/slava_face_img.c
         assets/slava_dark_face_img.c
         ui/ui_controls.c
