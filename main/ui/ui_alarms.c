@@ -98,6 +98,278 @@ static void sync_alarm_overlay(time_t now)
     lv_obj_move_foreground(s_ui.alarms.overlay);
 }
 
+static float clamp_unit(float value)
+{
+    if (value < 0.0f) {
+        return 0.0f;
+    }
+    if (value > 1.0f) {
+        return 1.0f;
+    }
+    return value;
+}
+
+#define ALARM_CARD_DELETE_REVEAL 108
+#define ALARM_CARD_DELETE_TRIGGER 34
+#define ALARM_CARD_CLOSED_OFFSET (ALARM_CARD_DELETE_REVEAL / 2)
+#define ALARM_CARD_OPEN_SQUEEZE 28
+#define ALARM_CARD_ANIM_MS 180
+
+static void anim_alarm_card_width_cb(void *var, int32_t value)
+{
+    lv_obj_set_width((lv_obj_t *)var, (lv_coord_t)value);
+}
+
+static void anim_alarm_card_translate_cb(void *var, int32_t value)
+{
+    lv_obj_set_style_translate_x((lv_obj_t *)var, (lv_coord_t)value, 0);
+}
+
+static void animate_alarm_card_layout(uint8_t alarm_index, lv_coord_t target_width, lv_coord_t target_translate)
+{
+    lv_anim_t anim;
+    lv_obj_t *content;
+    lv_coord_t current_width;
+    lv_coord_t current_translate;
+
+    if (alarm_index >= MAX_ALARMS) {
+        return;
+    }
+
+    content = s_ui.alarms.list_content[alarm_index];
+    if (content == NULL) {
+        return;
+    }
+
+    current_width = lv_obj_get_width(content);
+    current_translate = lv_obj_get_style_translate_x(content, LV_PART_MAIN);
+
+    lv_anim_delete(content, anim_alarm_card_width_cb);
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, content);
+    lv_anim_set_exec_cb(&anim, anim_alarm_card_width_cb);
+    lv_anim_set_time(&anim, ALARM_CARD_ANIM_MS);
+    lv_anim_set_values(&anim, current_width, target_width);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+    lv_anim_start(&anim);
+
+    lv_anim_delete(content, anim_alarm_card_translate_cb);
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, content);
+    lv_anim_set_exec_cb(&anim, anim_alarm_card_translate_cb);
+    lv_anim_set_time(&anim, ALARM_CARD_ANIM_MS);
+    lv_anim_set_values(&anim, current_translate, target_translate);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+    lv_anim_start(&anim);
+}
+
+static void close_alarm_delete_action(int8_t alarm_index)
+{
+    lv_coord_t base_width;
+
+    if (alarm_index < 0 || alarm_index >= MAX_ALARMS) {
+        return;
+    }
+
+    base_width = lv_obj_get_width(s_ui.alarms.list_card[alarm_index]) - ALARM_CARD_DELETE_REVEAL;
+    if (base_width < 0) {
+        base_width = 0;
+    }
+
+    if (s_ui.alarms.list_content[alarm_index] != NULL) {
+        animate_alarm_card_layout((uint8_t)alarm_index, base_width, ALARM_CARD_CLOSED_OFFSET);
+    }
+    if (s_ui.alarms.list_delete_btn[alarm_index] != NULL) {
+        lv_obj_add_flag(s_ui.alarms.list_delete_btn[alarm_index], LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_ui.alarms.swipe_open_index == alarm_index) {
+        s_ui.alarms.swipe_open_index = -1;
+    }
+}
+
+static void open_alarm_delete_action(uint8_t alarm_index)
+{
+    lv_coord_t base_width;
+
+    if (alarm_index >= MAX_ALARMS) {
+        return;
+    }
+
+    if (s_ui.alarms.swipe_open_index >= 0 && s_ui.alarms.swipe_open_index != alarm_index) {
+        close_alarm_delete_action(s_ui.alarms.swipe_open_index);
+    }
+
+    base_width = lv_obj_get_width(s_ui.alarms.list_card[alarm_index]) - ALARM_CARD_DELETE_REVEAL;
+    if (base_width < ALARM_CARD_OPEN_SQUEEZE) {
+        base_width = ALARM_CARD_OPEN_SQUEEZE;
+    }
+
+    if (s_ui.alarms.list_delete_btn[alarm_index] != NULL) {
+        lv_obj_clear_flag(s_ui.alarms.list_delete_btn[alarm_index], LV_OBJ_FLAG_HIDDEN);
+    }
+    if (s_ui.alarms.list_content[alarm_index] != NULL) {
+        animate_alarm_card_layout(alarm_index, base_width - ALARM_CARD_OPEN_SQUEEZE, 0);
+    }
+    s_ui.alarms.swipe_open_index = (int8_t)alarm_index;
+}
+
+static void update_alarm_list_focus_treatment(void)
+{
+    lv_area_t content_coords;
+    lv_coord_t available_width;
+    int32_t viewport_center_y;
+    int32_t viewport_half_height;
+
+    if (s_ui.alarms.management_content == NULL) {
+        return;
+    }
+
+    lv_obj_update_layout(s_ui.alarms.management_content);
+    lv_obj_get_coords(s_ui.alarms.management_content, &content_coords);
+
+    available_width = lv_obj_get_content_width(s_ui.alarms.management_content);
+    if (available_width <= 0) {
+        available_width = lv_obj_get_width(s_ui.alarms.management_content);
+    }
+    if (available_width <= 0) {
+        return;
+    }
+
+    viewport_center_y = (content_coords.y1 + content_coords.y2) / 2;
+    viewport_half_height = LV_MAX((content_coords.y2 - content_coords.y1) / 2, 1);
+
+    for (uint8_t i = 0; i < s_ui.alarms.management_card_count; ++i) {
+        lv_obj_t *card = s_ui.alarms.management_card[i];
+        lv_obj_t *visual_card = card;
+        lv_area_t card_coords;
+        int32_t card_center_y;
+        float distance_ratio;
+        float focus;
+        float eased_focus;
+        lv_coord_t width;
+        bool is_alarm_wrapper = false;
+
+        if (card == NULL) {
+            continue;
+        }
+
+        for (int alarm_index = 0; alarm_index < MAX_ALARMS; ++alarm_index) {
+            if (card == s_ui.alarms.list_card[alarm_index] &&
+                s_ui.alarms.list_content[alarm_index] != NULL) {
+                visual_card = s_ui.alarms.list_content[alarm_index];
+                is_alarm_wrapper = true;
+                break;
+            }
+        }
+
+        lv_obj_get_coords(card, &card_coords);
+        card_center_y = (card_coords.y1 + card_coords.y2) / 2;
+        distance_ratio = (float)LV_ABS(card_center_y - viewport_center_y) / (float)(viewport_half_height + 60);
+        focus = 1.0f - clamp_unit(distance_ratio);
+        eased_focus = focus * focus * (3.0f - 2.0f * focus);
+        width = (lv_coord_t)(available_width * (0.76f + 0.16f * eased_focus));
+
+        lv_obj_set_width(card, is_alarm_wrapper ? (width + ALARM_CARD_DELETE_REVEAL) : width);
+        if (is_alarm_wrapper) {
+            for (int alarm_index = 0; alarm_index < MAX_ALARMS; ++alarm_index) {
+                if (card == s_ui.alarms.list_card[alarm_index]) {
+                    lv_obj_set_width(visual_card,
+                                     width - ((s_ui.alarms.swipe_open_index == alarm_index) ? ALARM_CARD_OPEN_SQUEEZE : 0));
+                    lv_obj_set_style_translate_x(visual_card,
+                                                 (s_ui.alarms.swipe_open_index == alarm_index) ? 0 : ALARM_CARD_CLOSED_OFFSET,
+                                                 0);
+                    break;
+                }
+            }
+        } else {
+            lv_obj_set_width(visual_card, width);
+        }
+        lv_obj_set_style_bg_color(visual_card,
+                                  eased_focus > 0.58f ? lv_color_hex(0x1D1B16) : lv_color_hex(0x171717),
+                                  0);
+        lv_obj_set_style_bg_opa(visual_card, (lv_opa_t)(200 + (int)(55.0f * eased_focus)), 0);
+        lv_obj_set_style_border_width(visual_card, eased_focus > 0.68f ? 1 : 0, 0);
+        lv_obj_set_style_border_color(visual_card, lv_color_hex(0xC8A248), 0);
+        lv_obj_set_style_border_opa(visual_card, (lv_opa_t)(30 + (int)(70.0f * eased_focus)), 0);
+        lv_obj_set_style_shadow_width(visual_card, 8 + (lv_coord_t)(18.0f * eased_focus), 0);
+        lv_obj_set_style_shadow_spread(visual_card, 1 + (lv_coord_t)(2.0f * eased_focus), 0);
+        lv_obj_set_style_shadow_color(visual_card, lv_color_hex(0xC8A248), 0);
+        lv_obj_set_style_shadow_opa(visual_card, (lv_opa_t)(10 + (int)(30.0f * eased_focus)), 0);
+    }
+}
+
+static bool alarm_slot_is_empty(const alarm_config_t *alarm)
+{
+    return !alarm->enabled &&
+           alarm->hour == 7 &&
+           alarm->minute == 0 &&
+           alarm->repeat_mode == ALARM_REPEAT_WEEKLY &&
+           alarm->days_mask == 0x7F;
+}
+
+static void alarm_list_swipe_event_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    alarm_ctx_t *ctx = (alarm_ctx_t *)lv_event_get_user_data(event);
+    lv_indev_t *indev = lv_event_get_indev(event);
+    lv_point_t point;
+
+    if (ctx == NULL || ctx->alarm_index >= MAX_ALARMS || indev == NULL) {
+        return;
+    }
+
+    lv_indev_get_point(indev, &point);
+
+    if (code == LV_EVENT_PRESSED) {
+        s_ui.alarms.list_swipe_dragging = true;
+        s_ui.alarms.list_swipe_consumed = false;
+        s_ui.alarms.swipe_drag_index = (int8_t)ctx->alarm_index;
+        s_ui.alarms.list_swipe_start_point = point;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSING &&
+        s_ui.alarms.list_swipe_dragging &&
+        s_ui.alarms.swipe_drag_index == (int8_t)ctx->alarm_index) {
+        int32_t dx = point.x - s_ui.alarms.list_swipe_start_point.x;
+        int32_t dy = point.y - s_ui.alarms.list_swipe_start_point.y;
+
+        if (LV_ABS(dx) > LV_ABS(dy)) {
+            if (dx <= -ALARM_CARD_DELETE_TRIGGER) {
+                open_alarm_delete_action(ctx->alarm_index);
+                s_ui.alarms.list_swipe_consumed = true;
+                s_ui.alarms.list_swipe_dragging = false;
+            } else if (dx >= ALARM_CARD_DELETE_TRIGGER &&
+                       s_ui.alarms.swipe_open_index == (int8_t)ctx->alarm_index) {
+                close_alarm_delete_action((int8_t)ctx->alarm_index);
+                s_ui.alarms.list_swipe_consumed = true;
+                s_ui.alarms.list_swipe_dragging = false;
+            }
+        }
+        return;
+    }
+
+    if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) &&
+        s_ui.alarms.swipe_drag_index == (int8_t)ctx->alarm_index) {
+        s_ui.alarms.list_swipe_dragging = false;
+        s_ui.alarms.swipe_drag_index = -1;
+    }
+
+    if (code == LV_EVENT_CLICKED) {
+        if (s_ui.alarms.list_swipe_consumed) {
+            s_ui.alarms.list_swipe_consumed = false;
+            return;
+        }
+
+        if (s_ui.alarms.swipe_open_index >= 0) {
+            close_alarm_delete_action(s_ui.alarms.swipe_open_index);
+            return;
+        }
+
+        open_alarm_editor(ctx->alarm_index, false);
+    }
+}
+
 static void sync_alarm_controls(void)
 {
     char volume[32];
@@ -167,9 +439,17 @@ static void sync_alarm_controls(void)
         char time_text[24];
         char meta[128];
 
-        if (s_ui.alarms.list_time_label[i] == NULL) {
+        if (s_ui.alarms.list_time_label[i] == NULL || s_ui.alarms.list_card[i] == NULL) {
             continue;
         }
+
+        if (alarm_slot_is_empty(alarm)) {
+            close_alarm_delete_action((int8_t)i);
+            lv_obj_add_flag(s_ui.alarms.list_card[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        lv_obj_clear_flag(s_ui.alarms.list_card[i], LV_OBJ_FLAG_HIDDEN);
 
         format_alarm_time(time_text, sizeof(time_text), alarm->hour, alarm->minute);
         format_alarm_repeat_summary(meta, sizeof(meta), alarm);
@@ -210,10 +490,13 @@ static void sync_alarm_controls(void)
 
     if (s_ui.alarms.focus_alarm_index >= 0 &&
         s_ui.alarms.focus_alarm_index < MAX_ALARMS &&
-        s_ui.alarms.list_card[s_ui.alarms.focus_alarm_index] != NULL) {
+        s_ui.alarms.list_card[s_ui.alarms.focus_alarm_index] != NULL &&
+        !lv_obj_has_flag(s_ui.alarms.list_card[s_ui.alarms.focus_alarm_index], LV_OBJ_FLAG_HIDDEN)) {
         lv_obj_scroll_to_view_recursive(s_ui.alarms.list_card[s_ui.alarms.focus_alarm_index], LV_ANIM_ON);
-        s_ui.alarms.focus_alarm_index = -1;
     }
+    s_ui.alarms.focus_alarm_index = -1;
+
+    update_alarm_list_focus_treatment();
 
     if (s_ui.alarms.editor_open && s_ui.alarms.editor_overlay != NULL) {
         char editor_time[24];
@@ -443,7 +726,7 @@ static void alarm_list_toggle_event_cb(lv_event_t *event)
     sync_alarm_controls();
 }
 
-static void alarm_list_card_event_cb(lv_event_t *event)
+static void alarm_list_delete_event_cb(lv_event_t *event)
 {
     alarm_ctx_t *ctx = (alarm_ctx_t *)lv_event_get_user_data(event);
 
@@ -451,7 +734,14 @@ static void alarm_list_card_event_cb(lv_event_t *event)
         return;
     }
 
-    open_alarm_editor(ctx->alarm_index, false);
+    s_ui.settings->alarms[ctx->alarm_index].enabled = false;
+    s_ui.settings->alarms[ctx->alarm_index].hour = 7;
+    s_ui.settings->alarms[ctx->alarm_index].minute = 0;
+    s_ui.settings->alarms[ctx->alarm_index].repeat_mode = ALARM_REPEAT_WEEKLY;
+    s_ui.settings->alarms[ctx->alarm_index].days_mask = 0x7F;
+    close_alarm_delete_action((int8_t)ctx->alarm_index);
+    notify_settings_changed();
+    sync_alarm_controls();
 }
 
 static void alarm_editor_time_event_cb(lv_event_t *event)
@@ -536,6 +826,8 @@ static void alarm_editor_delete_event_cb(lv_event_t *event)
     }
 
     s_ui.settings->alarms[s_ui.alarms.editor_index].enabled = false;
+    s_ui.settings->alarms[s_ui.alarms.editor_index].hour = 7;
+    s_ui.settings->alarms[s_ui.alarms.editor_index].minute = 0;
     s_ui.settings->alarms[s_ui.alarms.editor_index].repeat_mode = ALARM_REPEAT_WEEKLY;
     s_ui.settings->alarms[s_ui.alarms.editor_index].days_mask = 0x7F;
     notify_settings_changed();
@@ -644,14 +936,17 @@ static void alarm_management_open(void)
         lv_obj_add_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     }
 
+    close_alarm_delete_action(s_ui.alarms.swipe_open_index);
     s_ui.alarms.open = true;
     sync_alarm_controls();
     lv_obj_clear_flag(s_ui.alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_ui.alarms.management_overlay);
+    update_alarm_list_focus_treatment();
 }
 
 static void alarm_management_close(void)
 {
+    close_alarm_delete_action(s_ui.alarms.swipe_open_index);
     s_ui.alarms.open = false;
     lv_obj_add_flag(s_ui.alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
     if (!s_ui.alarms.editor_open) {
@@ -670,6 +965,12 @@ static void alarm_management_close_event_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
     alarm_management_close();
+}
+
+static void alarm_management_scroll_event_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    update_alarm_list_focus_treatment();
 }
 
 static void alarm_editor_close(void)
@@ -695,6 +996,7 @@ static void open_alarm_editor(uint8_t alarm_index, bool is_new)
     time(&now);
     localtime_r(&now, &now_tm);
 
+    close_alarm_delete_action(s_ui.alarms.swipe_open_index);
     s_ui.alarms.editor_index = (int8_t)alarm_index;
     s_ui.alarms.editor_is_new = is_new;
     s_ui.alarms.editor_open = true;
@@ -745,6 +1047,8 @@ static void create_alarm_management_overlay(void)
     header = surface.header;
     title = surface.title;
     content = surface.content;
+    s_ui.alarms.management_content = content;
+    lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
 
@@ -756,8 +1060,12 @@ static void create_alarm_management_overlay(void)
     lv_label_set_text(s_ui.alarms.management_status, "No alarms scheduled");
     lv_obj_align(s_ui.alarms.management_status, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_pad_bottom(content, 28, 0);
+    s_ui.alarms.management_card_count = 0;
+    s_ui.alarms.swipe_open_index = -1;
+    s_ui.alarms.swipe_drag_index = -1;
 
     card = create_card(content);
+    s_ui.alarms.management_card[s_ui.alarms.management_card_count++] = card;
     row = create_row(card);
     center_row(row);
     custom_btn = lv_button_create(row);
@@ -773,39 +1081,66 @@ static void create_alarm_management_overlay(void)
     lv_label_set_text(label, LV_SYMBOL_PLUS);
     lv_obj_center(label);
 
-    card = create_card(content);
-    create_section_title(card, "Upcoming", NULL);
-    s_ui.alarms.management_list = lv_obj_create(card);
-    lv_obj_set_width(s_ui.alarms.management_list, lv_pct(100));
-    lv_obj_set_style_bg_opa(s_ui.alarms.management_list, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.alarms.management_list, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.alarms.management_list, 0, 0);
-    lv_obj_set_style_pad_row(s_ui.alarms.management_list, 14, 0);
-    lv_obj_set_layout(s_ui.alarms.management_list, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(s_ui.alarms.management_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(s_ui.alarms.management_list, LV_OBJ_FLAG_SCROLLABLE);
+    s_ui.alarms.management_list = NULL;
+    lv_obj_add_event_cb(content, alarm_management_scroll_event_cb, LV_EVENT_SCROLL, NULL);
 
     for (int i = 0; i < MAX_ALARMS; ++i) {
         lv_obj_t *alarm_card;
+        lv_obj_t *alarm_content;
+        lv_obj_t *delete_btn;
         lv_obj_t *top_row;
         lv_obj_t *badge;
 
         s_ui.alarms.alarm_ctx[i].alarm_index = i;
-        alarm_card = lv_obj_create(s_ui.alarms.management_list);
+        alarm_card = lv_obj_create(content);
         s_ui.alarms.list_card[i] = alarm_card;
+        s_ui.alarms.management_card[s_ui.alarms.management_card_count++] = alarm_card;
         lv_obj_set_width(alarm_card, lv_pct(100));
         lv_obj_set_height(alarm_card, LV_SIZE_CONTENT);
-        lv_obj_set_style_bg_color(alarm_card, lv_color_hex(0x171717), 0);
+        lv_obj_set_style_bg_opa(alarm_card, LV_OPA_TRANSP, 0);
         lv_obj_set_style_border_width(alarm_card, 0, 0);
-        lv_obj_set_style_radius(alarm_card, 30, 0);
-        lv_obj_set_style_pad_all(alarm_card, 22, 0);
-        lv_obj_set_style_pad_row(alarm_card, 8, 0);
+        lv_obj_set_style_radius(alarm_card, 0, 0);
+        lv_obj_set_style_pad_all(alarm_card, 0, 0);
+        lv_obj_set_style_pad_column(alarm_card, 8, 0);
+        lv_obj_set_style_pad_row(alarm_card, 0, 0);
         lv_obj_set_layout(alarm_card, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(alarm_card, LV_FLEX_FLOW_COLUMN);
+        lv_obj_set_flex_flow(alarm_card, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(alarm_card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_clear_flag(alarm_card, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_event_cb(alarm_card, alarm_list_card_event_cb, LV_EVENT_CLICKED, &s_ui.alarms.alarm_ctx[i]);
 
-        top_row = create_row(alarm_card);
+        delete_btn = lv_button_create(alarm_card);
+        s_ui.alarms.list_delete_btn[i] = delete_btn;
+        lv_obj_add_flag(delete_btn, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_size(delete_btn, 100, 84);
+        lv_obj_set_style_radius(delete_btn, 24, 0);
+        lv_obj_set_style_bg_color(delete_btn, lv_color_hex(0x8E3535), 0);
+        lv_obj_set_style_bg_color(delete_btn, lv_color_hex(0x732828), LV_STATE_PRESSED);
+        lv_obj_set_style_border_width(delete_btn, 0, 0);
+        lv_obj_add_event_cb(delete_btn, stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(delete_btn, stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
+        lv_obj_add_event_cb(delete_btn, stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
+        lv_obj_add_event_cb(delete_btn, stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
+        lv_obj_add_event_cb(delete_btn, alarm_list_delete_event_cb, LV_EVENT_CLICKED, &s_ui.alarms.alarm_ctx[i]);
+        label = lv_label_create(delete_btn);
+        lv_obj_set_style_text_color(label, lv_color_white(), 0);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+        lv_label_set_text(label, "Delete");
+        lv_obj_center(label);
+
+        alarm_content = create_card(alarm_card);
+        s_ui.alarms.list_content[i] = alarm_content;
+        lv_obj_move_to_index(alarm_content, 0);
+        lv_obj_set_style_radius(alarm_content, 30, 0);
+        lv_obj_set_style_pad_all(alarm_content, 22, 0);
+        lv_obj_set_style_pad_row(alarm_content, 8, 0);
+        lv_obj_set_style_translate_x(alarm_content, ALARM_CARD_CLOSED_OFFSET, 0);
+        lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_PRESSED, &s_ui.alarms.alarm_ctx[i]);
+        lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_PRESSING, &s_ui.alarms.alarm_ctx[i]);
+        lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_RELEASED, &s_ui.alarms.alarm_ctx[i]);
+        lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_PRESS_LOST, &s_ui.alarms.alarm_ctx[i]);
+        lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_CLICKED, &s_ui.alarms.alarm_ctx[i]);
+
+        top_row = create_row(alarm_content);
         lv_obj_set_flex_align(top_row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
         s_ui.alarms.list_time_label[i] = lv_label_create(top_row);
@@ -816,15 +1151,19 @@ static void create_alarm_management_overlay(void)
         s_ui.alarms.list_toggle[i] = lv_switch_create(top_row);
         lv_obj_set_style_bg_color(s_ui.alarms.list_toggle[i], lv_color_hex(0x313131), LV_PART_MAIN);
         lv_obj_set_style_bg_color(s_ui.alarms.list_toggle[i], lv_color_hex(0xC8A248), LV_PART_INDICATOR | LV_STATE_CHECKED);
+        lv_obj_add_event_cb(s_ui.alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
+        lv_obj_add_event_cb(s_ui.alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
+        lv_obj_add_event_cb(s_ui.alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
+        lv_obj_add_event_cb(s_ui.alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
         lv_obj_add_event_cb(s_ui.alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_CLICKED, NULL);
         lv_obj_add_event_cb(s_ui.alarms.list_toggle[i], alarm_list_toggle_event_cb, LV_EVENT_VALUE_CHANGED, &s_ui.alarms.alarm_ctx[i]);
 
-        s_ui.alarms.list_meta_label[i] = lv_label_create(alarm_card);
+        s_ui.alarms.list_meta_label[i] = lv_label_create(alarm_content);
         lv_obj_set_style_text_color(s_ui.alarms.list_meta_label[i], lv_color_hex(0xB7B7B7), 0);
         lv_obj_set_style_text_font(s_ui.alarms.list_meta_label[i], &lv_font_montserrat_20, 0);
         lv_label_set_text(s_ui.alarms.list_meta_label[i], "Weekdays");
 
-        badge = lv_obj_create(alarm_card);
+        badge = lv_obj_create(alarm_content);
         s_ui.alarms.list_badge[i] = badge;
         lv_obj_set_size(badge, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_style_bg_color(badge, lv_color_hex(0xC8A248), 0);
@@ -842,6 +1181,7 @@ static void create_alarm_management_overlay(void)
     }
 
     card = create_card(content);
+    s_ui.alarms.management_card[s_ui.alarms.management_card_count++] = card;
     create_section_title(card, "Wake behavior", NULL);
     row = create_row(card);
     label = lv_label_create(row);
@@ -858,7 +1198,9 @@ static void create_alarm_management_overlay(void)
     style_slider(s_ui.alarms.manage_volume_slider);
     lv_obj_add_event_cb(s_ui.alarms.manage_volume_slider, alarm_manage_volume_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
     s_ui.alarms.manage_volume_label = lv_label_create(card);
+    lv_obj_set_width(s_ui.alarms.manage_volume_label, lv_pct(100));
     lv_obj_set_style_text_color(s_ui.alarms.manage_volume_label, lv_color_hex(0xB7B7B7), 0);
+    lv_obj_set_style_text_align(s_ui.alarms.manage_volume_label, LV_TEXT_ALIGN_CENTER, 0);
     row = create_row(card);
     center_row(row);
     s_ui.alarms.manage_test_btn = create_action_button(row, "Preview tone", alarm_manage_test_event_cb, NULL);

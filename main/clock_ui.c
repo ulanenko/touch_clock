@@ -151,11 +151,16 @@ typedef struct {
     bool open;
     bool editor_open;
     bool editor_is_new;
+    bool list_swipe_dragging;
+    bool list_swipe_consumed;
     lv_point_t close_drag_start_point;
+    lv_point_t list_swipe_start_point;
     lv_obj_t *banner;
     lv_obj_t *banner_label;
     lv_obj_t *management_overlay;
+    lv_obj_t *management_content;
     lv_obj_t *management_status;
+    lv_obj_t *management_card[MAX_ALARMS + 2];
     lv_obj_t *management_list;
     lv_obj_t *quick_create_row;
     lv_obj_t *manage_snooze_btn;
@@ -163,6 +168,8 @@ typedef struct {
     lv_obj_t *manage_volume_label;
     lv_obj_t *manage_test_btn;
     lv_obj_t *list_card[MAX_ALARMS];
+    lv_obj_t *list_content[MAX_ALARMS];
+    lv_obj_t *list_delete_btn[MAX_ALARMS];
     lv_obj_t *list_time_label[MAX_ALARMS];
     lv_obj_t *list_meta_label[MAX_ALARMS];
     lv_obj_t *list_badge[MAX_ALARMS];
@@ -191,6 +198,9 @@ typedef struct {
     alarm_config_t editor_draft;
     int8_t editor_index;
     int8_t focus_alarm_index;
+    int8_t swipe_open_index;
+    int8_t swipe_drag_index;
+    uint8_t management_card_count;
 } clock_ui_alarm_state_t;
 
 typedef struct {
