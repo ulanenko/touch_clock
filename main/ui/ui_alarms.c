@@ -224,7 +224,6 @@ static void update_alarm_list_focus_treatment(void)
         return;
     }
 
-    lv_obj_update_layout(s_ui.alarms.management_content);
     lv_obj_get_coords(s_ui.alarms.management_content, &content_coords);
 
     available_width = lv_obj_get_content_width(s_ui.alarms.management_content);
@@ -268,21 +267,33 @@ static void update_alarm_list_focus_treatment(void)
         focus = 1.0f - clamp_unit(distance_ratio);
         eased_focus = focus * focus * (3.0f - 2.0f * focus);
         width = (lv_coord_t)(available_width * (0.76f + 0.16f * eased_focus));
+        width = (lv_coord_t)(((width + 1) / 2) * 2);
 
-        lv_obj_set_width(card, is_alarm_wrapper ? (width + ALARM_CARD_DELETE_REVEAL) : width);
+        lv_coord_t wrapper_width = is_alarm_wrapper ? (width + ALARM_CARD_DELETE_REVEAL) : width;
+        if (LV_ABS(lv_obj_get_width(card) - wrapper_width) >= 2) {
+            lv_obj_set_width(card, wrapper_width);
+        }
         if (is_alarm_wrapper) {
             for (int alarm_index = 0; alarm_index < MAX_ALARMS; ++alarm_index) {
                 if (card == s_ui.alarms.list_card[alarm_index]) {
-                    lv_obj_set_width(visual_card,
-                                     width - ((s_ui.alarms.swipe_open_index == alarm_index) ? ALARM_CARD_OPEN_SQUEEZE : 0));
-                    lv_obj_set_style_translate_x(visual_card,
-                                                 (s_ui.alarms.swipe_open_index == alarm_index) ? 0 : ALARM_CARD_CLOSED_OFFSET,
-                                                 0);
+                    lv_coord_t visual_width =
+                        width - ((s_ui.alarms.swipe_open_index == alarm_index) ? ALARM_CARD_OPEN_SQUEEZE : 0);
+                    lv_coord_t translate =
+                        (s_ui.alarms.swipe_open_index == alarm_index) ? 0 : ALARM_CARD_CLOSED_OFFSET;
+
+                    if (LV_ABS(lv_obj_get_width(visual_card) - visual_width) >= 2) {
+                        lv_obj_set_width(visual_card, visual_width);
+                    }
+                    if (lv_obj_get_style_translate_x(visual_card, LV_PART_MAIN) != translate) {
+                        lv_obj_set_style_translate_x(visual_card, translate, 0);
+                    }
                     break;
                 }
             }
         } else {
-            lv_obj_set_width(visual_card, width);
+            if (LV_ABS(lv_obj_get_width(visual_card) - width) >= 2) {
+                lv_obj_set_width(visual_card, width);
+            }
         }
         lv_obj_set_style_bg_color(visual_card,
                                   eased_focus > 0.58f ? lv_color_hex(0x1D1B16) : lv_color_hex(0x171717),
