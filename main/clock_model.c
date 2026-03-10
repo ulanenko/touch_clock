@@ -18,6 +18,12 @@ const char *clock_face_name(clock_face_id_t face)
         return "Slava";
     case CLOCK_FACE_SLAVA_DARK:
         return "Slava Dark";
+    case CLOCK_FACE_STERNGLAS:
+        return "Sternglas";
+    case CLOCK_FACE_AVENIR:
+        return "Avenir";
+    case CLOCK_FACE_MODERN_SILVER:
+        return "Modern Silver";
     default:
         return "Unknown";
     }

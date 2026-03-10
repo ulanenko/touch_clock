@@ -310,9 +310,13 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         return ESP_ERR_NO_MEM;
     }
 
-    ESP_RETURN_ON_ERROR(bsp_display_lock(1000), TAG, "Failed to lock display for first tick");
-    clock_tick_cb(s_app.tick_timer);
-    bsp_display_unlock();
+    err = bsp_display_lock(1000);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Skipping first tick because display lock timed out: %s", esp_err_to_name(err));
+    } else {
+        clock_tick_cb(s_app.tick_timer);
+        bsp_display_unlock();
+    }
 
     return ESP_OK;
 }

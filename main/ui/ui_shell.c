@@ -35,6 +35,7 @@ static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
 
     s_ui.suppress_events = true;
     apply_face_navigation_mode(face);
+    sync_face_animation_state(face);
     lv_tileview_set_tile_by_index(s_ui.tileview, face, 0, anim);
     update_dots(face);
     sync_alarm_banner_style(face);
@@ -55,6 +56,7 @@ static void tileview_value_changed_cb(lv_event_t *event)
     active_tile = lv_tileview_get_tile_active(s_ui.tileview);
     face = tile_to_face(active_tile);
     apply_face_navigation_mode(face);
+    sync_face_animation_state(face);
     update_dots(face);
     sync_alarm_banner_style(face);
     show_affordances_temporarily();
@@ -68,9 +70,20 @@ static void tileview_value_changed_cb(lv_event_t *event)
 static void tileview_scroll_event_cb(lv_event_t *event)
 {
     lv_event_code_t code = lv_event_get_code(event);
+    clock_face_id_t face;
 
     LV_UNUSED(event);
-    if (code == LV_EVENT_SCROLL_BEGIN || code == LV_EVENT_SCROLL || code == LV_EVENT_SCROLL_END) {
+    if (code == LV_EVENT_SCROLL_BEGIN) {
+        s_ui.faces.tileview_scrolling = true;
+        show_affordances_temporarily();
+        return;
+    }
+
+    if (code == LV_EVENT_SCROLL_END) {
+        s_ui.faces.tileview_scrolling = false;
+        face = tile_to_face(lv_tileview_get_tile_active(s_ui.tileview));
+        update_face(face);
+        update_dots(face);
         show_affordances_temporarily();
     }
 }
@@ -144,6 +157,9 @@ static void build_root_ui(void)
     create_wharton_face(s_ui.tiles[CLOCK_FACE_WHARTON]);
     create_slava_face(s_ui.tiles[CLOCK_FACE_SLAVA]);
     create_slava_dark_face(s_ui.tiles[CLOCK_FACE_SLAVA_DARK]);
+    create_sternglas_face(s_ui.tiles[CLOCK_FACE_STERNGLAS]);
+    create_avenir_face(s_ui.tiles[CLOCK_FACE_AVENIR]);
+    create_modern_silver_face(s_ui.tiles[CLOCK_FACE_MODERN_SILVER]);
 
     lv_obj_add_event_cb(s_ui.tileview, tileview_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_ui.tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, NULL);
@@ -158,6 +174,7 @@ static void build_root_ui(void)
     create_settings_button();
     create_alarm_banner();
     create_alarm_management_overlay();
+    create_alarm_settings_overlay();
     create_alarm_editor_overlay();
     create_alarm_overlay();
     create_settings_overlay();

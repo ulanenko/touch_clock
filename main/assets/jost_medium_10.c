@@ -4,11 +4,7 @@
  * Opts: --font /tmp/Jost-Medium.ttf --size 10 --bpp 4 --format lvgl --symbols 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ --no-kerning --no-compress --lv-font-name jost_medium_10 -o main/assets/jost_medium_10.c
  ******************************************************************************/
 
-#ifdef LV_LVGL_H_INCLUDE_SIMPLE
 #include "lvgl.h"
-#else
-#include "lvgl/lvgl.h"
-#endif
 
 #ifndef JOST_MEDIUM_10
 #define JOST_MEDIUM_10 1
@@ -344,4 +340,3 @@ lv_font_t jost_medium_10 = {
 
 
 #endif /*#if JOST_MEDIUM_10*/
-

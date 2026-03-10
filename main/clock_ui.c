@@ -37,7 +37,7 @@
 #define AFFORDANCE_VISIBLE_MS 1000
 #define AFFORDANCE_FADE_IN_MS 140
 #define AFFORDANCE_FADE_OUT_MS 220
-#define SETTINGS_CLOSE_EDGE_ZONE 80
+#define SETTINGS_CLOSE_EDGE_ZONE 16
 #define SETTINGS_CLOSE_SWIPE_TRIGGER 26
 #define ALARM_CLOSE_BOTTOM_EDGE_ZONE 24
 
@@ -99,6 +99,12 @@
 #define WIFI_DIALOG_WIDTH 620
 #define WIFI_DIALOG_HEIGHT 440
 #define QUICK_ACTION_SYMBOL_BRIGHTNESS LV_SYMBOL_TINT
+#define UI_ACCENT_COL 0xD8DDE3
+#define UI_ACCENT_COL_PRESSED 0xB8BEC6
+#define UI_ACCENT_TEXT_COL 0x14171B
+#define UI_ACCENT_BORDER_COL 0x8D959E
+#define UI_ACCENT_GLOW_COL 0xEEF2F5
+#define UI_ACCENT_MUTED_COL 0xB2B9C1
 
 enum {
     SETTINGS_TAB_WIFI = 0,
@@ -123,8 +129,10 @@ typedef struct {
     bool dragging;
     bool drag_from_edge;
     bool target_open;
+    bool ui_synced;
     lv_point_t drag_start_point;
     int32_t drag_start_y;
+    uint8_t last_ui_percent;
     lv_obj_t *overlay;
     lv_obj_t *sheet;
     lv_obj_t *panel_overlay;
@@ -139,6 +147,10 @@ typedef struct {
 typedef struct {
     bool close_dragging;
     bool open;
+    bool wifi_open;
+    bool night_open;
+    bool wifi_scrolling;
+    bool night_scrolling;
     uint32_t scan_generation;
     char pending_ssid[33];
     lv_point_t close_drag_start_point;
@@ -149,6 +161,18 @@ typedef struct {
     lv_obj_t *bottom_sensor;
     lv_obj_t *left_sensor;
     lv_obj_t *right_sensor;
+    lv_obj_t *wifi_overlay;
+    lv_obj_t *wifi_content;
+    lv_obj_t *wifi_top_sensor;
+    lv_obj_t *wifi_bottom_sensor;
+    lv_obj_t *wifi_left_sensor;
+    lv_obj_t *wifi_right_sensor;
+    lv_obj_t *night_overlay;
+    lv_obj_t *night_content;
+    lv_obj_t *night_top_sensor;
+    lv_obj_t *night_bottom_sensor;
+    lv_obj_t *night_left_sensor;
+    lv_obj_t *night_right_sensor;
     lv_obj_t *wifi_card;
     lv_obj_t *timezone_card;
     lv_obj_t *networks_card;
@@ -176,6 +200,8 @@ typedef struct {
     bool close_dragging;
     bool open;
     bool editor_open;
+    bool settings_open;
+    bool management_scrolling;
     bool editor_is_new;
     bool list_swipe_dragging;
     bool list_swipe_consumed;
@@ -189,10 +215,17 @@ typedef struct {
     lv_obj_t *management_card[MAX_ALARMS + 2];
     lv_obj_t *management_list;
     lv_obj_t *quick_create_row;
+    lv_obj_t *management_settings_btn;
+    lv_obj_t *management_settings_summary;
     lv_obj_t *manage_snooze_btn;
     lv_obj_t *manage_volume_slider;
     lv_obj_t *manage_volume_label;
     lv_obj_t *manage_test_btn;
+    lv_obj_t *settings_overlay;
+    lv_obj_t *settings_top_sensor;
+    lv_obj_t *settings_bottom_sensor;
+    lv_obj_t *settings_left_sensor;
+    lv_obj_t *settings_right_sensor;
     lv_obj_t *list_card[MAX_ALARMS];
     lv_obj_t *list_content[MAX_ALARMS];
     lv_obj_t *list_delete_btn[MAX_ALARMS];
@@ -239,6 +272,15 @@ typedef struct {
     lv_draw_buf_t *digital_snapshot_buf;
     lv_coord_t digital_snapshot_ext_draw;
     lv_obj_t *digital_swipe_layer;
+    bool tileview_scrolling;
+    bool digital_cache_valid;
+    uint8_t digital_last_hour12;
+    uint8_t digital_last_minute;
+    uint8_t digital_last_second;
+    bool digital_last_pm;
+    int16_t digital_last_year;
+    int16_t digital_last_yday;
+    int8_t digital_last_wday;
     lv_obj_t *digital_time_bg;
     lv_obj_t *digital_time_glow;
     lv_obj_t *digital_time_fg;
@@ -273,6 +315,28 @@ typedef struct {
     lv_obj_t *slava_dark_line_min;
     lv_obj_t *slava_dark_line_sec;
     lv_obj_t *slava_dark_center_dot;
+    lv_point_precise_t sternglas_hour_pts[2];
+    lv_point_precise_t sternglas_min_pts[2];
+    lv_point_precise_t sternglas_hour_shadow_pts[2];
+    lv_point_precise_t sternglas_min_shadow_pts[2];
+    lv_obj_t *sternglas_line_hour;
+    lv_obj_t *sternglas_line_min;
+    lv_obj_t *sternglas_line_hour_shadow;
+    lv_obj_t *sternglas_line_min_shadow;
+    lv_obj_t *sternglas_center_dot;
+    lv_obj_t *sternglas_center_inner_dot;
+    lv_obj_t *sternglas_snapshot_img;
+    lv_draw_buf_t *sternglas_snapshot_buf;
+    lv_obj_t *sternglas_hands_canvas;
+    void *sternglas_hands_buf;
+    lv_obj_t *avenir_snapshot_img;
+    lv_draw_buf_t *avenir_snapshot_buf;
+    lv_obj_t *avenir_hands_canvas;
+    void *avenir_hands_buf;
+    lv_obj_t *modern_silver_snapshot_img;
+    lv_draw_buf_t *modern_silver_snapshot_buf;
+    lv_obj_t *modern_silver_hands_canvas;
+    void *modern_silver_hands_buf;
     bool matrix_on[MTX_GRID_X][MTX_GRID_Y];
     int matrix_x0;
     int matrix_y0;
@@ -376,6 +440,11 @@ static void update_matrix_face(void);
 static void update_wharton_face(void);
 static void update_slava_face(void);
 static void update_slava_dark_face(void);
+static void update_sternglas_face(void);
+static void update_avenir_face(void);
+static void update_modern_silver_face(void);
+static void update_face(clock_face_id_t face);
+static void sync_face_animation_state(clock_face_id_t face);
 static bool brightness_panel_is_open(void);
 static void open_settings_tab(uint32_t tab_idx);
 static void sync_alarm_controls(void);
@@ -650,18 +719,39 @@ void clock_ui_tick(time_t now)
 {
     clock_face_id_t desired_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face;
     clock_face_id_t active_face;
+    bool opaque_menu_open = s_ui.settings_ui.open ||
+                            s_ui.alarms.open ||
+                            s_ui.alarms.editor_open ||
+                            s_ui.alarms.settings_open;
 
     if (tile_to_face(lv_tileview_get_tile_active(s_ui.tileview)) != desired_face) {
         set_active_face(desired_face, LV_ANIM_OFF);
     }
     active_face = tile_to_face(lv_tileview_get_tile_active(s_ui.tileview));
-    update_face(active_face);
-    update_dots(active_face);
+    if (!opaque_menu_open && !s_ui.faces.tileview_scrolling) {
+        update_face(active_face);
+        update_dots(active_face);
+    }
 
-    update_alarm_banner(now);
+    if (!opaque_menu_open) {
+        update_alarm_banner(now);
+    }
     sync_alarm_overlay(now);
-    sync_alarm_controls();
-    sync_wifi_controls();
-    sync_night_controls();
-    update_brightness_ui();
+    if ((s_ui.alarms.open || s_ui.alarms.settings_open) &&
+        !s_ui.alarms.editor_open &&
+        !s_ui.alarms.management_scrolling) {
+        sync_alarm_controls();
+    }
+    if (s_ui.settings_ui.wifi_open && !s_ui.settings_ui.wifi_scrolling) {
+        sync_wifi_controls();
+    }
+    if (s_ui.settings_ui.night_open && !s_ui.settings_ui.night_scrolling) {
+        sync_night_controls();
+    }
+    if (s_ui.brightness.animating ||
+        s_ui.brightness.dragging ||
+        brightness_panel_is_open() ||
+        (s_ui.brightness.overlay != NULL && !lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN))) {
+        update_brightness_ui();
+    }
 }

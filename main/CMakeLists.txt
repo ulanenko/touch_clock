@@ -14,6 +14,17 @@ idf_component_register(
         assets/dseg14_classic_italic_36.c
         assets/dseg14_classic_italic_24.c
         assets/dseg14_classic_italic_20.c
+        assets/jost_regular_34.c
+        assets/jost_medium_20.c
+        assets/jost_regular_11.c
+        assets/jost_medium_10.c
+        assets/avenir_book_22.c
+        assets/avenir_book_8.c
+        assets/avenir_book_6.c
+        assets/avenir_book_9.c
+        assets/avenir_book_7.c
+        assets/helvetica_neue_8.c
+        assets/helvetica_neue_5.c
         assets/slava_face_img.c
         assets/slava_dark_face_img.c
         ui/ui_controls.c

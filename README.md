@@ -226,3 +226,7 @@ Typical macOS port:
 - If you want the biggest performance payoff, reduce live object count on the heaviest face or keep leaning into snapshot/cached rendering.
 - If brightness behavior comes back, keep manual control and runtime automation separated clearly so interactions do not regress again.
 - When doing round-screen UI, prefer focused control surfaces over phone-style dense forms.
+
+## Additional Docs
+
+- face creation know-how: [FACE_CREATION_KNOWHOW.md](/Users/borysulanenko/PycharmProjects/touch_clock/FACE_CREATION_KNOWHOW.md)

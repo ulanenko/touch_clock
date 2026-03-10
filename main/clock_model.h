@@ -14,7 +14,10 @@ typedef enum {
     CLOCK_FACE_WHARTON = 2,
     CLOCK_FACE_SLAVA = 3,
     CLOCK_FACE_SLAVA_DARK = 4,
-    CLOCK_FACE_COUNT = 5,
+    CLOCK_FACE_STERNGLAS = 5,
+    CLOCK_FACE_AVENIR = 6,
+    CLOCK_FACE_MODERN_SILVER = 7,
+    CLOCK_FACE_COUNT = 8,
 } clock_face_id_t;
 
 typedef enum {

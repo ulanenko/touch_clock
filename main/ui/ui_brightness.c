@@ -146,9 +146,17 @@ static void update_brightness_ui(void)
     }
 
     ui_brightness = brightness_hw_to_ui(s_ui.settings->base_brightness);
-    snprintf(buffer, sizeof(buffer), "%u%%", ui_brightness);
-    lv_label_set_text(s_ui.brightness.value, buffer);
-    lv_slider_set_value(s_ui.brightness.slider, ui_brightness, LV_ANIM_OFF);
+    if (!s_ui.brightness.ui_synced || s_ui.brightness.last_ui_percent != ui_brightness) {
+        snprintf(buffer, sizeof(buffer), "%u%%", ui_brightness);
+        lv_label_set_text(s_ui.brightness.value, buffer);
+
+        s_ui.suppress_events = true;
+        lv_slider_set_value(s_ui.brightness.slider, ui_brightness, LV_ANIM_OFF);
+        s_ui.suppress_events = false;
+
+        s_ui.brightness.last_ui_percent = ui_brightness;
+        s_ui.brightness.ui_synced = true;
+    }
 }
 
 static bool brightness_panel_is_open(void)
@@ -469,26 +477,13 @@ static lv_obj_t *create_quick_action_button(lv_obj_t *parent,
                                             const char *symbol,
                                             lv_event_cb_t cb)
 {
-    lv_obj_t *button = lv_button_create(parent);
-    lv_obj_t *icon = lv_label_create(button);
+    lv_obj_t *button = create_icon_circle_button(parent, symbol, 128, NULL, NULL);
 
-    lv_obj_set_size(button, 128, 128);
-    lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x262626), 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x3A3A3A), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(button, 0, 0);
-    lv_obj_set_style_pad_all(button, 0, 0);
-    lv_obj_set_style_shadow_width(button, 0, 0);
     lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
     lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
     lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_CLICKED, NULL);
-
-    lv_obj_set_style_text_font(icon, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(icon, lv_color_white(), 0);
-    lv_label_set_text(icon, symbol);
-    lv_obj_center(icon);
 
     if (cb != NULL) {
         lv_obj_add_event_cb(button, cb, LV_EVENT_PRESSED, NULL);
