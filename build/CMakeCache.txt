@@ -381,7 +381,7 @@ PKG_CONFIG_ARGN:STRING=
 PKG_CONFIG_EXECUTABLE:FILEPATH=/opt/homebrew/bin/pkg-config
 
 //No help, variable specified on the command line.
-PYTHON:UNINITIALIZED=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python
+PYTHON:UNINITIALIZED=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python
 
 //No help, variable specified on the command line.
 PYTHON_DEPS_CHECKED:UNINITIALIZED=1
@@ -641,7 +641,7 @@ FIND_PACKAGE_MESSAGE_DETAILS_Git:INTERNAL=[/usr/bin/git][v2.50.1 (Apple Git-155)
 //Details about finding PkgConfig
 FIND_PACKAGE_MESSAGE_DETAILS_PkgConfig:INTERNAL=[/opt/homebrew/bin/pkg-config][v0.29.2()]
 //Details about finding Python3
-FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python][cfound components: Interpreter ][v3.11.8()]
+FIND_PACKAGE_MESSAGE_DETAILS_Python3:INTERNAL=[/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python][cfound components: Interpreter ][v3.12.5()]
 //Details about finding Threads
 FIND_PACKAGE_MESSAGE_DETAILS_Threads:INTERNAL=[TRUE][v()]
 //ADVANCED property for variable: GIT_EXECUTABLE
@@ -656,10 +656,10 @@ _GNUInstallDirs_LAST_CMAKE_INSTALL_PREFIX:INTERNAL=/usr/local
 _Python3_Compiler_REASON_FAILURE:INTERNAL=
 //Development reason failure
 _Python3_Development_REASON_FAILURE:INTERNAL=
-_Python3_EXECUTABLE:INTERNAL=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/bin/python
+_Python3_EXECUTABLE:INTERNAL=/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/bin/python
 //Python3 Properties
-_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;11;8;32;64;;;abi3;/Users/borysulanenko/miniconda3/lib/python3.11;/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/lib/python3.11;/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/lib/python3.11/site-packages;/Users/borysulanenko/.espressif/python_env/idf5.5_py3.11_env/lib/python3.11/site-packages
-_Python3_INTERPRETER_SIGNATURE:INTERNAL=17c45905db743c39973a74fe9ec86d28
+_Python3_INTERPRETER_PROPERTIES:INTERNAL=Python;3;12;5;32;64;;;abi3;/Library/Frameworks/Python.framework/Versions/3.12/lib/python3.12;/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/lib/python3.12;/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/lib/python3.12/site-packages;/Users/borysulanenko/.espressif/python_env/idf5.5_py3.12_env/lib/python3.12/site-packages
+_Python3_INTERPRETER_SIGNATURE:INTERNAL=864c4bd4bf31451a2f9133ae8cf6f6e1
 //NumPy reason failure
 _Python3_NumPy_REASON_FAILURE:INTERNAL=
 

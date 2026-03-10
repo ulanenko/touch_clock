@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "assets/alarm_pcm.h"
 #include "bsp/esp32_p4_wifi6_touch_lcd_xc.h"
 #include "driver/i2s_std.h"
 #include "esp_codec_dev.h"
@@ -9,9 +10,6 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "freertos/task.h"
-
-extern const int16_t alarm_pcm_data[];
-extern const int32_t ALARM_PCM_SAMPLES;
 
 #define ALARM_SAMPLE_RATE_HZ 44100
 #define ALARM_AUDIO_CHUNK_SAMPLES 512
