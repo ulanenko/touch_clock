@@ -208,6 +208,13 @@ static void sync_alarm_controls(void)
         }
     }
 
+    if (s_ui.alarms.focus_alarm_index >= 0 &&
+        s_ui.alarms.focus_alarm_index < MAX_ALARMS &&
+        s_ui.alarms.list_card[s_ui.alarms.focus_alarm_index] != NULL) {
+        lv_obj_scroll_to_view_recursive(s_ui.alarms.list_card[s_ui.alarms.focus_alarm_index], LV_ANIM_ON);
+        s_ui.alarms.focus_alarm_index = -1;
+    }
+
     if (s_ui.alarms.editor_open && s_ui.alarms.editor_overlay != NULL) {
         char editor_time[24];
         char summary[64];
@@ -514,6 +521,7 @@ static void alarm_editor_save_event_cb(lv_event_t *event)
     }
 
     s_ui.settings->alarms[s_ui.alarms.editor_index] = s_ui.alarms.editor_draft;
+    s_ui.alarms.focus_alarm_index = s_ui.alarms.editor_index;
     notify_settings_changed();
     alarm_editor_close();
     sync_alarm_controls();
@@ -548,13 +556,6 @@ static void alarm_editor_close_event_cb(lv_event_t *event)
     alarm_editor_close();
 }
 
-enum {
-    ALARM_CLOSE_SWIPE_TOP = 0,
-    ALARM_CLOSE_SWIPE_BOTTOM = 1,
-    ALARM_CLOSE_SWIPE_LEFT = 2,
-    ALARM_CLOSE_SWIPE_RIGHT = 3,
-};
-
 static void close_alarm_surface(void)
 {
     if (s_ui.alarms.editor_open) {
@@ -568,10 +569,8 @@ static void alarm_close_swipe_event_cb(lv_event_t *event)
 {
     lv_event_code_t code = lv_event_get_code(event);
     lv_indev_t *indev = lv_event_get_indev(event);
-    uintptr_t direction = (uintptr_t)lv_event_get_user_data(event);
+    ui_surface_edge_t edge = (ui_surface_edge_t)(uintptr_t)lv_event_get_user_data(event);
     lv_point_t point;
-    int32_t dx;
-    int32_t dy;
 
     if ((!s_ui.alarms.open && !s_ui.alarms.editor_open) || indev == NULL) {
         return;
@@ -589,14 +588,11 @@ static void alarm_close_swipe_event_cb(lv_event_t *event)
         return;
     }
 
-    dx = point.x - s_ui.alarms.close_drag_start_point.x;
-    dy = point.y - s_ui.alarms.close_drag_start_point.y;
-
     if (code == LV_EVENT_PRESSING) {
-        if ((direction == ALARM_CLOSE_SWIPE_TOP && dy >= SETTINGS_CLOSE_SWIPE_TRIGGER) ||
-            (direction == ALARM_CLOSE_SWIPE_BOTTOM && dy <= -SETTINGS_CLOSE_SWIPE_TRIGGER) ||
-            (direction == ALARM_CLOSE_SWIPE_LEFT && dx >= SETTINGS_CLOSE_SWIPE_TRIGGER) ||
-            (direction == ALARM_CLOSE_SWIPE_RIGHT && dx <= -SETTINGS_CLOSE_SWIPE_TRIGGER)) {
+        if (ui_surface_edge_swipe_trigger(edge,
+                                          &s_ui.alarms.close_drag_start_point,
+                                          &point,
+                                          SETTINGS_CLOSE_SWIPE_TRIGGER)) {
             close_alarm_surface();
         }
         return;
@@ -605,33 +601,6 @@ static void alarm_close_swipe_event_cb(lv_event_t *event)
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         s_ui.alarms.close_dragging = false;
     }
-}
-
-static void create_alarm_close_sensor(lv_obj_t *parent,
-                                      lv_obj_t **sensor,
-                                      lv_align_t align,
-                                      lv_coord_t width,
-                                      lv_coord_t height,
-                                      uintptr_t direction)
-{
-    *sensor = lv_obj_create(parent);
-    lv_obj_set_size(*sensor, width, height);
-    lv_obj_align(*sensor, align, 0, 0);
-    lv_obj_set_style_bg_opa(*sensor, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(*sensor, 0, 0);
-    lv_obj_set_style_radius(*sensor, 0, 0);
-    lv_obj_set_style_pad_all(*sensor, 0, 0);
-    lv_obj_set_scrollbar_mode(*sensor, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(*sensor, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(*sensor, alarm_close_swipe_event_cb, LV_EVENT_PRESSED, (void *)direction);
-    lv_obj_add_event_cb(*sensor, alarm_close_swipe_event_cb, LV_EVENT_PRESSING, (void *)direction);
-    lv_obj_add_event_cb(*sensor, alarm_close_swipe_event_cb, LV_EVENT_RELEASED, (void *)direction);
-    lv_obj_add_event_cb(*sensor, alarm_close_swipe_event_cb, LV_EVENT_PRESS_LOST, (void *)direction);
-}
-
-static void center_row(lv_obj_t *row)
-{
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 }
 
 static void style_alarm_roller(lv_obj_t *roller)
@@ -650,64 +619,6 @@ static void style_alarm_roller(lv_obj_t *roller)
     lv_obj_set_style_text_color(roller, lv_color_black(), LV_PART_SELECTED);
     lv_obj_set_style_text_font(roller, &lv_font_montserrat_48, LV_PART_SELECTED);
     lv_obj_set_style_border_width(roller, 0, LV_PART_SELECTED);
-}
-
-static void quick_create_alarm(uint8_t kind)
-{
-    time_t now;
-    struct tm local_tm;
-    int slot = find_alarm_slot_for_new_alarm();
-
-    if (slot < 0 || slot >= MAX_ALARMS) {
-        return;
-    }
-
-    time(&now);
-    localtime_r(&now, &local_tm);
-
-    s_ui.settings->alarms[slot].enabled = true;
-    s_ui.settings->alarms[slot].days_mask = 0x7F;
-    s_ui.settings->alarms[slot].repeat_mode = ALARM_REPEAT_WEEKLY;
-
-    switch (kind) {
-    case ALARM_QUICK_CREATE_IN_10:
-    case ALARM_QUICK_CREATE_IN_30: {
-        time_t target = now + ((kind == ALARM_QUICK_CREATE_IN_10) ? 10 : 30) * 60;
-        struct tm target_tm;
-
-        localtime_r(&target, &target_tm);
-        s_ui.settings->alarms[slot].hour = target_tm.tm_hour;
-        s_ui.settings->alarms[slot].minute = target_tm.tm_min;
-        s_ui.settings->alarms[slot].repeat_mode = ALARM_REPEAT_ONCE;
-        break;
-    }
-    case ALARM_QUICK_CREATE_TOMORROW_7:
-        s_ui.settings->alarms[slot].hour = 7;
-        s_ui.settings->alarms[slot].minute = 0;
-        s_ui.settings->alarms[slot].repeat_mode = ALARM_REPEAT_ONCE;
-        break;
-    case ALARM_QUICK_CREATE_WEEKDAYS_7:
-    default:
-        s_ui.settings->alarms[slot].hour = 7;
-        s_ui.settings->alarms[slot].minute = 0;
-        s_ui.settings->alarms[slot].repeat_mode = ALARM_REPEAT_WEEKLY;
-        s_ui.settings->alarms[slot].days_mask = 0x3E;
-        break;
-    }
-
-    notify_settings_changed();
-    sync_alarm_controls();
-}
-
-static void alarm_quick_create_event_cb(lv_event_t *event)
-{
-    alarm_action_ctx_t *ctx = (alarm_action_ctx_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL) {
-        return;
-    }
-
-    quick_create_alarm(ctx->kind);
 }
 
 static void alarm_custom_create_event_cb(lv_event_t *event)
@@ -812,60 +723,29 @@ static void open_alarm_editor(uint8_t alarm_index, bool is_new)
 
 static void create_alarm_management_overlay(void)
 {
-    static const char *quick_labels[4] = {
-        "10 min",
-        "30 min",
-        "Next 7 AM",
-        "Weekdays 7 AM",
-    };
-    lv_obj_t *panel;
+    ui_surface_t surface;
     lv_obj_t *header;
     lv_obj_t *title;
-    lv_obj_t *close_btn;
-    lv_obj_t *close_label;
     lv_obj_t *content;
     lv_obj_t *card;
     lv_obj_t *row;
     lv_obj_t *label;
     lv_obj_t *custom_btn;
 
-    s_ui.alarms.management_overlay = lv_obj_create(s_ui.screen);
-    lv_obj_set_size(s_ui.alarms.management_overlay, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_set_style_bg_color(s_ui.alarms.management_overlay, lv_color_hex(0x070707), 0);
-    lv_obj_set_style_bg_opa(s_ui.alarms.management_overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(s_ui.alarms.management_overlay, 0, 0);
-    lv_obj_set_style_radius(s_ui.alarms.management_overlay, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.alarms.management_overlay, 0, 0);
-    lv_obj_add_flag(s_ui.alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(s_ui.alarms.management_overlay, alarm_management_overlay_event_cb, LV_EVENT_CLICKED, NULL);
+    ui_surface_create_fullscreen(&surface,
+                                 s_ui.screen,
+                                 lv_color_hex(0x070707),
+                                 LV_OPA_COVER,
+                                 lv_color_hex(0x0B0B0B),
+                                 92,
+                                 "Alarms",
+                                 alarm_management_overlay_event_cb,
+                                 alarm_management_close_event_cb);
+    s_ui.alarms.management_overlay = surface.overlay;
+    header = surface.header;
+    title = surface.title;
+    content = surface.content;
 
-    panel = lv_obj_create(s_ui.alarms.management_overlay);
-    lv_obj_set_size(panel, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x0B0B0B), 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_radius(panel, 0, 0);
-    lv_obj_set_style_pad_all(panel, 0, 0);
-    lv_obj_set_layout(panel, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    header = lv_obj_create(panel);
-    lv_obj_set_width(header, lv_pct(100));
-    lv_obj_set_height(header, 92);
-    lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(header, 0, 0);
-    lv_obj_set_style_pad_left(header, 28, 0);
-    lv_obj_set_style_pad_right(header, 28, 0);
-    lv_obj_set_style_pad_top(header, 18, 0);
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
-
-    title = lv_label_create(header);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_set_width(title, 360);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(title, "Alarms");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
 
     s_ui.alarms.management_status = lv_label_create(header);
@@ -875,47 +755,9 @@ static void create_alarm_management_overlay(void)
     lv_label_set_long_mode(s_ui.alarms.management_status, LV_LABEL_LONG_WRAP);
     lv_label_set_text(s_ui.alarms.management_status, "No alarms scheduled");
     lv_obj_align(s_ui.alarms.management_status, LV_ALIGN_BOTTOM_MID, 0, 0);
-
-    close_btn = lv_button_create(header);
-    lv_obj_set_size(close_btn, 54, 54);
-    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_radius(close_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(close_btn, lv_color_hex(0x1D1D1D), 0);
-    lv_obj_set_style_border_width(close_btn, 0, 0);
-    lv_obj_add_event_cb(close_btn, alarm_management_close_event_cb, LV_EVENT_CLICKED, NULL);
-    close_label = lv_label_create(close_btn);
-    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-    lv_obj_center(close_label);
-
-    content = lv_obj_create(panel);
-    lv_obj_set_width(content, lv_pct(100));
-    lv_obj_set_flex_grow(content, 1);
-    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(content, 0, 0);
-    lv_obj_set_style_pad_left(content, 24, 0);
-    lv_obj_set_style_pad_right(content, 24, 0);
     lv_obj_set_style_pad_bottom(content, 28, 0);
-    lv_obj_set_style_pad_row(content, 18, 0);
-    lv_obj_set_layout(content, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(content, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);
 
     card = create_card(content);
-    s_ui.alarms.quick_create_row = create_row(card);
-    center_row(s_ui.alarms.quick_create_row);
-    lv_obj_set_style_pad_column(s_ui.alarms.quick_create_row, 16, 0);
-    lv_obj_set_style_pad_row(s_ui.alarms.quick_create_row, 16, 0);
-    for (int i = 0; i < 4; ++i) {
-        lv_obj_t *quick_btn;
-
-        s_ui.alarms.quick_action_ctx[i].kind = (uint8_t)i;
-        quick_btn = create_action_button(s_ui.alarms.quick_create_row,
-                                         quick_labels[i],
-                                         alarm_quick_create_event_cb,
-                                         &s_ui.alarms.quick_action_ctx[i]);
-        lv_obj_set_size(quick_btn, 152, 56);
-    }
     row = create_row(card);
     center_row(row);
     custom_btn = lv_button_create(row);
@@ -1022,111 +864,61 @@ static void create_alarm_management_overlay(void)
     s_ui.alarms.manage_test_btn = create_action_button(row, "Preview tone", alarm_manage_test_event_cb, NULL);
     lv_obj_set_width(s_ui.alarms.manage_test_btn, 220);
 
-    create_alarm_close_sensor(s_ui.alarms.management_overlay,
-                              &s_ui.alarms.top_sensor,
-                              LV_ALIGN_TOP_MID,
-                              SCREEN_SIZE,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              ALARM_CLOSE_SWIPE_TOP);
-    create_alarm_close_sensor(s_ui.alarms.management_overlay,
-                              &s_ui.alarms.bottom_sensor,
-                              LV_ALIGN_BOTTOM_MID,
-                              SCREEN_SIZE,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              ALARM_CLOSE_SWIPE_BOTTOM);
-    create_alarm_close_sensor(s_ui.alarms.management_overlay,
-                              &s_ui.alarms.left_sensor,
-                              LV_ALIGN_LEFT_MID,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              SCREEN_SIZE,
-                              ALARM_CLOSE_SWIPE_LEFT);
-    create_alarm_close_sensor(s_ui.alarms.management_overlay,
-                              &s_ui.alarms.right_sensor,
-                              LV_ALIGN_RIGHT_MID,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              SCREEN_SIZE,
-                              ALARM_CLOSE_SWIPE_RIGHT);
+    ui_surface_create_edge_sensor(s_ui.alarms.management_overlay,
+                                  &s_ui.alarms.top_sensor,
+                                  UI_SURFACE_EDGE_TOP,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_TOP);
+    ui_surface_create_edge_sensor(s_ui.alarms.management_overlay,
+                                  &s_ui.alarms.bottom_sensor,
+                                  UI_SURFACE_EDGE_BOTTOM,
+                                  ALARM_CLOSE_BOTTOM_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_BOTTOM);
+    ui_surface_create_edge_sensor(s_ui.alarms.management_overlay,
+                                  &s_ui.alarms.left_sensor,
+                                  UI_SURFACE_EDGE_LEFT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_LEFT);
+    ui_surface_create_edge_sensor(s_ui.alarms.management_overlay,
+                                  &s_ui.alarms.right_sensor,
+                                  UI_SURFACE_EDGE_RIGHT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_RIGHT);
 }
 
 static void create_alarm_editor_overlay(void)
 {
     static const char *repeat_labels[4] = {"One time", "Every day", "Weekdays", "Weekends"};
     static const uint8_t display_day_order[7] = {1, 2, 3, 4, 5, 6, 0};
-    lv_obj_t *panel;
-    lv_obj_t *header;
+    ui_surface_t surface;
     lv_obj_t *title;
-    lv_obj_t *close_btn;
-    lv_obj_t *close_label;
     lv_obj_t *content;
     lv_obj_t *card;
     lv_obj_t *row;
     lv_obj_t *label;
     lv_obj_t *actions;
     lv_obj_t *save_btn;
+    lv_obj_t *panel;
 
-    s_ui.alarms.editor_overlay = lv_obj_create(s_ui.screen);
-    lv_obj_set_size(s_ui.alarms.editor_overlay, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_set_style_bg_color(s_ui.alarms.editor_overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(s_ui.alarms.editor_overlay, LV_OPA_80, 0);
-    lv_obj_set_style_border_width(s_ui.alarms.editor_overlay, 0, 0);
-    lv_obj_set_style_radius(s_ui.alarms.editor_overlay, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.alarms.editor_overlay, 0, 0);
-    lv_obj_add_flag(s_ui.alarms.editor_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(s_ui.alarms.editor_overlay, alarm_editor_overlay_event_cb, LV_EVENT_CLICKED, NULL);
+    ui_surface_create_fullscreen(&surface,
+                                 s_ui.screen,
+                                 lv_color_black(),
+                                 LV_OPA_80,
+                                 lv_color_hex(0x0B0B0B),
+                                 92,
+                                 "Edit alarm",
+                                 alarm_editor_overlay_event_cb,
+                                 alarm_editor_close_event_cb);
+    s_ui.alarms.editor_overlay = surface.overlay;
+    panel = surface.panel;
+    title = surface.title;
+    content = surface.content;
 
-    panel = lv_obj_create(s_ui.alarms.editor_overlay);
-    lv_obj_set_size(panel, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x0B0B0B), 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_radius(panel, 0, 0);
-    lv_obj_set_style_pad_all(panel, 0, 0);
-    lv_obj_set_layout(panel, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-
-    header = lv_obj_create(panel);
-    lv_obj_set_width(header, lv_pct(100));
-    lv_obj_set_height(header, 92);
-    lv_obj_set_style_bg_opa(header, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(header, 0, 0);
-    lv_obj_set_style_pad_left(header, 28, 0);
-    lv_obj_set_style_pad_right(header, 28, 0);
-    lv_obj_set_style_pad_top(header, 18, 0);
-    lv_obj_clear_flag(header, LV_OBJ_FLAG_SCROLLABLE);
-
-    title = lv_label_create(header);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_set_width(title, 360);
-    lv_obj_set_style_text_align(title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(title, "Edit alarm");
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
-
-    close_btn = lv_button_create(header);
-    lv_obj_set_size(close_btn, 54, 54);
-    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_radius(close_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(close_btn, lv_color_hex(0x1D1D1D), 0);
-    lv_obj_set_style_border_width(close_btn, 0, 0);
-    lv_obj_add_event_cb(close_btn, alarm_editor_close_event_cb, LV_EVENT_CLICKED, NULL);
-    close_label = lv_label_create(close_btn);
-    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-    lv_obj_center(close_label);
-
-    content = lv_obj_create(panel);
-    lv_obj_set_width(content, lv_pct(100));
-    lv_obj_set_flex_grow(content, 1);
-    lv_obj_set_style_bg_opa(content, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(content, 0, 0);
-    lv_obj_set_style_pad_left(content, 24, 0);
-    lv_obj_set_style_pad_right(content, 24, 0);
-    lv_obj_set_style_pad_bottom(content, 24, 0);
-    lv_obj_set_style_pad_row(content, 18, 0);
-    lv_obj_set_layout(content, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_scroll_dir(content, LV_DIR_VER);
-    lv_obj_set_scrollbar_mode(content, LV_SCROLLBAR_MODE_OFF);
 
     card = create_card(content);
     s_ui.alarms.editor_time_label = lv_label_create(card);
@@ -1213,28 +1005,28 @@ static void create_alarm_editor_overlay(void)
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(0xC8A248), 0);
     lv_obj_set_style_text_color(save_btn, lv_color_black(), 0);
 
-    create_alarm_close_sensor(s_ui.alarms.editor_overlay,
-                              &s_ui.alarms.top_sensor,
-                              LV_ALIGN_TOP_MID,
-                              SCREEN_SIZE,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              ALARM_CLOSE_SWIPE_TOP);
-    create_alarm_close_sensor(s_ui.alarms.editor_overlay,
-                              &s_ui.alarms.bottom_sensor,
-                              LV_ALIGN_BOTTOM_MID,
-                              SCREEN_SIZE,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              ALARM_CLOSE_SWIPE_BOTTOM);
-    create_alarm_close_sensor(s_ui.alarms.editor_overlay,
-                              &s_ui.alarms.left_sensor,
-                              LV_ALIGN_LEFT_MID,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              SCREEN_SIZE,
-                              ALARM_CLOSE_SWIPE_LEFT);
-    create_alarm_close_sensor(s_ui.alarms.editor_overlay,
-                              &s_ui.alarms.right_sensor,
-                              LV_ALIGN_RIGHT_MID,
-                              SETTINGS_CLOSE_EDGE_ZONE,
-                              SCREEN_SIZE,
-                              ALARM_CLOSE_SWIPE_RIGHT);
+    ui_surface_create_edge_sensor(s_ui.alarms.editor_overlay,
+                                  &s_ui.alarms.top_sensor,
+                                  UI_SURFACE_EDGE_TOP,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_TOP);
+    ui_surface_create_edge_sensor(s_ui.alarms.editor_overlay,
+                                  &s_ui.alarms.bottom_sensor,
+                                  UI_SURFACE_EDGE_BOTTOM,
+                                  ALARM_CLOSE_BOTTOM_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_BOTTOM);
+    ui_surface_create_edge_sensor(s_ui.alarms.editor_overlay,
+                                  &s_ui.alarms.left_sensor,
+                                  UI_SURFACE_EDGE_LEFT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_LEFT);
+    ui_surface_create_edge_sensor(s_ui.alarms.editor_overlay,
+                                  &s_ui.alarms.right_sensor,
+                                  UI_SURFACE_EDGE_RIGHT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  alarm_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_RIGHT);
 }

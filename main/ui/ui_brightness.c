@@ -178,13 +178,6 @@ static void brightness_sheet_y_anim_cb(void *obj, int32_t value)
     lv_obj_set_y((lv_obj_t *)obj, value);
 }
 
-static void brightness_show_anim_ready_cb(lv_anim_t *anim)
-{
-    LV_UNUSED(anim);
-    s_ui.brightness.animating = false;
-    s_ui.brightness.dragging = false;
-}
-
 static void brightness_overlay_set_visible(bool show)
 {
     if (s_ui.brightness.overlay == NULL) {
@@ -213,62 +206,6 @@ static void brightness_overlay_hide_immediately(void)
     brightness_overlay_set_visible(false);
 }
 
-static void brightness_hide_anim_ready_cb(lv_anim_t *anim)
-{
-    LV_UNUSED(anim);
-    s_ui.brightness.animating = false;
-    s_ui.brightness.dragging = false;
-    lv_obj_add_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void brightness_overlay_animate(bool show)
-{
-    lv_anim_t panel_anim;
-    lv_anim_t scrim_anim;
-    uint32_t duration = show ? BRIGHTNESS_SHEET_SHOW_MS : BRIGHTNESS_SHEET_HIDE_MS;
-    int32_t start_y = lv_obj_get_y(s_ui.brightness.sheet);
-    lv_opa_t start_opa = lv_obj_get_style_bg_opa(s_ui.brightness.overlay, 0);
-
-    if (s_ui.settings_ui.open || alarm_surface_is_open()) {
-        return;
-    }
-
-    s_ui.brightness.animating = true;
-    s_ui.brightness.dragging = false;
-    set_affordances_visible(false);
-    if (s_ui.affordance_hide_timer != NULL) {
-        lv_timer_pause(s_ui.affordance_hide_timer);
-    }
-
-    if (show) {
-        update_brightness_ui();
-        if (lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
-            brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
-            lv_obj_clear_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_move_foreground(s_ui.brightness.overlay);
-            start_y = BRIGHTNESS_SHEET_CLOSED_Y;
-            start_opa = LV_OPA_TRANSP;
-        }
-    }
-
-    lv_anim_init(&panel_anim);
-    lv_anim_set_var(&panel_anim, s_ui.brightness.sheet);
-    lv_anim_set_exec_cb(&panel_anim, brightness_sheet_y_anim_cb);
-    lv_anim_set_time(&panel_anim, duration);
-    lv_anim_set_values(&panel_anim, start_y, show ? BRIGHTNESS_SHEET_OPEN_Y : BRIGHTNESS_SHEET_CLOSED_Y);
-    lv_anim_set_path_cb(&panel_anim, lv_anim_path_linear);
-    lv_anim_set_ready_cb(&panel_anim, show ? brightness_show_anim_ready_cb : brightness_hide_anim_ready_cb);
-    lv_anim_start(&panel_anim);
-
-    lv_anim_init(&scrim_anim);
-    lv_anim_set_var(&scrim_anim, s_ui.brightness.overlay);
-    lv_anim_set_exec_cb(&scrim_anim, brightness_scrim_anim_cb);
-    lv_anim_set_time(&scrim_anim, duration);
-    lv_anim_set_values(&scrim_anim, start_opa, show ? BRIGHTNESS_SCRIM_OPA : LV_OPA_TRANSP);
-    lv_anim_set_path_cb(&scrim_anim, lv_anim_path_linear);
-    lv_anim_start(&scrim_anim);
-}
-
 static void brightness_overlay_hide(void)
 {
     if (s_ui.brightness.animating || lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
@@ -276,17 +213,6 @@ static void brightness_overlay_hide(void)
     }
 
     brightness_overlay_set_visible(false);
-}
-
-static void brightness_panel_show(void)
-{
-    if (s_ui.brightness.panel_overlay == NULL || s_ui.settings_ui.open || alarm_surface_is_open()) {
-        return;
-    }
-
-    update_brightness_ui();
-    lv_obj_clear_flag(s_ui.brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(s_ui.brightness.panel_overlay);
 }
 
 static void brightness_panel_hide(void)
@@ -298,70 +224,6 @@ static void brightness_panel_hide(void)
     lv_obj_add_flag(s_ui.brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void brightness_prepare_for_drag_from_edge(void)
-{
-    if (!lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
-        return;
-    }
-
-    update_brightness_ui();
-    brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
-    lv_obj_clear_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(s_ui.brightness.overlay);
-}
-
-static void brightness_begin_drag(const lv_point_t *point, bool from_edge)
-{
-    lv_anim_delete(s_ui.brightness.sheet, brightness_sheet_y_anim_cb);
-    lv_anim_delete(s_ui.brightness.overlay, brightness_scrim_anim_cb);
-
-    show_affordances_temporarily();
-    s_ui.brightness.animating = false;
-    s_ui.brightness.dragging = true;
-    s_ui.brightness.drag_from_edge = from_edge;
-    s_ui.brightness.drag_start_point = *point;
-    s_ui.brightness.drag_start_y = from_edge ? BRIGHTNESS_SHEET_CLOSED_Y : lv_obj_get_y(s_ui.brightness.sheet);
-
-    if (from_edge) {
-        brightness_prepare_for_drag_from_edge();
-    }
-}
-
-static void brightness_update_drag(const lv_point_t *point)
-{
-    int32_t dy;
-
-    if (!s_ui.brightness.dragging) {
-        return;
-    }
-
-    dy = point->y - s_ui.brightness.drag_start_point.y;
-    brightness_update_visual_state(s_ui.brightness.drag_start_y + dy);
-}
-
-static void brightness_finish_drag(void)
-{
-    int32_t midpoint = (BRIGHTNESS_SHEET_OPEN_Y + BRIGHTNESS_SHEET_CLOSED_Y) / 2;
-    int32_t current_y;
-    bool from_edge;
-
-    if (!s_ui.brightness.dragging) {
-        return;
-    }
-
-    current_y = lv_obj_get_y(s_ui.brightness.sheet);
-    from_edge = s_ui.brightness.drag_from_edge;
-    s_ui.brightness.dragging = false;
-    s_ui.brightness.drag_from_edge = false;
-
-    if (from_edge) {
-        brightness_overlay_set_visible(current_y < (BRIGHTNESS_SHEET_CLOSED_Y - 36));
-        return;
-    }
-
-    brightness_overlay_set_visible(current_y <= midpoint);
-}
-
 static void brightness_slider_event_cb(lv_event_t *event)
 {
     if (s_ui.suppress_events) {
@@ -371,6 +233,17 @@ static void brightness_slider_event_cb(lv_event_t *event)
     s_ui.settings->base_brightness = brightness_ui_to_hw(lv_slider_get_value(lv_event_get_target(event)));
     update_brightness_ui();
     notify_settings_changed();
+}
+
+static void brightness_panel_show(void)
+{
+    if (s_ui.brightness.panel_overlay == NULL || s_ui.settings_ui.open || alarm_surface_is_open()) {
+        return;
+    }
+
+    update_brightness_ui();
+    lv_obj_clear_flag(s_ui.brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_ui.brightness.panel_overlay);
 }
 
 static void brightness_action_event_cb(lv_event_t *event)
@@ -586,8 +459,6 @@ static void create_brightness_panel(void)
 {
     lv_obj_t *panel;
     lv_obj_t *title;
-    lv_obj_t *close_btn;
-    lv_obj_t *close_label;
 
     s_ui.brightness.panel_overlay = lv_obj_create(s_ui.screen);
     lv_obj_set_size(s_ui.brightness.panel_overlay, SCREEN_SIZE, SCREEN_SIZE);
@@ -620,18 +491,6 @@ static void create_brightness_panel(void)
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_label_set_text(title, "Brightness");
-
-    close_btn = lv_button_create(panel);
-    lv_obj_set_size(close_btn, 44, 44);
-    lv_obj_align(close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
-    lv_obj_set_style_radius(close_btn, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(close_btn, lv_color_hex(0x282828), 0);
-    lv_obj_set_style_border_width(close_btn, 0, 0);
-    lv_obj_add_event_cb(close_btn, brightness_panel_overlay_event_cb, LV_EVENT_CLICKED, NULL);
-
-    close_label = lv_label_create(close_btn);
-    lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
-    lv_obj_center(close_label);
 
     s_ui.brightness.slider = lv_slider_create(panel);
     lv_obj_set_width(s_ui.brightness.slider, lv_pct(100));

@@ -11,4 +11,6 @@ idf_component_register(
         assets/alarm_pcm.c
         assets/slava_face_img.c
         assets/slava_dark_face_img.c
+        ui/ui_controls.c
+        ui/ui_surface.c
     INCLUDE_DIRS .)

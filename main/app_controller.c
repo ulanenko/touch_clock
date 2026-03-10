@@ -41,18 +41,22 @@ static void mark_settings_dirty(void)
 
 static void apply_runtime_brightness(void)
 {
-    if (s_app.applied_brightness == s_app.runtime.effective_brightness) {
+    uint8_t target_brightness = s_app.settings.base_brightness;
+
+    s_app.runtime.effective_brightness = target_brightness;
+
+    if (s_app.applied_brightness == target_brightness) {
         return;
     }
 
-    esp_err_t err = bsp_display_brightness_set(s_app.runtime.effective_brightness);
+    esp_err_t err = bsp_display_brightness_set(target_brightness);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "Failed to set brightness to %u%%: %s",
-                 s_app.runtime.effective_brightness, esp_err_to_name(err));
+                 target_brightness, esp_err_to_name(err));
         return;
     }
 
-    s_app.applied_brightness = s_app.runtime.effective_brightness;
+    s_app.applied_brightness = target_brightness;
 }
 
 static void maybe_save_settings(bool force)

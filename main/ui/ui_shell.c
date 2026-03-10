@@ -149,4 +149,3 @@ static void build_root_ui(void)
     create_settings_overlay();
     set_active_face(s_ui.settings->current_face, LV_ANIM_OFF);
 }
-
