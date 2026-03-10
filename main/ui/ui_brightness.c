@@ -168,14 +168,84 @@ static void brightness_update_visual_state(int32_t sheet_y)
     lv_obj_set_style_bg_opa(s_ui.brightness.overlay, opa, 0);
 }
 
-static void brightness_scrim_anim_cb(void *obj, int32_t value)
+static void brightness_sheet_anim_cb(void *obj, int32_t value)
 {
-    lv_obj_set_style_bg_opa((lv_obj_t *)obj, (lv_opa_t)value, 0);
+    LV_UNUSED(obj);
+    brightness_update_visual_state(value);
 }
 
-static void brightness_sheet_y_anim_cb(void *obj, int32_t value)
+static void brightness_sheet_anim_ready_cb(lv_anim_t *anim)
 {
-    lv_obj_set_y((lv_obj_t *)obj, value);
+    s_ui.brightness.animating = false;
+
+    if (!s_ui.brightness.target_open) {
+        lv_obj_add_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+        brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
+    } else {
+        brightness_update_visual_state(BRIGHTNESS_SHEET_OPEN_Y);
+    }
+}
+
+static uint32_t brightness_sheet_anim_duration(int32_t from_y, int32_t to_y)
+{
+    int32_t distance = LV_ABS(to_y - from_y);
+    int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
+
+    if (travel <= 0) {
+        return BRIGHTNESS_SHEET_SHOW_MS;
+    }
+
+    return (uint32_t)LV_CLAMP(110, 110 + ((distance * 150) / travel), 260);
+}
+
+static void brightness_prepare_overlay_for_drag(void)
+{
+    if (s_ui.brightness.overlay == NULL) {
+        return;
+    }
+
+    lv_obj_clear_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_ui.brightness.overlay);
+}
+
+static void brightness_animate_sheet_to(int32_t target_y)
+{
+    lv_anim_t anim;
+    int32_t current_y;
+
+    if (s_ui.brightness.overlay == NULL || s_ui.brightness.sheet == NULL) {
+        return;
+    }
+
+    target_y = LV_CLAMP(BRIGHTNESS_SHEET_OPEN_Y, target_y, BRIGHTNESS_SHEET_CLOSED_Y);
+    current_y = lv_obj_get_y(s_ui.brightness.sheet);
+
+    lv_anim_delete(s_ui.brightness.sheet, brightness_sheet_anim_cb);
+    s_ui.brightness.animating = false;
+
+    if (current_y == target_y) {
+        brightness_update_visual_state(target_y);
+        s_ui.brightness.target_open = (target_y <= BRIGHTNESS_SHEET_OPEN_Y);
+        if (!s_ui.brightness.target_open) {
+            lv_obj_add_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            brightness_prepare_overlay_for_drag();
+        }
+        return;
+    }
+
+    brightness_prepare_overlay_for_drag();
+    s_ui.brightness.target_open = (target_y <= BRIGHTNESS_SHEET_OPEN_Y);
+
+    s_ui.brightness.animating = true;
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, s_ui.brightness.sheet);
+    lv_anim_set_exec_cb(&anim, brightness_sheet_anim_cb);
+    lv_anim_set_values(&anim, current_y, target_y);
+    lv_anim_set_time(&anim, brightness_sheet_anim_duration(current_y, target_y));
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+    lv_anim_set_ready_cb(&anim, brightness_sheet_anim_ready_cb);
+    lv_anim_start(&anim);
 }
 
 static void brightness_overlay_set_visible(bool show)
@@ -184,17 +254,15 @@ static void brightness_overlay_set_visible(bool show)
         return;
     }
 
-    lv_anim_delete(s_ui.brightness.sheet, brightness_sheet_y_anim_cb);
-    lv_anim_delete(s_ui.brightness.overlay, brightness_scrim_anim_cb);
+    lv_anim_delete(s_ui.brightness.sheet, brightness_sheet_anim_cb);
     s_ui.brightness.animating = false;
     s_ui.brightness.dragging = false;
     s_ui.brightness.drag_from_edge = false;
 
     if (show) {
         update_brightness_ui();
+        brightness_prepare_overlay_for_drag();
         brightness_update_visual_state(BRIGHTNESS_SHEET_OPEN_Y);
-        lv_obj_clear_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(s_ui.brightness.overlay);
     } else {
         brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
         lv_obj_add_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
@@ -208,11 +276,11 @@ static void brightness_overlay_hide_immediately(void)
 
 static void brightness_overlay_hide(void)
 {
-    if (s_ui.brightness.animating || lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
+    if (s_ui.brightness.dragging || s_ui.brightness.animating || lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
         return;
     }
 
-    brightness_overlay_set_visible(false);
+    brightness_animate_sheet_to(BRIGHTNESS_SHEET_CLOSED_Y);
 }
 
 static void brightness_panel_hide(void)
@@ -279,6 +347,11 @@ static void brightness_panel_overlay_event_cb(lv_event_t *event)
     }
 }
 
+static void brightness_stop_event_bubble_cb(lv_event_t *event)
+{
+    lv_event_stop_bubbling(event);
+}
+
 static void brightness_drag_event_cb(lv_event_t *event)
 {
     lv_event_code_t code = lv_event_get_code(event);
@@ -286,7 +359,12 @@ static void brightness_drag_event_cb(lv_event_t *event)
     lv_point_t point;
     lv_obj_t *target = lv_event_get_target(event);
     bool from_edge = (target == s_ui.brightness.edge_sensor);
+    bool from_handle = (target == s_ui.brightness.drag_handle);
+    bool from_sheet = (target == s_ui.brightness.sheet);
     int32_t dy;
+    int32_t target_y;
+    int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
+    int32_t open_threshold_y = BRIGHTNESS_SHEET_CLOSED_Y - ((travel * 45) / 100);
 
     if (indev == NULL || s_ui.settings_ui.open || alarm_surface_is_open() || brightness_panel_is_open()) {
         return;
@@ -294,18 +372,33 @@ static void brightness_drag_event_cb(lv_event_t *event)
 
     lv_indev_get_point(indev, &point);
 
-    if (!from_edge) {
+    if (!from_edge && !from_handle && !from_sheet) {
         return;
     }
 
     if (code == LV_EVENT_PRESSED) {
         if (s_ui.brightness.animating) {
+            lv_anim_delete(s_ui.brightness.sheet, brightness_sheet_anim_cb);
+            s_ui.brightness.animating = false;
+        }
+        if (from_edge && !lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
             return;
         }
-        if (!lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
+        if ((from_handle || from_sheet) && lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
             return;
         }
+
+        if (from_edge) {
+            update_brightness_ui();
+            brightness_prepare_overlay_for_drag();
+            brightness_update_visual_state(BRIGHTNESS_SHEET_CLOSED_Y);
+            s_ui.brightness.drag_start_y = BRIGHTNESS_SHEET_CLOSED_Y;
+        } else {
+            s_ui.brightness.drag_start_y = lv_obj_get_y(s_ui.brightness.sheet);
+        }
+
         s_ui.brightness.dragging = true;
+        s_ui.brightness.drag_from_edge = from_edge;
         s_ui.brightness.drag_start_point = point;
         return;
     }
@@ -316,20 +409,27 @@ static void brightness_drag_event_cb(lv_event_t *event)
 
     if (code == LV_EVENT_PRESS_LOST) {
         s_ui.brightness.dragging = false;
+        s_ui.brightness.drag_from_edge = false;
         return;
     }
 
     if (code == LV_EVENT_PRESSING) {
         dy = point.y - s_ui.brightness.drag_start_point.y;
-        if (dy <= -QUICK_ACTION_SWIPE_TRIGGER) {
-            s_ui.brightness.dragging = false;
-            brightness_overlay_set_visible(true);
-        }
+        target_y = s_ui.brightness.drag_start_y + dy;
+        brightness_update_visual_state(target_y);
         return;
     }
 
     if (code == LV_EVENT_RELEASED) {
         s_ui.brightness.dragging = false;
+        s_ui.brightness.drag_from_edge = false;
+
+        target_y = lv_obj_get_y(s_ui.brightness.sheet);
+        if (target_y <= open_threshold_y) {
+            brightness_animate_sheet_to(BRIGHTNESS_SHEET_OPEN_Y);
+        } else {
+            brightness_animate_sheet_to(BRIGHTNESS_SHEET_CLOSED_Y);
+        }
     }
 }
 
@@ -379,6 +479,11 @@ static lv_obj_t *create_quick_action_button(lv_obj_t *parent,
     lv_obj_set_style_border_width(button, 0, 0);
     lv_obj_set_style_pad_all(button, 0, 0);
     lv_obj_set_style_shadow_width(button, 0, 0);
+    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
+    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_CLICKED, NULL);
 
     lv_obj_set_style_text_font(icon, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_color(icon, lv_color_white(), 0);
@@ -407,7 +512,7 @@ static void create_brightness_overlay(void)
     lv_obj_remove_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(s_ui.brightness.overlay, LV_ALIGN_CENTER, 0, 0);
     lv_obj_add_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(s_ui.brightness.overlay, brightness_overlay_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_ui.brightness.overlay, brightness_overlay_event_cb, LV_EVENT_CLICKED, NULL);
 
     s_ui.brightness.sheet = lv_obj_create(s_ui.brightness.overlay);
     lv_obj_set_size(s_ui.brightness.sheet, BRIGHTNESS_SHEET_WIDTH, BRIGHTNESS_SHEET_HEIGHT);
@@ -426,7 +531,6 @@ static void create_brightness_overlay(void)
     lv_obj_add_event_cb(s_ui.brightness.sheet, brightness_drag_event_cb, LV_EVENT_PRESSING, NULL);
     lv_obj_add_event_cb(s_ui.brightness.sheet, brightness_drag_event_cb, LV_EVENT_RELEASED, NULL);
     lv_obj_add_event_cb(s_ui.brightness.sheet, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, NULL);
-
     sheet_grabber = lv_obj_create(s_ui.brightness.sheet);
     lv_obj_set_size(sheet_grabber, 72, 6);
     lv_obj_set_style_radius(sheet_grabber, LV_RADIUS_CIRCLE, 0);
@@ -436,6 +540,21 @@ static void create_brightness_overlay(void)
     lv_obj_set_style_shadow_width(sheet_grabber, 0, 0);
     lv_obj_remove_flag(sheet_grabber, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(sheet_grabber, LV_ALIGN_TOP_MID, 0, -10);
+
+    s_ui.brightness.drag_handle = lv_obj_create(s_ui.brightness.sheet);
+    lv_obj_set_size(s_ui.brightness.drag_handle, lv_pct(100), 60);
+    lv_obj_align(s_ui.brightness.drag_handle, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_opa(s_ui.brightness.drag_handle, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.brightness.drag_handle, 0, 0);
+    lv_obj_set_style_radius(s_ui.brightness.drag_handle, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.brightness.drag_handle, 0, 0);
+    lv_obj_set_scrollbar_mode(s_ui.brightness.drag_handle, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_clear_flag(s_ui.brightness.drag_handle, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ui.brightness.drag_handle, LV_OBJ_FLAG_FLOATING);
+    lv_obj_add_event_cb(s_ui.brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_ui.brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(s_ui.brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_ui.brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, NULL);
 
     actions = lv_obj_create(s_ui.brightness.sheet);
     lv_obj_set_size(actions, lv_pct(100), 144);
@@ -449,6 +568,10 @@ static void create_brightness_overlay(void)
     lv_obj_set_layout(actions, LV_LAYOUT_FLEX);
     lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
 
     create_quick_action_button(actions, QUICK_ACTION_SYMBOL_BRIGHTNESS, brightness_action_event_cb);
     create_quick_action_button(actions, LV_SYMBOL_BELL, alarms_action_event_cb);

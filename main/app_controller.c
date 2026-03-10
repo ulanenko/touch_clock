@@ -20,9 +20,15 @@ typedef struct {
     app_runtime_state_t runtime;
     lv_timer_t *tick_timer;
     int64_t save_deadline_ms;
+    int64_t cancel_revert_deadline_ms;
     uint8_t applied_brightness;
     bool audio_available;
     bool settings_dirty;
+    bool cancel_revert_available;
+    bool cancel_revert_was_one_time;
+    bool cancel_revert_was_enabled;
+    int8_t cancel_revert_alarm_index;
+    time_t cancel_revert_alarm_epoch;
 } app_controller_t;
 
 static const char *TAG = "clock_app";
@@ -159,14 +165,51 @@ static void on_next_alarm_cancel_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
     time_t now;
+    int8_t alarm_index = app->runtime.next_alarm_index;
+    time_t alarm_epoch = app->runtime.next_alarm_epoch;
 
     time(&now);
     if (app->runtime.snooze_active) {
         alarm_logic_stop(&app->runtime);
+        app->cancel_revert_available = false;
         mark_settings_dirty();
-    } else if (alarm_logic_cancel_next_alarm(&app->runtime, &app->settings, now)) {
+    } else if (alarm_index >= 0 &&
+               alarm_index < MAX_ALARMS &&
+               alarm_epoch > now &&
+               alarm_logic_cancel_next_alarm(&app->runtime, &app->settings, now)) {
+        app->cancel_revert_available = true;
+        app->cancel_revert_alarm_index = alarm_index;
+        app->cancel_revert_alarm_epoch = alarm_epoch;
+        app->cancel_revert_was_one_time = (app->settings.alarms[alarm_index].repeat_mode == ALARM_REPEAT_ONCE);
+        app->cancel_revert_was_enabled = true;
+        app->cancel_revert_deadline_ms = monotonic_ms() + 2500;
         mark_settings_dirty();
     }
+}
+
+static void on_next_alarm_cancel_undo_requested(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+
+    if (!app->cancel_revert_available ||
+        monotonic_ms() > app->cancel_revert_deadline_ms ||
+        app->cancel_revert_alarm_index < 0 ||
+        app->cancel_revert_alarm_index >= MAX_ALARMS) {
+        return;
+    }
+
+    if (app->cancel_revert_was_one_time) {
+        app->settings.alarms[app->cancel_revert_alarm_index].enabled = app->cancel_revert_was_enabled;
+    } else if (app->settings.skipped_alarm_index == app->cancel_revert_alarm_index &&
+               app->settings.skipped_alarm_epoch == app->cancel_revert_alarm_epoch) {
+        app->settings.skipped_alarm_index = -1;
+        app->settings.skipped_alarm_epoch = 0;
+    }
+
+    app->runtime.next_alarm_epoch = app->cancel_revert_alarm_epoch;
+    app->runtime.next_alarm_index = app->cancel_revert_alarm_index;
+    app->cancel_revert_available = false;
+    mark_settings_dirty();
 }
 
 static void clock_tick_cb(lv_timer_t *timer)
@@ -217,6 +260,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_alarm_stop_requested = on_alarm_stop_requested,
         .on_alarm_test_requested = on_alarm_test_requested,
         .on_next_alarm_cancel_requested = on_next_alarm_cancel_requested,
+        .on_next_alarm_cancel_undo_requested = on_next_alarm_cancel_undo_requested,
     };
     struct timeval boot_time = {
         .tv_sec = 1741500000,

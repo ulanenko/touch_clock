@@ -102,6 +102,7 @@ typedef struct {
     bool animating;
     bool dragging;
     bool drag_from_edge;
+    bool target_open;
     lv_point_t drag_start_point;
     int32_t drag_start_y;
     lv_obj_t *overlay;
@@ -111,6 +112,7 @@ typedef struct {
     lv_obj_t *slider;
     lv_obj_t *value;
     lv_obj_t *edge_sensor;
+    lv_obj_t *drag_handle;
     lv_obj_t *pull_hint;
 } clock_ui_brightness_state_t;
 
@@ -193,6 +195,9 @@ typedef struct {
     lv_obj_t *overlay_subtitle;
     lv_obj_t *snooze_btn;
     lv_obj_t *stop_btn;
+    time_t banner_feedback_until;
+    bool banner_feedback_revertible;
+    char banner_feedback_text[48];
     alarm_ctx_t alarm_ctx[MAX_ALARMS];
     alarm_day_ctx_t alarm_day_ctx[MAX_ALARMS][7];
     alarm_config_t editor_draft;
