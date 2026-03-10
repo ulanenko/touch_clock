@@ -361,7 +361,6 @@ static void update_matrix_face(void);
 static void update_wharton_face(void);
 static void update_slava_face(void);
 static void update_slava_dark_face(void);
-static void update_seven_segment_face(void);
 static bool brightness_panel_is_open(void);
 static void open_settings_tab(uint32_t tab_idx);
 static void sync_alarm_controls(void);

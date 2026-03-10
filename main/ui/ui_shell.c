@@ -130,7 +130,6 @@ static void build_root_ui(void)
     create_wharton_face(s_ui.tiles[CLOCK_FACE_WHARTON]);
     create_slava_face(s_ui.tiles[CLOCK_FACE_SLAVA]);
     create_slava_dark_face(s_ui.tiles[CLOCK_FACE_SLAVA_DARK]);
-    create_seven_segment_face(s_ui.tiles[CLOCK_FACE_SEVEN_SEGMENT]);
 
     lv_obj_add_event_cb(s_ui.tileview, tileview_value_changed_cb, LV_EVENT_VALUE_CHANGED, NULL);
     lv_obj_add_event_cb(s_ui.tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, NULL);

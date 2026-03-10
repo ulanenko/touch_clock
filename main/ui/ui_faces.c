@@ -3,7 +3,7 @@ static const char *s_month_caps[12] = {
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
     "JUL", "AUG", "SEP", "OCT", "NOV", "DEC",
 };
-static const lv_coord_t s_digital_day_y_offsets[7] = {-8, -5, -2, 0, -2, -5, -8};
+static const lv_coord_t s_digital_day_y_offsets[7] = {0, 0, 0, 0, 0, 0, 0};
 
 static lv_obj_t *create_digital_segment_label(lv_obj_t *parent,
                                               const lv_font_t *font,
@@ -55,7 +55,7 @@ static void create_digital_face(lv_obj_t *parent)
     s_ui.faces.digital_glow = NULL;
 
     clock_center = lv_obj_create(parent);
-    lv_obj_set_size(clock_center, 640, 300);
+    lv_obj_set_size(clock_center, 664, 328);
     lv_obj_set_style_bg_opa(clock_center, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(clock_center, 0, 0);
     lv_obj_set_style_pad_all(clock_center, 0, 0);
@@ -63,7 +63,7 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_align(clock_center, LV_ALIGN_CENTER, 0, -76);
 
     time_holder = lv_obj_create(clock_center);
-    lv_obj_set_size(time_holder, 540, 176);
+    lv_obj_set_size(time_holder, 566, 194);
     lv_obj_set_style_bg_opa(time_holder, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(time_holder, 0, 0);
     lv_obj_set_style_pad_all(time_holder, 0, 0);
@@ -75,22 +75,19 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_align(s_ui.faces.digital_time_bg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_time_bg, -120);
 
-    s_ui.faces.digital_time_glow = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x32FF72), 8);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_time_glow, LV_OPA_40, 0);
-    lv_obj_align(s_ui.faces.digital_time_glow, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    apply_digital_italic(s_ui.faces.digital_time_glow, -120);
+    s_ui.faces.digital_time_glow = NULL;
 
     s_ui.faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0xB6FFD0), 8);
     lv_obj_align(s_ui.faces.digital_time_fg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_time_fg, -120);
 
     side_holder = lv_obj_create(clock_center);
-    lv_obj_set_size(side_holder, 90, 186);
+    lv_obj_set_size(side_holder, 134, 206);
     lv_obj_set_style_bg_opa(side_holder, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(side_holder, 0, 0);
     lv_obj_set_style_pad_all(side_holder, 0, 0);
     lv_obj_clear_flag(side_holder, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align_to(side_holder, time_holder, LV_ALIGN_OUT_RIGHT_BOTTOM, -18, -2);
+    lv_obj_align_to(side_holder, time_holder, LV_ALIGN_OUT_RIGHT_BOTTOM, -58, -4);
 
     s_ui.faces.digital_ampm_label = lv_label_create(side_holder);
     lv_obj_set_style_text_font(s_ui.faces.digital_ampm_label, &lv_font_montserrat_36, 0);
@@ -106,10 +103,7 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_align(s_ui.faces.digital_seconds_bg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_seconds_bg, -120);
 
-    s_ui.faces.digital_seconds_glow = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x32FF72), 4);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_glow, LV_OPA_40, 0);
-    lv_obj_align(s_ui.faces.digital_seconds_glow, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    apply_digital_italic(s_ui.faces.digital_seconds_glow, -120);
+    s_ui.faces.digital_seconds_glow = NULL;
 
     s_ui.faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0xB6FFD0), 4);
     lv_obj_align(s_ui.faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
@@ -121,7 +115,7 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_border_width(days_bar, 0, 0);
     lv_obj_set_style_pad_all(days_bar, 0, 0);
     lv_obj_clear_flag(days_bar, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(days_bar, LV_ALIGN_BOTTOM_MID, 0, -134);
+    lv_obj_align(days_bar, LV_ALIGN_BOTTOM_MID, 0, -136);
 
     for (int i = 0; i < 7; ++i) {
         s_ui.faces.digital_day_label[i] = lv_label_create(days_bar);
@@ -138,7 +132,7 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_text_color(s_ui.faces.digital_date_label, lv_color_hex(0x8FD7AF), 0);
     lv_obj_set_style_text_opa(s_ui.faces.digital_date_label, LV_OPA_90, 0);
     lv_label_set_text(s_ui.faces.digital_date_label, "SUN, FEB 11");
-    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_BOTTOM_LEFT, 72, -80);
+    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
     apply_digital_italic(s_ui.faces.digital_date_label, -60);
 
     make_face_layer_passive(clock_center);
@@ -165,13 +159,17 @@ static void update_digital_face(void)
              s_month_caps[ti.tm_mon],
              ti.tm_mday);
 
-    lv_label_set_text(s_ui.faces.digital_time_glow, buf_time);
+    if (s_ui.faces.digital_time_glow != NULL) {
+        lv_label_set_text(s_ui.faces.digital_time_glow, buf_time);
+    }
     lv_label_set_text(s_ui.faces.digital_time_fg, buf_time);
-    lv_label_set_text(s_ui.faces.digital_seconds_glow, buf_seconds);
+    if (s_ui.faces.digital_seconds_glow != NULL) {
+        lv_label_set_text(s_ui.faces.digital_seconds_glow, buf_seconds);
+    }
     lv_label_set_text(s_ui.faces.digital_seconds_fg, buf_seconds);
     lv_label_set_text(s_ui.faces.digital_ampm_label, (ti.tm_hour >= 12) ? "PM" : "AM");
     lv_label_set_text(s_ui.faces.digital_date_label, buf_date);
-    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_BOTTOM_MID, 0, -80);
+    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
 
     for (int i = 0; i < 7; ++i) {
         bool active = (i == ti.tm_wday);
@@ -208,9 +206,6 @@ static void update_face(clock_face_id_t face)
         break;
     case CLOCK_FACE_SLAVA_DARK:
         update_slava_dark_face();
-        break;
-    case CLOCK_FACE_SEVEN_SEGMENT:
-        update_seven_segment_face();
         break;
     default:
         update_digital_face();
