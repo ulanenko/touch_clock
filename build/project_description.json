@@ -1,7 +1,7 @@
 {
     "version":            "1.2",
     "project_name":       "touch_clock",
-    "project_version":    "d076b3c-dirty",
+    "project_version":    "11650ec-dirty",
     "project_path":       "/Users/borysulanenko/PycharmProjects/touch_clock",
     "idf_path":           "/Users/borysulanenko/esp/v5.5.3/esp-idf",
     "build_dir":          "/Users/borysulanenko/PycharmProjects/touch_clock/build",
