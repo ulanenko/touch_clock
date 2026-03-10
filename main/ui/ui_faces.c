@@ -25,6 +25,69 @@ static void apply_digital_italic(lv_obj_t *obj, int32_t skew)
     LV_UNUSED(skew);
 }
 
+static void digital_face_texture_draw_cb(lv_event_t *event)
+{
+    lv_obj_t *obj = lv_event_get_target_obj(event);
+    lv_layer_t *layer = lv_event_get_layer(event);
+    lv_area_t coords;
+    lv_draw_line_dsc_t mesh_dsc;
+    lv_draw_line_dsc_t accent_dsc;
+
+    if (layer == NULL) {
+        return;
+    }
+
+    lv_obj_get_coords(obj, &coords);
+
+    lv_draw_line_dsc_init(&mesh_dsc);
+    mesh_dsc.base.layer = layer;
+    mesh_dsc.color = lv_color_hex(0x0A140A);
+    mesh_dsc.opa = LV_OPA_20;
+    mesh_dsc.width = 1;
+    mesh_dsc.round_start = 0;
+    mesh_dsc.round_end = 0;
+
+    lv_draw_line_dsc_init(&accent_dsc);
+    accent_dsc.base.layer = layer;
+    accent_dsc.color = lv_color_hex(0x000000);
+    accent_dsc.opa = 20;
+    accent_dsc.width = 1;
+    accent_dsc.round_start = 0;
+    accent_dsc.round_end = 0;
+
+    for (int y = coords.y1 + 1; y < coords.y2; y += 3) {
+        mesh_dsc.p1.x = coords.x1;
+        mesh_dsc.p1.y = y;
+        mesh_dsc.p2.x = coords.x2;
+        mesh_dsc.p2.y = y;
+        lv_draw_line(layer, &mesh_dsc);
+    }
+
+    for (int x = coords.x1 + 1; x < coords.x2; x += 3) {
+        mesh_dsc.p1.x = x;
+        mesh_dsc.p1.y = coords.y1;
+        mesh_dsc.p2.x = x;
+        mesh_dsc.p2.y = coords.y2;
+        lv_draw_line(layer, &mesh_dsc);
+    }
+
+    for (int y = coords.y1 + 1; y < coords.y2; y += 6) {
+        accent_dsc.p1.x = coords.x1;
+        accent_dsc.p1.y = y;
+        accent_dsc.p2.x = coords.x2;
+        accent_dsc.p2.y = y;
+        lv_draw_line(layer, &accent_dsc);
+    }
+
+    for (int x = coords.x1 + 1; x < coords.x2; x += 6) {
+        accent_dsc.p1.x = x;
+        accent_dsc.p1.y = coords.y1;
+        accent_dsc.p2.x = x;
+        accent_dsc.p2.y = coords.y2;
+        lv_draw_line(layer, &accent_dsc);
+    }
+}
+
 static void make_face_layer_passive(lv_obj_t *obj)
 {
     uint32_t child_count;
@@ -52,6 +115,7 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_bg_color(parent, lv_color_hex(0x020403), 0);
     lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x09160B), 0);
     lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_VER, 0);
+    lv_obj_add_event_cb(parent, digital_face_texture_draw_cb, LV_EVENT_DRAW_POST, NULL);
     s_ui.faces.digital_glow = NULL;
 
     clock_center = lv_obj_create(parent);
@@ -70,14 +134,15 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_clear_flag(time_holder, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(time_holder, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
-    s_ui.faces.digital_time_bg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x17361A), 8);
+    s_ui.faces.digital_time_bg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x143C14), 8);
     lv_label_set_text(s_ui.faces.digital_time_bg, "88:88");
     lv_obj_align(s_ui.faces.digital_time_bg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_time_bg, LV_OPA_40, 0);
     apply_digital_italic(s_ui.faces.digital_time_bg, -120);
 
     s_ui.faces.digital_time_glow = NULL;
 
-    s_ui.faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0xB6FFD0), 8);
+    s_ui.faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
     lv_obj_align(s_ui.faces.digital_time_fg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_time_fg, -120);
 
@@ -92,20 +157,21 @@ static void create_digital_face(lv_obj_t *parent)
     s_ui.faces.digital_ampm_label = lv_label_create(side_holder);
     lv_obj_set_style_text_font(s_ui.faces.digital_ampm_label, &lv_font_montserrat_36, 0);
     lv_obj_set_style_text_letter_space(s_ui.faces.digital_ampm_label, 3, 0);
-    lv_obj_set_style_text_color(s_ui.faces.digital_ampm_label, lv_color_hex(0x9BFFB0), 0);
+    lv_obj_set_style_text_color(s_ui.faces.digital_ampm_label, lv_color_hex(0x5CFB5C), 0);
     lv_obj_set_style_text_opa(s_ui.faces.digital_ampm_label, LV_OPA_80, 0);
     lv_label_set_text(s_ui.faces.digital_ampm_label, "PM");
     lv_obj_align(s_ui.faces.digital_ampm_label, LV_ALIGN_TOP_RIGHT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_ampm_label, -80);
 
-    s_ui.faces.digital_seconds_bg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x17361A), 4);
+    s_ui.faces.digital_seconds_bg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x143C14), 4);
     lv_label_set_text(s_ui.faces.digital_seconds_bg, "88");
     lv_obj_align(s_ui.faces.digital_seconds_bg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_bg, LV_OPA_40, 0);
     apply_digital_italic(s_ui.faces.digital_seconds_bg, -120);
 
     s_ui.faces.digital_seconds_glow = NULL;
 
-    s_ui.faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0xB6FFD0), 4);
+    s_ui.faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
     lv_obj_align(s_ui.faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
     apply_digital_italic(s_ui.faces.digital_seconds_fg, -120);
 
@@ -121,7 +187,8 @@ static void create_digital_face(lv_obj_t *parent)
         s_ui.faces.digital_day_label[i] = lv_label_create(days_bar);
         lv_obj_set_style_text_font(s_ui.faces.digital_day_label[i], &lv_font_montserrat_20, 0);
         lv_obj_set_style_text_letter_space(s_ui.faces.digital_day_label[i], 2, 0);
-        lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i], lv_color_hex(0x27442D), 0);
+        lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i], lv_color_hex(0x143C14), 0);
+        lv_obj_set_style_text_opa(s_ui.faces.digital_day_label[i], LV_OPA_40, 0);
         lv_label_set_text(s_ui.faces.digital_day_label[i], s_day_caps[i]);
         apply_digital_italic(s_ui.faces.digital_day_label[i], -60);
     }
@@ -129,7 +196,7 @@ static void create_digital_face(lv_obj_t *parent)
     s_ui.faces.digital_date_label = lv_label_create(parent);
     lv_obj_set_style_text_font(s_ui.faces.digital_date_label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_letter_space(s_ui.faces.digital_date_label, 2, 0);
-    lv_obj_set_style_text_color(s_ui.faces.digital_date_label, lv_color_hex(0x8FD7AF), 0);
+    lv_obj_set_style_text_color(s_ui.faces.digital_date_label, lv_color_hex(0x5CFB5C), 0);
     lv_obj_set_style_text_opa(s_ui.faces.digital_date_label, LV_OPA_90, 0);
     lv_label_set_text(s_ui.faces.digital_date_label, "SUN, FEB 11");
     lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
@@ -177,10 +244,10 @@ static void update_digital_face(void)
         lv_coord_t x = (lv_coord_t)(i * slot_w + slot_w / 2);
 
         lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i],
-                                    active ? lv_color_hex(0xA8FFBE) : lv_color_hex(0x27442D),
+                                    active ? lv_color_hex(0x5CFB5C) : lv_color_hex(0x143C14),
                                     0);
         lv_obj_set_style_text_opa(s_ui.faces.digital_day_label[i],
-                                  active ? LV_OPA_COVER : LV_OPA_80,
+                                  active ? LV_OPA_COVER : LV_OPA_40,
                                   0);
         lv_obj_align(s_ui.faces.digital_day_label[i],
                      LV_ALIGN_TOP_LEFT,
