@@ -212,13 +212,6 @@ void wifi_time_snapshot(app_runtime_state_t *runtime)
     snprintf(runtime->wifi_ip, sizeof(runtime->wifi_ip), "%s", s_wifi.ip);
     snprintf(runtime->wifi_status, sizeof(runtime->wifi_status), "%s", s_wifi.status);
     xSemaphoreGive(s_wifi.lock);
-
-    if (runtime->wifi_connected) {
-        wifi_ap_record_t ap_info;
-        if (esp_wifi_sta_get_ap_info(&ap_info) == ESP_OK) {
-            runtime->wifi_rssi = ap_info.rssi;
-        }
-    }
 }
 
 esp_err_t wifi_time_start_scan(void)
@@ -314,6 +307,28 @@ esp_err_t wifi_time_request_sync(void)
 
     start_sntp();
     return ESP_OK;
+}
+
+uint32_t wifi_time_get_scan_generation(void)
+{
+    uint32_t generation;
+
+    xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
+    generation = s_wifi.scan_generation;
+    xSemaphoreGive(s_wifi.lock);
+
+    return generation;
+}
+
+bool wifi_time_is_scanning(void)
+{
+    bool scanning;
+
+    xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
+    scanning = s_wifi.scanning;
+    xSemaphoreGive(s_wifi.lock);
+
+    return scanning;
 }
 
 size_t wifi_time_get_scan_results(wifi_scan_result_t *results, size_t max_results, uint32_t *generation)

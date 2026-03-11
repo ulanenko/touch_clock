@@ -151,7 +151,21 @@ typedef struct {
     bool night_open;
     bool wifi_scrolling;
     bool night_scrolling;
+    bool wifi_cache_valid;
+    bool night_cache_valid;
+    bool cached_night_enabled;
+    bool cached_in_night_mode;
+    int8_t cached_timezone_offset_hours;
+    uint8_t cached_night_start_hour;
+    uint8_t cached_night_start_minute;
+    uint8_t cached_night_end_hour;
+    uint8_t cached_night_end_minute;
+    uint8_t cached_night_brightness;
+    clock_face_id_t cached_night_face;
     uint32_t scan_generation;
+    uint32_t cached_wifi_scan_generation;
+    char cached_wifi_status[96];
+    char cached_wifi_saved_ssid[33];
     char pending_ssid[33];
     lv_point_t close_drag_start_point;
     lv_obj_t *overlay;
@@ -461,6 +475,46 @@ static void notify_settings_changed(void)
     }
 }
 
+static void set_root_ui_hidden(bool hidden)
+{
+    if (s_ui.tileview != NULL) {
+        if (hidden) {
+            lv_obj_add_flag(s_ui.tileview, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(s_ui.tileview, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_ui.settings_button != NULL) {
+        if (hidden) {
+            lv_obj_add_flag(s_ui.settings_button, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(s_ui.settings_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {
+        if (s_ui.page_dots[face] == NULL) {
+            continue;
+        }
+
+        if (hidden) {
+            lv_obj_add_flag(s_ui.page_dots[face], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(s_ui.page_dots[face], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+static clock_face_id_t sanitize_enabled_face(clock_face_id_t face)
+{
+    if (!clock_face_is_enabled(face)) {
+        return clock_face_first_enabled();
+    }
+
+    return face;
+}
+
 static struct tm get_local_time_now(void)
 {
     time_t now;
@@ -543,12 +597,15 @@ static void build_timezone_options(char *buffer, size_t size)
 static void build_face_options(char *buffer, size_t size)
 {
     size_t pos = 0;
+    int visible_count = clock_face_visible_count();
 
     buffer[0] = '\0';
-    for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {
+    for (int index = 0; index < visible_count; ++index) {
+        clock_face_id_t face = clock_face_visible_index_to_id(index);
+
         pos += snprintf(buffer + pos, size - pos, "%s%s",
-                        clock_face_name((clock_face_id_t)face),
-                        (face == (CLOCK_FACE_COUNT - 1)) ? "" : "\n");
+                        clock_face_name(face),
+                        (index == (visible_count - 1)) ? "" : "\n");
     }
 }
 
@@ -711,13 +768,31 @@ esp_err_t clock_ui_init(app_settings_t *settings,
 
 void clock_ui_refresh(void)
 {
+    bool faces_sanitized = false;
+
     refresh_settings_controls();
     update_brightness_ui();
+
+    if (s_ui.settings->current_face != sanitize_enabled_face(s_ui.settings->current_face)) {
+        s_ui.settings->current_face = sanitize_enabled_face(s_ui.settings->current_face);
+        faces_sanitized = true;
+    }
+    if (s_ui.settings->night_mode.face != sanitize_enabled_face(s_ui.settings->night_mode.face)) {
+        s_ui.settings->night_mode.face = sanitize_enabled_face(s_ui.settings->night_mode.face);
+        faces_sanitized = true;
+    }
+    if (faces_sanitized) {
+        notify_settings_changed();
+    }
+
     set_active_face(s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face, LV_ANIM_OFF);
 }
 
 void clock_ui_tick(time_t now)
 {
+    s_ui.settings->current_face = sanitize_enabled_face(s_ui.settings->current_face);
+    s_ui.settings->night_mode.face = sanitize_enabled_face(s_ui.settings->night_mode.face);
+
     clock_face_id_t desired_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face;
     clock_face_id_t active_face;
     bool opaque_menu_open = s_ui.settings_ui.open ||
@@ -743,10 +818,10 @@ void clock_ui_tick(time_t now)
         !s_ui.alarms.management_scrolling) {
         sync_alarm_controls();
     }
-    if (s_ui.settings_ui.wifi_open && !s_ui.settings_ui.wifi_scrolling) {
+    if (s_ui.settings_ui.wifi_open && !s_ui.settings_ui.wifi_scrolling && wifi_controls_need_sync()) {
         sync_wifi_controls();
     }
-    if (s_ui.settings_ui.night_open && !s_ui.settings_ui.night_scrolling) {
+    if (s_ui.settings_ui.night_open && !s_ui.settings_ui.night_scrolling && night_controls_need_sync()) {
         sync_night_controls();
     }
     if (s_ui.brightness.animating ||

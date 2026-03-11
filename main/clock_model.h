@@ -7,6 +7,8 @@
 #define MAX_ALARMS 5
 #define DISPLAY_BRIGHTNESS_MIN_PERCENT 19
 #define DISPLAY_BRIGHTNESS_MAX_PERCENT 100
+#define CLOCK_FACE_ENABLE_SLAVA 0
+#define CLOCK_FACE_ENABLE_SLAVA_DARK 0
 
 typedef enum {
     CLOCK_FACE_DIGITAL = 0,
@@ -71,4 +73,10 @@ typedef struct {
 } app_runtime_state_t;
 
 bool clock_face_is_valid(int face);
+bool clock_face_is_enabled(clock_face_id_t face);
+clock_face_id_t clock_face_first_enabled(void);
+clock_face_id_t clock_face_visible_index_to_id(int visible_index);
+int clock_face_visible_id_to_index(clock_face_id_t face);
+int clock_face_visible_count(void);
+clock_face_id_t clock_face_step_enabled(clock_face_id_t face, int direction);
 const char *clock_face_name(clock_face_id_t face);

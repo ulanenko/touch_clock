@@ -10,6 +10,14 @@ static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_colo
 
 static void close_wifi_dialog(void);
 
+#define WIFI_UI_MAX_VISIBLE_NETWORKS 8
+
+static void invalidate_settings_ui_cache(void)
+{
+    s_ui.settings_ui.wifi_cache_valid = false;
+    s_ui.settings_ui.night_cache_valid = false;
+}
+
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text)
 {
     const char *current_text;
@@ -82,7 +90,6 @@ static lv_obj_t *create_network_button(lv_obj_t *parent, const char *ssid, const
 {
     lv_obj_t *button = lv_button_create(parent);
     lv_obj_t *title = lv_label_create(button);
-    lv_obj_t *subtitle = lv_label_create(button);
 
     lv_obj_set_width(button, lv_pct(100));
     lv_obj_set_height(button, LV_SIZE_CONTENT);
@@ -92,23 +99,26 @@ static lv_obj_t *create_network_button(lv_obj_t *parent, const char *ssid, const
     lv_obj_set_style_border_width(button, 0, 0);
     lv_obj_set_style_pad_hor(button, 22, 0);
     lv_obj_set_style_pad_ver(button, 18, 0);
-    lv_obj_set_style_pad_row(button, 8, 0);
     lv_obj_set_style_shadow_width(button, 0, 0);
     lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(button, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(button, LV_FLEX_FLOW_COLUMN);
 
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
     lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_label_set_text(title, ssid);
-
-    lv_obj_set_width(subtitle, lv_pct(100));
-    lv_obj_set_style_text_color(subtitle, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(subtitle, meta);
+    lv_label_set_text_fmt(title, "%s  %s", ssid, meta);
+    lv_obj_center(title);
 
     lv_obj_add_event_cb(button, wifi_network_btn_event_cb, LV_EVENT_CLICKED, ctx);
     return button;
+}
+
+static void clear_wifi_list(void)
+{
+    if (s_ui.settings_ui.wifi_network_list == NULL) {
+        return;
+    }
+
+    lv_obj_clean(s_ui.settings_ui.wifi_network_list);
 }
 
 static void sync_wifi_list(void)
@@ -116,6 +126,7 @@ static void sync_wifi_list(void)
     wifi_scan_result_t results[WIFI_TIME_MAX_SCAN_RESULTS];
     uint32_t generation = 0;
     size_t count;
+    size_t visible_count;
 
     if (s_ui.settings_ui.wifi_network_list == NULL) {
         return;
@@ -138,13 +149,23 @@ static void sync_wifi_list(void)
         return;
     }
 
-    for (size_t i = 0; i < count; ++i) {
+    visible_count = LV_MIN(count, WIFI_UI_MAX_VISIBLE_NETWORKS);
+    for (size_t i = 0; i < visible_count; ++i) {
         char meta[64];
         const char *ssid = results[i].ssid[0] ? results[i].ssid : "<hidden>";
 
         s_ui.settings_ui.network_ctx[i].network_index = i;
         snprintf(meta, sizeof(meta), "%ddBm", results[i].rssi);
         create_network_button(s_ui.settings_ui.wifi_network_list, ssid, meta, &s_ui.settings_ui.network_ctx[i]);
+    }
+
+    if (count > visible_count) {
+        lv_obj_t *label = lv_label_create(s_ui.settings_ui.wifi_network_list);
+
+        style_centered_label(label, NULL, lv_color_hex(0x8F8F8F));
+        lv_label_set_text_fmt(label, "Showing %u of %u networks",
+                              (unsigned)visible_count,
+                              (unsigned)count);
     }
 }
 
@@ -171,10 +192,21 @@ static void sync_night_controls(void)
              s_ui.runtime->in_night_mode ? "  active now" : "");
     settings_set_label_text_if_changed(s_ui.settings_ui.night_status_label, status);
 
+    s_ui.settings->night_mode.face = sanitize_enabled_face(s_ui.settings->night_mode.face);
     settings_format_face_label(face_label, sizeof(face_label), s_ui.settings->night_mode.face);
     settings_set_label_text_if_changed(s_ui.settings_ui.night_face_dd, face_label);
     snprintf(brightness_label, sizeof(brightness_label), "%u%%", s_ui.settings->night_mode.brightness);
     settings_set_label_text_if_changed(s_ui.settings_ui.night_brightness_dd, brightness_label);
+
+    s_ui.settings_ui.cached_night_enabled = s_ui.settings->night_mode.enabled;
+    s_ui.settings_ui.cached_in_night_mode = s_ui.runtime->in_night_mode;
+    s_ui.settings_ui.cached_night_start_hour = s_ui.settings->night_mode.start_hour;
+    s_ui.settings_ui.cached_night_start_minute = s_ui.settings->night_mode.start_minute;
+    s_ui.settings_ui.cached_night_end_hour = s_ui.settings->night_mode.end_hour;
+    s_ui.settings_ui.cached_night_end_minute = s_ui.settings->night_mode.end_minute;
+    s_ui.settings_ui.cached_night_brightness = s_ui.settings->night_mode.brightness;
+    s_ui.settings_ui.cached_night_face = s_ui.settings->night_mode.face;
+    s_ui.settings_ui.night_cache_valid = true;
 }
 
 static void sync_wifi_controls(void)
@@ -200,12 +232,65 @@ static void sync_wifi_controls(void)
     settings_set_label_text_if_changed(s_ui.settings_ui.wifi_saved_label, saved);
 
     sync_wifi_list();
+
+    s_ui.settings_ui.cached_timezone_offset_hours = s_ui.settings->wifi.timezone_offset_hours;
+    snprintf(s_ui.settings_ui.cached_wifi_status, sizeof(s_ui.settings_ui.cached_wifi_status), "%s",
+             s_ui.runtime->wifi_status);
+    snprintf(s_ui.settings_ui.cached_wifi_saved_ssid, sizeof(s_ui.settings_ui.cached_wifi_saved_ssid), "%s",
+             s_ui.settings->wifi.ssid);
+    s_ui.settings_ui.cached_wifi_scan_generation = wifi_time_get_scan_generation();
+    s_ui.settings_ui.wifi_cache_valid = true;
 }
 
 static void refresh_settings_controls(void)
 {
     sync_wifi_controls();
     sync_night_controls();
+}
+
+static bool wifi_controls_need_sync(void)
+{
+    if (!s_ui.settings_ui.wifi_cache_valid) {
+        return true;
+    }
+
+    if (s_ui.settings_ui.cached_timezone_offset_hours != s_ui.settings->wifi.timezone_offset_hours) {
+        return true;
+    }
+
+    if (strcmp(s_ui.settings_ui.cached_wifi_status, s_ui.runtime->wifi_status) != 0) {
+        return true;
+    }
+
+    if (strcmp(s_ui.settings_ui.cached_wifi_saved_ssid, s_ui.settings->wifi.ssid) != 0) {
+        return true;
+    }
+
+    if (s_ui.settings_ui.cached_wifi_scan_generation != wifi_time_get_scan_generation()) {
+        return true;
+    }
+
+    return false;
+}
+
+static bool night_controls_need_sync(void)
+{
+    if (!s_ui.settings_ui.night_cache_valid) {
+        return true;
+    }
+
+    if (s_ui.settings_ui.cached_night_enabled != s_ui.settings->night_mode.enabled ||
+        s_ui.settings_ui.cached_in_night_mode != s_ui.runtime->in_night_mode ||
+        s_ui.settings_ui.cached_night_start_hour != s_ui.settings->night_mode.start_hour ||
+        s_ui.settings_ui.cached_night_start_minute != s_ui.settings->night_mode.start_minute ||
+        s_ui.settings_ui.cached_night_end_hour != s_ui.settings->night_mode.end_hour ||
+        s_ui.settings_ui.cached_night_end_minute != s_ui.settings->night_mode.end_minute ||
+        s_ui.settings_ui.cached_night_brightness != s_ui.settings->night_mode.brightness ||
+        s_ui.settings_ui.cached_night_face != sanitize_enabled_face(s_ui.settings->night_mode.face)) {
+        return true;
+    }
+
+    return false;
 }
 
 static void wifi_network_btn_event_cb(lv_event_t *event)
@@ -410,7 +495,9 @@ static void settings_show_root(void)
     s_ui.settings_ui.night_open = false;
     s_ui.settings_ui.wifi_scrolling = false;
     s_ui.settings_ui.night_scrolling = false;
+    invalidate_settings_ui_cache();
     close_wifi_dialog();
+    clear_wifi_list();
     if (s_ui.settings_ui.wifi_overlay != NULL) {
         lv_obj_add_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
     }
@@ -431,11 +518,12 @@ static void settings_open_wifi_detail(void)
 
     s_ui.settings_ui.wifi_open = true;
     s_ui.settings_ui.night_open = false;
+    s_ui.settings_ui.wifi_cache_valid = false;
     lv_obj_add_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     if (s_ui.settings_ui.night_overlay != NULL) {
         lv_obj_add_flag(s_ui.settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
     }
-    refresh_settings_controls();
+    sync_wifi_controls();
     lv_obj_clear_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_ui.settings_ui.wifi_overlay);
 }
@@ -448,11 +536,12 @@ static void settings_open_night_detail(void)
 
     s_ui.settings_ui.night_open = true;
     s_ui.settings_ui.wifi_open = false;
+    s_ui.settings_ui.night_cache_valid = false;
     lv_obj_add_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     if (s_ui.settings_ui.wifi_overlay != NULL) {
         lv_obj_add_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
     }
-    refresh_settings_controls();
+    sync_night_controls();
     lv_obj_clear_flag(s_ui.settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_ui.settings_ui.night_overlay);
 }
@@ -490,10 +579,7 @@ static void open_settings_tab(uint32_t tab_idx)
     s_ui.settings_ui.close_dragging = false;
     s_ui.settings_ui.wifi_scrolling = false;
     s_ui.settings_ui.night_scrolling = false;
-    refresh_settings_controls();
-    if (s_ui.settings_ui.scan_generation == 0 && s_ui.callbacks.on_wifi_scan_requested != NULL) {
-        s_ui.callbacks.on_wifi_scan_requested(s_ui.user_ctx);
-    }
+    set_root_ui_hidden(true);
 
     settings_show_root();
     if (tab_idx == SETTINGS_TAB_NIGHT) {
@@ -516,7 +602,9 @@ static void settings_close_event_cb(lv_event_t *event)
     s_ui.settings_ui.wifi_scrolling = false;
     s_ui.settings_ui.night_scrolling = false;
     s_ui.settings_ui.close_dragging = false;
+    invalidate_settings_ui_cache();
     close_wifi_dialog();
+    clear_wifi_list();
     if (s_ui.settings_ui.wifi_overlay != NULL) {
         lv_obj_add_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
     }
@@ -524,6 +612,7 @@ static void settings_close_event_cb(lv_event_t *event)
         lv_obj_add_flag(s_ui.settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
     }
     lv_obj_add_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
+    set_root_ui_hidden(false);
     show_affordances_temporarily();
 }
 
@@ -664,11 +753,7 @@ static void night_hour_minute_event_cb(lv_event_t *event)
 static void night_face_prev_event_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
-    if (s_ui.settings->night_mode.face <= 0) {
-        s_ui.settings->night_mode.face = (clock_face_id_t)(CLOCK_FACE_COUNT - 1);
-    } else {
-        s_ui.settings->night_mode.face = (clock_face_id_t)(s_ui.settings->night_mode.face - 1);
-    }
+    s_ui.settings->night_mode.face = clock_face_step_enabled(s_ui.settings->night_mode.face, -1);
     notify_settings_changed();
     sync_night_controls();
 }
@@ -676,11 +761,7 @@ static void night_face_prev_event_cb(lv_event_t *event)
 static void night_face_next_event_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
-    if (s_ui.settings->night_mode.face >= (CLOCK_FACE_COUNT - 1)) {
-        s_ui.settings->night_mode.face = 0;
-    } else {
-        s_ui.settings->night_mode.face = (clock_face_id_t)(s_ui.settings->night_mode.face + 1);
-    }
+    s_ui.settings->night_mode.face = clock_face_step_enabled(s_ui.settings->night_mode.face, 1);
     notify_settings_changed();
     sync_night_controls();
 }

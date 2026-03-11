@@ -1,6 +1,10 @@
 static void update_dots(clock_face_id_t active_face)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
+        if (s_ui.page_dots[i] == NULL) {
+            continue;
+        }
+
         lv_obj_set_style_bg_color(s_ui.page_dots[i],
                                   (i == active_face) ? lv_color_white() : lv_color_hex(0x555555),
                                   0);
@@ -10,12 +14,15 @@ static void update_dots(clock_face_id_t active_face)
 static clock_face_id_t tile_to_face(lv_obj_t *tile)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
+        if (!clock_face_is_enabled((clock_face_id_t)i)) {
+            continue;
+        }
         if (s_ui.tiles[i] == tile) {
             return (clock_face_id_t)i;
         }
     }
 
-    return CLOCK_FACE_DIGITAL;
+    return clock_face_first_enabled();
 }
 
 static void apply_face_navigation_mode(clock_face_id_t face)
@@ -29,14 +36,25 @@ static void apply_face_navigation_mode(clock_face_id_t face)
 
 static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
 {
+    int visible_index;
+
     if (!clock_face_is_valid(face)) {
-        face = CLOCK_FACE_DIGITAL;
+        face = clock_face_first_enabled();
+    }
+    if (!clock_face_is_enabled(face)) {
+        face = clock_face_first_enabled();
+    }
+
+    visible_index = clock_face_visible_id_to_index(face);
+    if (visible_index < 0) {
+        face = clock_face_first_enabled();
+        visible_index = clock_face_visible_id_to_index(face);
     }
 
     s_ui.suppress_events = true;
     apply_face_navigation_mode(face);
     sync_face_animation_state(face);
-    lv_tileview_set_tile_by_index(s_ui.tileview, face, 0, anim);
+    lv_tileview_set_tile_by_index(s_ui.tileview, visible_index, 0, anim);
     update_dots(face);
     sync_alarm_banner_style(face);
     s_ui.suppress_events = false;
@@ -95,21 +113,24 @@ static void tileview_scroll_event_cb(lv_event_t *event)
 
 static void create_dots(void)
 {
-    int start_x = -((CLOCK_FACE_COUNT - 1) * 18) / 2;
+    int visible_count = clock_face_visible_count();
+    int start_x = -((visible_count - 1) * 18) / 2;
 
-    for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
-        s_ui.page_dots[i] = lv_obj_create(s_ui.screen);
-        lv_obj_set_size(s_ui.page_dots[i], 10, 10);
-        lv_obj_set_style_radius(s_ui.page_dots[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(s_ui.page_dots[i], 0, 0);
-        lv_obj_set_style_opa(s_ui.page_dots[i], LV_OPA_TRANSP, 0);
-        lv_obj_set_scrollbar_mode(s_ui.page_dots[i], LV_SCROLLBAR_MODE_OFF);
-        lv_obj_remove_flag(s_ui.page_dots[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(s_ui.page_dots[i], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_align(s_ui.page_dots[i], LV_ALIGN_BOTTOM_MID, start_x + i * 18, -38);
+    for (int index = 0; index < visible_count; ++index) {
+        clock_face_id_t face = clock_face_visible_index_to_id(index);
+
+        s_ui.page_dots[face] = lv_obj_create(s_ui.screen);
+        lv_obj_set_size(s_ui.page_dots[face], 10, 10);
+        lv_obj_set_style_radius(s_ui.page_dots[face], LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(s_ui.page_dots[face], 0, 0);
+        lv_obj_set_style_opa(s_ui.page_dots[face], LV_OPA_TRANSP, 0);
+        lv_obj_set_scrollbar_mode(s_ui.page_dots[face], LV_SCROLLBAR_MODE_OFF);
+        lv_obj_remove_flag(s_ui.page_dots[face], LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_add_flag(s_ui.page_dots[face], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_align(s_ui.page_dots[face], LV_ALIGN_BOTTOM_MID, start_x + index * 18, -38);
     }
 
-    update_dots(s_ui.settings->current_face);
+    update_dots(sanitize_enabled_face(s_ui.settings->current_face));
 }
 
 static void create_settings_button(void)
@@ -151,8 +172,10 @@ static void build_root_ui(void)
     lv_obj_set_scroll_snap_y(s_ui.tileview, LV_SCROLL_SNAP_NONE);
     lv_obj_align(s_ui.tileview, LV_ALIGN_CENTER, 0, 0);
 
-    for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {
-        s_ui.tiles[face] = lv_tileview_add_tile(s_ui.tileview, face, 0, LV_DIR_HOR);
+    for (int index = 0; index < clock_face_visible_count(); ++index) {
+        clock_face_id_t face = clock_face_visible_index_to_id(index);
+
+        s_ui.tiles[face] = lv_tileview_add_tile(s_ui.tileview, index, 0, LV_DIR_HOR);
         lv_obj_set_style_pad_all(s_ui.tiles[face], 0, 0);
         lv_obj_set_style_border_width(s_ui.tiles[face], 0, 0);
     }
@@ -160,8 +183,12 @@ static void build_root_ui(void)
     create_digital_face(s_ui.tiles[CLOCK_FACE_DIGITAL]);
     create_matrix_face(s_ui.tiles[CLOCK_FACE_MATRIX]);
     create_wharton_face(s_ui.tiles[CLOCK_FACE_WHARTON]);
-    create_slava_face(s_ui.tiles[CLOCK_FACE_SLAVA]);
-    create_slava_dark_face(s_ui.tiles[CLOCK_FACE_SLAVA_DARK]);
+    if (clock_face_is_enabled(CLOCK_FACE_SLAVA)) {
+        create_slava_face(s_ui.tiles[CLOCK_FACE_SLAVA]);
+    }
+    if (clock_face_is_enabled(CLOCK_FACE_SLAVA_DARK)) {
+        create_slava_dark_face(s_ui.tiles[CLOCK_FACE_SLAVA_DARK]);
+    }
     create_sternglas_face(s_ui.tiles[CLOCK_FACE_STERNGLAS]);
     create_avenir_face(s_ui.tiles[CLOCK_FACE_AVENIR]);
     create_modern_silver_face(s_ui.tiles[CLOCK_FACE_MODERN_SILVER]);

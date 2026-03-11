@@ -82,6 +82,9 @@ void ui_surface_create_fullscreen(ui_surface_t *surface,
     lv_obj_set_flex_flow(surface->content, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_scroll_dir(surface->content, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(surface->content, LV_SCROLLBAR_MODE_OFF);
+    lv_obj_remove_flag(surface->content, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+    lv_obj_remove_flag(surface->content, LV_OBJ_FLAG_SCROLL_ELASTIC);
+    lv_obj_set_scroll_snap_y(surface->content, LV_SCROLL_SNAP_NONE);
 }
 
 void ui_surface_create_edge_sensor(lv_obj_t *parent,

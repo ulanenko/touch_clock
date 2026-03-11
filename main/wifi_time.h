@@ -22,4 +22,6 @@ esp_err_t wifi_time_start_scan(void);
 esp_err_t wifi_time_connect(const char *ssid, const char *password);
 esp_err_t wifi_time_forget(void);
 esp_err_t wifi_time_request_sync(void);
+uint32_t wifi_time_get_scan_generation(void);
+bool wifi_time_is_scanning(void);
 size_t wifi_time_get_scan_results(wifi_scan_result_t *results, size_t max_results, uint32_t *generation);
