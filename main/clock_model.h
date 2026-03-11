@@ -65,7 +65,9 @@ typedef struct {
     time_t snooze_deadline;
     bool sunrise_active;
     bool in_night_mode;
+    bool night_brightness_override_active;
     uint8_t effective_brightness;
+    uint8_t night_brightness_override;
     time_t next_alarm_epoch;
     int8_t next_alarm_index;
     int8_t active_alarm_index;

@@ -102,47 +102,17 @@ static void sync_active_face_visual_state(void)
     sync_face_animation_state(tile_to_face(lv_tileview_get_tile_active(s_ui.tileview)));
 }
 
-static int clamp_brightness(int brightness)
+static uint8_t brightness_ui_get_target_hw(void)
 {
-    if (brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
-        return DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    }
-    if (brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
-        return DISPLAY_BRIGHTNESS_MAX_PERCENT;
-    }
-    return brightness;
-}
+    if (s_ui.runtime != NULL && s_ui.runtime->in_night_mode) {
+        if (s_ui.runtime->night_brightness_override_active) {
+            return s_ui.runtime->night_brightness_override;
+        }
 
-static int clamp_brightness_ui(int brightness)
-{
-    if (brightness < 0) {
-        return 0;
-    }
-    if (brightness > 100) {
-        return 100;
-    }
-    return brightness;
-}
-
-static uint8_t brightness_ui_to_hw(int ui_percent)
-{
-    int clamped = clamp_brightness_ui(ui_percent);
-    int span = DISPLAY_BRIGHTNESS_MAX_PERCENT - DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    int hw = DISPLAY_BRIGHTNESS_MIN_PERCENT + ((clamped * span + 50) / 100);
-
-    return (uint8_t)clamp_brightness(hw);
-}
-
-static uint8_t brightness_hw_to_ui(int hw_percent)
-{
-    int clamped = clamp_brightness(hw_percent);
-    int span = DISPLAY_BRIGHTNESS_MAX_PERCENT - DISPLAY_BRIGHTNESS_MIN_PERCENT;
-
-    if (span <= 0) {
-        return 100;
+        return s_ui.settings->night_mode.brightness;
     }
 
-    return (uint8_t)clamp_brightness_ui(((clamped - DISPLAY_BRIGHTNESS_MIN_PERCENT) * 100 + (span / 2)) / span);
+    return s_ui.settings->base_brightness;
 }
 
 static void update_brightness_ui(void)
@@ -154,7 +124,7 @@ static void update_brightness_ui(void)
         return;
     }
 
-    ui_brightness = brightness_hw_to_ui(s_ui.settings->base_brightness);
+    ui_brightness = brightness_hw_to_ui(brightness_ui_get_target_hw());
     if (!s_ui.brightness.ui_synced || s_ui.brightness.last_ui_percent != ui_brightness) {
         snprintf(buffer, sizeof(buffer), "%u%%", ui_brightness);
         lv_label_set_text(s_ui.brightness.value, buffer);
@@ -317,13 +287,27 @@ static void brightness_panel_hide(void)
 
 static void brightness_slider_event_cb(lv_event_t *event)
 {
+    uint8_t target_brightness;
+
     if (s_ui.suppress_events) {
         return;
     }
 
-    s_ui.settings->base_brightness = brightness_ui_to_hw(lv_slider_get_value(lv_event_get_target(event)));
+    target_brightness = brightness_ui_to_hw(lv_slider_get_value(lv_event_get_target(event)));
+    if (s_ui.runtime != NULL && s_ui.runtime->in_night_mode) {
+        s_ui.runtime->night_brightness_override = target_brightness;
+        s_ui.runtime->night_brightness_override_active =
+            (target_brightness != s_ui.settings->night_mode.brightness);
+        if (!s_ui.runtime->night_brightness_override_active) {
+            s_ui.runtime->night_brightness_override = s_ui.settings->night_mode.brightness;
+        }
+        notify_runtime_brightness_changed();
+    } else {
+        s_ui.settings->base_brightness = target_brightness;
+        notify_settings_changed();
+    }
+
     update_brightness_ui();
-    notify_settings_changed();
 }
 
 static void brightness_panel_show(void)

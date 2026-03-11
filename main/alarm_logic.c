@@ -148,22 +148,37 @@ static int find_alarm_to_trigger_now(const app_settings_t *settings, time_t now)
     return -1;
 }
 
-static uint8_t compute_effective_brightness(app_runtime_state_t *runtime,
-                                            const app_settings_t *settings,
-                                            time_t now)
+static uint8_t get_night_mode_brightness(const app_runtime_state_t *runtime,
+                                         const app_settings_t *settings)
+{
+    if (runtime->night_brightness_override_active) {
+        return runtime->night_brightness_override;
+    }
+
+    return settings->night_mode.brightness;
+}
+
+uint8_t alarm_logic_get_target_brightness(const app_runtime_state_t *runtime,
+                                          const app_settings_t *settings,
+                                          time_t now)
 {
     if (runtime->alarm_ringing) {
-        return settings->base_brightness;
+        return DISPLAY_BRIGHTNESS_MAX_PERCENT;
     }
 
     if (runtime->sunrise_active && runtime->next_alarm_epoch > now) {
         int64_t seconds_left = (int64_t)(runtime->next_alarm_epoch - now);
         int64_t progress = 1800 - seconds_left;
-        int minimum = settings->night_mode.enabled ? settings->night_mode.brightness : DISPLAY_BRIGHTNESS_MIN_PERCENT;
+        int minimum = settings->night_mode.enabled
+                          ? get_night_mode_brightness(runtime, settings)
+                          : DISPLAY_BRIGHTNESS_MIN_PERCENT;
         int span;
 
         if (minimum < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
             minimum = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+        }
+        if (minimum > settings->base_brightness) {
+            minimum = settings->base_brightness;
         }
         if (progress < 0) {
             progress = 0;
@@ -177,7 +192,7 @@ static uint8_t compute_effective_brightness(app_runtime_state_t *runtime,
     }
 
     if (runtime->in_night_mode) {
-        return settings->night_mode.brightness;
+        return get_night_mode_brightness(runtime, settings);
     }
 
     return settings->base_brightness;
@@ -187,6 +202,7 @@ void alarm_logic_init(app_runtime_state_t *runtime, const app_settings_t *settin
 {
     memset(runtime, 0, sizeof(*runtime));
     runtime->effective_brightness = settings->base_brightness;
+    runtime->night_brightness_override = settings->night_mode.brightness;
     runtime->next_alarm_index = -1;
     runtime->active_alarm_index = -1;
 }
@@ -196,12 +212,17 @@ bool alarm_logic_tick(app_runtime_state_t *runtime, app_settings_t *settings, ti
     struct tm now_tm;
     time_t epoch_minute = now / 60;
     bool settings_changed = false;
+    bool was_in_night_mode = runtime->in_night_mode;
     next_alarm_info_t next_alarm;
     int trigger_alarm_index = -1;
 
     localtime_r(&now, &now_tm);
     runtime->in_night_mode = settings->night_mode.enabled &&
                              is_in_night_window(&settings->night_mode, &now_tm);
+    if (!runtime->in_night_mode && was_in_night_mode) {
+        runtime->night_brightness_override_active = false;
+        runtime->night_brightness_override = settings->night_mode.brightness;
+    }
 
     if (settings->skipped_alarm_epoch > 0 && now > (settings->skipped_alarm_epoch + 60)) {
         settings->skipped_alarm_epoch = 0;
@@ -254,7 +275,7 @@ bool alarm_logic_tick(app_runtime_state_t *runtime, app_settings_t *settings, ti
         runtime->sunrise_active = true;
     }
 
-    runtime->effective_brightness = compute_effective_brightness(runtime, settings, now);
+    runtime->effective_brightness = alarm_logic_get_target_brightness(runtime, settings, now);
     return settings_changed;
 }
 

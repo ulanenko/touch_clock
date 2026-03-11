@@ -47,13 +47,7 @@ static void mark_settings_dirty(void)
 
 static void apply_runtime_brightness(void)
 {
-    uint8_t target_brightness = s_app.settings.base_brightness;
-
-    if (s_app.runtime.alarm_ringing) {
-        target_brightness = 100;
-    } else if (s_app.runtime.in_night_mode) {
-        target_brightness = s_app.settings.night_mode.brightness;
-    }
+    uint8_t target_brightness = s_app.runtime.effective_brightness;
 
     s_app.runtime.effective_brightness = target_brightness;
 
@@ -94,12 +88,26 @@ static void maybe_save_settings(bool force)
 static void on_settings_changed(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now;
 
     app_settings_apply_timezone(&app->settings);
     if (app->audio_available) {
         alarm_audio_set_volume(app->settings.alarm_volume);
     }
+    time(&now);
+    app->runtime.effective_brightness = alarm_logic_get_target_brightness(&app->runtime, &app->settings, now);
+    apply_runtime_brightness();
     mark_settings_dirty();
+}
+
+static void on_runtime_brightness_changed(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now;
+
+    time(&now);
+    app->runtime.effective_brightness = alarm_logic_get_target_brightness(&app->runtime, &app->settings, now);
+    apply_runtime_brightness();
 }
 
 static void on_wifi_scan_requested(void *user_ctx)
@@ -258,6 +266,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
 {
     clock_ui_callbacks_t ui_callbacks = {
         .on_settings_changed = on_settings_changed,
+        .on_runtime_brightness_changed = on_runtime_brightness_changed,
         .on_wifi_scan_requested = on_wifi_scan_requested,
         .on_wifi_connect_requested = on_wifi_connect_requested,
         .on_wifi_forget_requested = on_wifi_forget_requested,

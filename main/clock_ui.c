@@ -125,6 +125,10 @@ typedef struct {
 } network_ctx_t;
 
 typedef struct {
+    clock_face_id_t face;
+} face_ctx_t;
+
+typedef struct {
     bool animating;
     bool dragging;
     bool drag_from_edge;
@@ -150,6 +154,10 @@ typedef struct {
     bool open;
     bool wifi_open;
     bool night_open;
+    bool other_open;
+    bool night_face_picker_open;
+    bool night_schedule_locked;
+    bool close_swipe_consumed;
     bool wifi_scrolling;
     bool night_scrolling;
     bool wifi_cache_valid;
@@ -182,6 +190,12 @@ typedef struct {
     lv_obj_t *wifi_bottom_sensor;
     lv_obj_t *wifi_left_sensor;
     lv_obj_t *wifi_right_sensor;
+    lv_obj_t *other_overlay;
+    lv_obj_t *other_content;
+    lv_obj_t *other_top_sensor;
+    lv_obj_t *other_bottom_sensor;
+    lv_obj_t *other_left_sensor;
+    lv_obj_t *other_right_sensor;
     lv_obj_t *night_overlay;
     lv_obj_t *night_content;
     lv_obj_t *night_top_sensor;
@@ -206,10 +220,27 @@ typedef struct {
     lv_obj_t *night_start_min_dd;
     lv_obj_t *night_end_hour_dd;
     lv_obj_t *night_end_min_dd;
+    lv_obj_t *night_start_hour_cover;
+    lv_obj_t *night_start_min_cover;
+    lv_obj_t *night_end_hour_cover;
+    lv_obj_t *night_end_min_cover;
+    lv_obj_t *night_schedule_lock_btn;
+    lv_obj_t *night_schedule_hint;
+    lv_obj_t *night_face_button;
+    lv_obj_t *night_face_preview;
+    void *night_face_preview_buf;
     lv_obj_t *night_face_dd;
+    lv_obj_t *night_face_picker_overlay;
+    lv_obj_t *night_face_picker_content;
+    lv_obj_t *night_face_picker_card[CLOCK_FACE_COUNT];
+    lv_obj_t *night_face_picker_preview[CLOCK_FACE_COUNT];
+    void *night_face_picker_preview_buf[CLOCK_FACE_COUNT];
+    lv_obj_t *night_face_picker_label[CLOCK_FACE_COUNT];
+    lv_obj_t *night_brightness_slider;
     lv_obj_t *night_brightness_dd;
     lv_obj_t *night_status_label;
     network_ctx_t network_ctx[WIFI_TIME_MAX_SCAN_RESULTS];
+    face_ctx_t face_ctx[CLOCK_FACE_COUNT];
 } clock_ui_settings_state_t;
 
 typedef struct {
@@ -217,8 +248,10 @@ typedef struct {
     bool open;
     bool editor_open;
     bool settings_open;
+    bool close_swipe_consumed;
     bool management_scrolling;
     bool editor_is_new;
+    bool editor_time_locked;
     bool list_swipe_dragging;
     bool list_swipe_consumed;
     lv_point_t close_drag_start_point;
@@ -256,9 +289,14 @@ typedef struct {
     lv_obj_t *editor_enabled_sw;
     lv_obj_t *editor_hour_roller;
     lv_obj_t *editor_minute_roller;
+    lv_obj_t *editor_hour_cover;
+    lv_obj_t *editor_minute_cover;
+    lv_obj_t *editor_time_lock_btn;
+    lv_obj_t *editor_time_hint;
     lv_obj_t *editor_repeat_btn[4];
     lv_obj_t *editor_day_btn[7];
     lv_obj_t *editor_delete_btn;
+    lv_obj_t *editor_save_btn;
     lv_obj_t *top_sensor;
     lv_obj_t *bottom_sensor;
     lv_obj_t *left_sensor;
@@ -483,6 +521,13 @@ static void notify_settings_changed(void)
     }
 }
 
+static void notify_runtime_brightness_changed(void)
+{
+    if (s_ui.callbacks.on_runtime_brightness_changed != NULL) {
+        s_ui.callbacks.on_runtime_brightness_changed(s_ui.user_ctx);
+    }
+}
+
 static void set_root_ui_hidden(bool hidden)
 {
     if (s_ui.tileview != NULL) {
@@ -625,9 +670,76 @@ static void build_face_options(char *buffer, size_t size)
     }
 }
 
+static void prewarm_face_previews(void)
+{
+    clock_face_id_t active_face;
+    int visible_count;
+
+    if (s_ui.screen == NULL) {
+        return;
+    }
+
+    lv_obj_update_layout(s_ui.screen);
+
+    visible_count = clock_face_visible_count();
+    for (int index = 0; index < visible_count; ++index) {
+        clock_face_id_t face = clock_face_visible_index_to_id(index);
+
+        update_face(face);
+    }
+
+    refresh_digital_face_snapshot();
+
+    active_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face;
+    set_active_face(active_face, LV_ANIM_OFF);
+}
+
+static int clamp_brightness(int brightness)
+{
+    if (brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
+        return DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    }
+    if (brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+        return DISPLAY_BRIGHTNESS_MAX_PERCENT;
+    }
+    return brightness;
+}
+
+static int clamp_brightness_ui(int brightness)
+{
+    if (brightness < 0) {
+        return 0;
+    }
+    if (brightness > 100) {
+        return 100;
+    }
+    return brightness;
+}
+
+static uint8_t brightness_ui_to_hw(int ui_percent)
+{
+    int clamped = clamp_brightness_ui(ui_percent);
+    int span = DISPLAY_BRIGHTNESS_MAX_PERCENT - DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    int hw = DISPLAY_BRIGHTNESS_MIN_PERCENT + ((clamped * span + 50) / 100);
+
+    return (uint8_t)clamp_brightness(hw);
+}
+
+static uint8_t brightness_hw_to_ui(int hw_percent)
+{
+    int clamped = clamp_brightness(hw_percent);
+    int span = DISPLAY_BRIGHTNESS_MAX_PERCENT - DISPLAY_BRIGHTNESS_MIN_PERCENT;
+
+    if (span <= 0) {
+        return 100;
+    }
+
+    return (uint8_t)clamp_brightness_ui(((clamped - DISPLAY_BRIGHTNESS_MIN_PERCENT) * 100 + (span / 2)) / span);
+}
+
 static bool alarm_surface_is_open(void)
 {
-    return s_ui.alarms.open || s_ui.alarms.editor_open;
+    return s_ui.alarms.open || s_ui.alarms.editor_open || s_ui.alarms.settings_open;
 }
 
 static void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
@@ -774,6 +886,7 @@ esp_err_t clock_ui_init(app_settings_t *settings,
     build_face_options(s_ui.face_options, sizeof(s_ui.face_options));
     styles_init();
     build_root_ui();
+    prewarm_face_previews();
     s_ui.affordance_hide_timer = lv_timer_create(affordance_hide_timer_cb, AFFORDANCE_VISIBLE_MS, NULL);
     lv_timer_pause(s_ui.affordance_hide_timer);
     refresh_settings_controls();
@@ -834,7 +947,9 @@ void clock_ui_tick(time_t now)
         !s_ui.alarms.management_scrolling) {
         sync_alarm_controls();
     }
-    if (s_ui.settings_ui.wifi_open && !s_ui.settings_ui.wifi_scrolling && wifi_controls_need_sync()) {
+    if ((s_ui.settings_ui.wifi_open || s_ui.settings_ui.other_open) &&
+        !s_ui.settings_ui.wifi_scrolling &&
+        wifi_controls_need_sync()) {
         sync_wifi_controls();
     }
     if (s_ui.settings_ui.night_open && !s_ui.settings_ui.night_scrolling && night_controls_need_sync()) {

@@ -66,11 +66,13 @@ lv_obj_t *create_action_button(lv_obj_t *parent, const char *text, lv_event_cb_t
     lv_obj_set_style_bg_color(button, lv_color_hex(0x303030), 0);
     lv_obj_set_style_bg_color(button, lv_color_hex(0x454545), LV_STATE_PRESSED);
     lv_obj_set_style_text_color(button, lv_color_white(), 0);
+    lv_obj_set_style_text_font(button, &lv_font_montserrat_24, 0);
     lv_obj_set_style_border_width(button, 0, 0);
     lv_obj_set_style_pad_left(button, 18, 0);
     lv_obj_set_style_pad_right(button, 18, 0);
     lv_obj_set_style_pad_top(button, 10, 0);
     lv_obj_set_style_pad_bottom(button, 10, 0);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
     lv_label_set_text(label, text);
     lv_obj_center(label);
 
@@ -162,15 +164,23 @@ lv_obj_t *create_time_roller(lv_obj_t *parent,
     lv_obj_set_style_border_width(roller, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(roller, 28, LV_PART_MAIN);
     lv_obj_set_style_text_color(roller, lv_color_hex(0xB2B9C1), LV_PART_MAIN);
+    lv_obj_set_style_text_color(roller, lv_color_hex(0xB2B9C1), LV_PART_MAIN | LV_STATE_DISABLED);
     lv_obj_set_style_text_font(roller, &lv_font_montserrat_36, LV_PART_MAIN);
+    lv_obj_set_style_text_font(roller, &lv_font_montserrat_36, LV_PART_MAIN | LV_STATE_DISABLED);
     lv_obj_set_style_pad_top(roller, 18, LV_PART_MAIN);
     lv_obj_set_style_pad_bottom(roller, 18, LV_PART_MAIN);
     lv_obj_set_style_bg_color(roller, lv_color_hex(0xD8DDE3), LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_SELECTED);
     lv_obj_set_style_radius(roller, 20, LV_PART_SELECTED);
     lv_obj_set_style_text_color(roller, lv_color_black(), LV_PART_SELECTED);
+    lv_obj_set_style_text_color(roller, lv_color_black(), LV_PART_SELECTED | LV_STATE_DISABLED);
     lv_obj_set_style_text_font(roller, &lv_font_montserrat_48, LV_PART_SELECTED);
+    lv_obj_set_style_text_font(roller, &lv_font_montserrat_48, LV_PART_SELECTED | LV_STATE_DISABLED);
     lv_obj_set_style_border_width(roller, 0, LV_PART_SELECTED);
+    lv_obj_set_style_bg_color(roller, lv_color_hex(0x101010), LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_color(roller, lv_color_hex(0xD8DDE3), LV_PART_SELECTED | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_DISABLED);
 
     if (cb != NULL) {
         lv_obj_add_event_cb(roller, cb, LV_EVENT_VALUE_CHANGED, user_data);

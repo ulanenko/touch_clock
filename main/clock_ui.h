@@ -8,6 +8,7 @@
 
 typedef struct {
     void (*on_settings_changed)(void *user_ctx);
+    void (*on_runtime_brightness_changed)(void *user_ctx);
     void (*on_wifi_scan_requested)(void *user_ctx);
     void (*on_wifi_connect_requested)(void *user_ctx, const char *ssid, const char *password);
     void (*on_wifi_forget_requested)(void *user_ctx);
