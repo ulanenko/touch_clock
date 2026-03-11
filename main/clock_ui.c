@@ -286,7 +286,6 @@ typedef struct {
     lv_obj_t *digital_snapshot_img;
     lv_draw_buf_t *digital_snapshot_buf;
     lv_coord_t digital_snapshot_ext_draw;
-    lv_obj_t *digital_swipe_layer;
     bool tileview_scrolling;
     bool digital_cache_valid;
     uint8_t digital_last_hour12;
@@ -342,14 +341,20 @@ typedef struct {
     lv_obj_t *sternglas_center_inner_dot;
     lv_obj_t *sternglas_snapshot_img;
     lv_draw_buf_t *sternglas_snapshot_buf;
+    lv_obj_t *sternglas_composite_img;
+    lv_draw_buf_t *sternglas_composite_buf;
     lv_obj_t *sternglas_hands_canvas;
     void *sternglas_hands_buf;
     lv_obj_t *avenir_snapshot_img;
     lv_draw_buf_t *avenir_snapshot_buf;
+    lv_obj_t *avenir_composite_img;
+    lv_draw_buf_t *avenir_composite_buf;
     lv_obj_t *avenir_hands_canvas;
     void *avenir_hands_buf;
     lv_obj_t *modern_silver_snapshot_img;
     lv_draw_buf_t *modern_silver_snapshot_buf;
+    lv_obj_t *modern_silver_composite_img;
+    lv_draw_buf_t *modern_silver_composite_buf;
     lv_obj_t *modern_silver_hands_canvas;
     void *modern_silver_hands_buf;
     bool matrix_on[MTX_GRID_X][MTX_GRID_Y];
@@ -366,8 +371,9 @@ typedef struct {
     lv_obj_t *segment_panel;
     lv_obj_t *segment_face_obj;
     lv_obj_t *segment_date_label;
-    bool digital_swipe_tracking;
-    lv_point_t digital_swipe_start_point;
+    lv_obj_t *face_swipe_layer;
+    bool face_swipe_tracking;
+    lv_point_t face_swipe_start_point;
 } clock_ui_face_state_t;
 
 typedef struct {
@@ -415,6 +421,7 @@ static const uint8_t s_matrix_font[10][MTX_DIGIT_H] = {
 static clock_face_id_t tile_to_face(lv_obj_t *tile);
 static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim);
 static void show_affordances_temporarily(void);
+static void refresh_digital_face_snapshot(void);
 
 static const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
     {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
@@ -490,6 +497,14 @@ static void set_root_ui_hidden(bool hidden)
             lv_obj_add_flag(s_ui.settings_button, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_clear_flag(s_ui.settings_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (s_ui.faces.face_swipe_layer != NULL) {
+        if (hidden) {
+            lv_obj_add_flag(s_ui.faces.face_swipe_layer, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(s_ui.faces.face_swipe_layer, LV_OBJ_FLAG_HIDDEN);
         }
     }
 

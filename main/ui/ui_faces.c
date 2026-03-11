@@ -43,9 +43,78 @@ static lv_point_precise_t s_sternglas_radio_wave_pts[4][5];
 #define MODERN_HANDS_CENTER_X (MODERN_CENTER_X - MODERN_HANDS_CANVAS_OFFSET)
 #define MODERN_HANDS_CENTER_Y (MODERN_CENTER_Y - MODERN_HANDS_CANVAS_OFFSET)
 
+static void show_digital_face_live(void)
+{
+    if (s_ui.faces.digital_live_root == NULL || s_ui.faces.digital_snapshot_img == NULL) {
+        return;
+    }
+
+    lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void show_digital_face_snapshot(void)
+{
+    bool live_visible;
+
+    if (s_ui.faces.digital_live_root == NULL || s_ui.faces.digital_snapshot_img == NULL) {
+        return;
+    }
+
+    live_visible = !lv_obj_has_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    if (live_visible) {
+        refresh_digital_face_snapshot();
+        return;
+    }
+
+    if (s_ui.faces.digital_snapshot_buf != NULL) {
+        lv_obj_clear_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    }
+    lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void sync_face_animation_state(clock_face_id_t face)
 {
-    LV_UNUSED(face);
+    if (face == CLOCK_FACE_DIGITAL && !s_ui.faces.tileview_scrolling) {
+        show_digital_face_live();
+    } else {
+        show_digital_face_snapshot();
+    }
+}
+
+static void refresh_face_composite_snapshot(clock_face_id_t face,
+                                            lv_obj_t *hands_canvas,
+                                            lv_obj_t *composite_img,
+                                            lv_draw_buf_t **composite_buf)
+{
+    lv_obj_t *tile;
+
+    if (hands_canvas == NULL || composite_img == NULL || composite_buf == NULL) {
+        return;
+    }
+
+    tile = s_ui.tiles[face];
+    if (tile == NULL) {
+        return;
+    }
+
+    lv_obj_clear_flag(hands_canvas, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(composite_img, LV_OBJ_FLAG_HIDDEN);
+
+    if (*composite_buf == NULL) {
+        *composite_buf = lv_snapshot_create_draw_buf(tile, LV_COLOR_FORMAT_RGB565);
+        if (*composite_buf == NULL) {
+            return;
+        }
+    }
+
+    if (lv_snapshot_take_to_draw_buf(tile, LV_COLOR_FORMAT_RGB565, *composite_buf) != LV_RESULT_OK) {
+        return;
+    }
+
+    lv_image_set_src(composite_img, *composite_buf);
+    lv_obj_clear_flag(composite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(hands_canvas, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void face_set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -392,71 +461,6 @@ static void make_face_layer_passive(lv_obj_t *obj)
     }
 }
 
-static void digital_face_swipe_event_cb(lv_event_t *event)
-{
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_indev_t *indev = lv_indev_active();
-    lv_point_t point;
-    lv_coord_t dx;
-    lv_coord_t dy;
-    clock_face_id_t current_face;
-    clock_face_id_t target_face;
-
-    if (indev == NULL) {
-        s_ui.faces.digital_swipe_tracking = false;
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSED) {
-        lv_indev_get_point(indev, &s_ui.faces.digital_swipe_start_point);
-        s_ui.faces.digital_swipe_tracking = true;
-        return;
-    }
-
-    if (code == LV_EVENT_PRESS_LOST) {
-        s_ui.faces.digital_swipe_tracking = false;
-        return;
-    }
-
-    if (code != LV_EVENT_RELEASED || !s_ui.faces.digital_swipe_tracking) {
-        return;
-    }
-
-    s_ui.faces.digital_swipe_tracking = false;
-    lv_indev_get_point(indev, &point);
-    dx = point.x - s_ui.faces.digital_swipe_start_point.x;
-    dy = point.y - s_ui.faces.digital_swipe_start_point.y;
-
-    if (LV_ABS(dx) < 56 || LV_ABS(dx) <= LV_ABS(dy) + 20) {
-        return;
-    }
-
-    current_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face
-                                               : tile_to_face(lv_tileview_get_tile_active(s_ui.tileview));
-    target_face = current_face;
-    if (dx < 0) {
-        target_face = clock_face_step_enabled(current_face, 1);
-    } else if (dx > 0) {
-        target_face = clock_face_step_enabled(current_face, -1);
-    }
-
-    if (target_face == current_face) {
-        return;
-    }
-
-    set_active_face(target_face, LV_ANIM_ON);
-    show_affordances_temporarily();
-    if (s_ui.runtime->in_night_mode) {
-        if (s_ui.settings->night_mode.face != target_face) {
-            s_ui.settings->night_mode.face = target_face;
-            notify_settings_changed();
-        }
-    } else if (s_ui.settings->current_face != target_face) {
-        s_ui.settings->current_face = target_face;
-        notify_settings_changed();
-    }
-}
-
 static void refresh_digital_face_snapshot(void)
 {
     lv_coord_t ext_draw;
@@ -520,18 +524,6 @@ static void create_digital_face(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_ui.faces.digital_live_root, 0, 0);
     lv_obj_set_style_pad_all(s_ui.faces.digital_live_root, 0, 0);
     lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_SCROLLABLE);
-    s_ui.faces.digital_swipe_layer = lv_obj_create(parent);
-    lv_obj_set_size(s_ui.faces.digital_swipe_layer, SCREEN_SIZE, SCREEN_SIZE - BOTTOM_EDGE_ZONE - 8);
-    lv_obj_align(s_ui.faces.digital_swipe_layer, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_opa(s_ui.faces.digital_swipe_layer, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.digital_swipe_layer, 0, 0);
-    lv_obj_set_style_radius(s_ui.faces.digital_swipe_layer, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.digital_swipe_layer, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.digital_swipe_layer, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(s_ui.faces.digital_swipe_layer, digital_face_swipe_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(s_ui.faces.digital_swipe_layer, digital_face_swipe_event_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(s_ui.faces.digital_swipe_layer, digital_face_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
-
     clock_center = lv_obj_create(s_ui.faces.digital_live_root);
     lv_obj_set_size(clock_center, 664, 328);
     lv_obj_set_style_bg_opa(clock_center, LV_OPA_TRANSP, 0);
@@ -620,7 +612,6 @@ static void create_digital_face(lv_obj_t *parent)
     make_face_layer_passive(days_bar);
     make_face_layer_passive(s_ui.faces.digital_date_label);
     make_face_layer_passive(s_ui.faces.digital_live_root);
-    lv_obj_move_foreground(s_ui.faces.digital_swipe_layer);
 }
 
 static void update_digital_face(void)
@@ -726,9 +717,7 @@ static void update_digital_face(void)
     s_ui.faces.digital_last_wday = (int8_t)ti.tm_wday;
     s_ui.faces.digital_cache_valid = true;
 
-    if (content_changed) {
-        refresh_digital_face_snapshot();
-    }
+    LV_UNUSED(content_changed);
 }
 
 static void update_face(clock_face_id_t face)
@@ -1310,6 +1299,12 @@ static void create_sternglas_face(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_ui.faces.sternglas_hands_canvas, 0, 0);
     lv_obj_set_style_pad_all(s_ui.faces.sternglas_hands_canvas, 0, 0);
     lv_obj_center(s_ui.faces.sternglas_hands_canvas);
+    s_ui.faces.sternglas_composite_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(s_ui.faces.sternglas_composite_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.sternglas_composite_img, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.sternglas_composite_img, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.sternglas_composite_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ui.faces.sternglas_composite_img, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void sternglas_transform_point(float x,
@@ -1468,6 +1463,10 @@ static void update_sternglas_face(void)
     lv_draw_rect(&layer, &dot_dsc, &inner_area);
 
     lv_canvas_finish_layer(s_ui.faces.sternglas_hands_canvas, &layer);
+    refresh_face_composite_snapshot(CLOCK_FACE_STERNGLAS,
+                                    s_ui.faces.sternglas_hands_canvas,
+                                    s_ui.faces.sternglas_composite_img,
+                                    &s_ui.faces.sternglas_composite_buf);
 }
 
 static void avenir_transform_point(float x,
@@ -1641,6 +1640,12 @@ static void create_avenir_face(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_ui.faces.avenir_hands_canvas, 0, 0);
     lv_obj_set_style_pad_all(s_ui.faces.avenir_hands_canvas, 0, 0);
     lv_obj_center(s_ui.faces.avenir_hands_canvas);
+    s_ui.faces.avenir_composite_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(s_ui.faces.avenir_composite_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.avenir_composite_img, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.avenir_composite_img, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.avenir_composite_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ui.faces.avenir_composite_img, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void update_avenir_face(void)
@@ -1759,6 +1764,10 @@ static void update_avenir_face(void)
     lv_draw_rect(&layer, &dot_dsc, &pivot_area);
 
     lv_canvas_finish_layer(s_ui.faces.avenir_hands_canvas, &layer);
+    refresh_face_composite_snapshot(CLOCK_FACE_AVENIR,
+                                    s_ui.faces.avenir_hands_canvas,
+                                    s_ui.faces.avenir_composite_img,
+                                    &s_ui.faces.avenir_composite_buf);
 }
 
 static void modern_transform_point(float x,
@@ -1881,6 +1890,12 @@ static void create_modern_silver_face(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_ui.faces.modern_silver_hands_canvas, 0, 0);
     lv_obj_set_style_pad_all(s_ui.faces.modern_silver_hands_canvas, 0, 0);
     lv_obj_center(s_ui.faces.modern_silver_hands_canvas);
+    s_ui.faces.modern_silver_composite_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(s_ui.faces.modern_silver_composite_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.modern_silver_composite_img, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.modern_silver_composite_img, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.modern_silver_composite_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(s_ui.faces.modern_silver_composite_img, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void update_modern_silver_face(void)
@@ -2002,6 +2017,10 @@ static void update_modern_silver_face(void)
     lv_draw_rect(&layer, &dot_dsc, &pivot_area);
 
     lv_canvas_finish_layer(s_ui.faces.modern_silver_hands_canvas, &layer);
+    refresh_face_composite_snapshot(CLOCK_FACE_MODERN_SILVER,
+                                    s_ui.faces.modern_silver_hands_canvas,
+                                    s_ui.faces.modern_silver_composite_img,
+                                    &s_ui.faces.modern_silver_composite_buf);
 }
 
 static void create_slava_face(lv_obj_t *parent)

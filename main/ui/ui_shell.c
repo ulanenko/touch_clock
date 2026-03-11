@@ -27,11 +27,87 @@ static clock_face_id_t tile_to_face(lv_obj_t *tile)
 
 static void apply_face_navigation_mode(clock_face_id_t face)
 {
-    if (face == CLOCK_FACE_DIGITAL) {
-        lv_obj_set_scroll_dir(s_ui.tileview, LV_DIR_NONE);
-    } else {
-        lv_obj_set_scroll_dir(s_ui.tileview, LV_DIR_HOR);
+    LV_UNUSED(face);
+    lv_obj_set_scroll_dir(s_ui.tileview, LV_DIR_NONE);
+}
+
+static void face_swipe_event_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_indev_t *indev = lv_indev_active();
+    lv_point_t point;
+    lv_coord_t dx;
+    lv_coord_t dy;
+    clock_face_id_t current_face;
+    clock_face_id_t target_face;
+
+    if (s_ui.settings_ui.open || alarm_surface_is_open() || brightness_panel_is_open()) {
+        s_ui.faces.face_swipe_tracking = false;
+        return;
     }
+
+    if (indev == NULL) {
+        s_ui.faces.face_swipe_tracking = false;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSED) {
+        lv_indev_get_point(indev, &s_ui.faces.face_swipe_start_point);
+        s_ui.faces.face_swipe_tracking = true;
+        return;
+    }
+
+    if (code == LV_EVENT_PRESS_LOST) {
+        s_ui.faces.face_swipe_tracking = false;
+        return;
+    }
+
+    if (code != LV_EVENT_RELEASED || !s_ui.faces.face_swipe_tracking) {
+        return;
+    }
+
+    s_ui.faces.face_swipe_tracking = false;
+    lv_indev_get_point(indev, &point);
+    dx = point.x - s_ui.faces.face_swipe_start_point.x;
+    dy = point.y - s_ui.faces.face_swipe_start_point.y;
+
+    if (LV_ABS(dx) < 56 || LV_ABS(dx) <= LV_ABS(dy) + 20) {
+        return;
+    }
+
+    current_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face;
+    target_face = (dx < 0) ? clock_face_step_enabled(current_face, 1) : clock_face_step_enabled(current_face, -1);
+    if (target_face == current_face) {
+        return;
+    }
+
+    set_active_face(target_face, LV_ANIM_OFF);
+    show_affordances_temporarily();
+
+    if (s_ui.runtime->in_night_mode) {
+        if (s_ui.settings->night_mode.face != target_face) {
+            s_ui.settings->night_mode.face = target_face;
+            notify_settings_changed();
+        }
+    } else if (s_ui.settings->current_face != target_face) {
+        s_ui.settings->current_face = target_face;
+        notify_settings_changed();
+    }
+}
+
+static void create_face_swipe_layer(void)
+{
+    s_ui.faces.face_swipe_layer = lv_obj_create(s_ui.screen);
+    lv_obj_set_size(s_ui.faces.face_swipe_layer, SCREEN_SIZE, SCREEN_SIZE - BOTTOM_EDGE_ZONE - 8);
+    lv_obj_align(s_ui.faces.face_swipe_layer, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_set_style_bg_opa(s_ui.faces.face_swipe_layer, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(s_ui.faces.face_swipe_layer, 0, 0);
+    lv_obj_set_style_radius(s_ui.faces.face_swipe_layer, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.faces.face_swipe_layer, 0, 0);
+    lv_obj_clear_flag(s_ui.faces.face_swipe_layer, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_event_cb(s_ui.faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(s_ui.faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_RELEASED, NULL);
+    lv_obj_add_event_cb(s_ui.faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
 }
 
 static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
@@ -98,6 +174,8 @@ static void tileview_scroll_event_cb(lv_event_t *event)
     LV_UNUSED(event);
     if (code == LV_EVENT_SCROLL_BEGIN) {
         s_ui.faces.tileview_scrolling = true;
+        face = tile_to_face(lv_tileview_get_tile_active(s_ui.tileview));
+        sync_face_animation_state(face);
         show_affordances_temporarily();
         return;
     }
@@ -105,6 +183,7 @@ static void tileview_scroll_event_cb(lv_event_t *event)
     if (code == LV_EVENT_SCROLL_END) {
         s_ui.faces.tileview_scrolling = false;
         face = tile_to_face(lv_tileview_get_tile_active(s_ui.tileview));
+        sync_face_animation_state(face);
         update_face(face);
         update_dots(face);
         show_affordances_temporarily();
@@ -168,6 +247,7 @@ static void build_root_ui(void)
     lv_obj_set_scrollbar_mode(s_ui.tileview, LV_SCROLLBAR_MODE_OFF);
     lv_obj_add_flag(s_ui.tileview, LV_OBJ_FLAG_SCROLL_ONE);
     lv_obj_remove_flag(s_ui.tileview, LV_OBJ_FLAG_SCROLL_MOMENTUM);
+    lv_obj_set_style_anim_duration(s_ui.tileview, 0, 0);
     lv_obj_set_scroll_snap_x(s_ui.tileview, LV_SCROLL_SNAP_CENTER);
     lv_obj_set_scroll_snap_y(s_ui.tileview, LV_SCROLL_SNAP_NONE);
     lv_obj_align(s_ui.tileview, LV_ALIGN_CENTER, 0, 0);
@@ -198,6 +278,7 @@ static void build_root_ui(void)
     lv_obj_add_event_cb(s_ui.tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL, NULL);
     lv_obj_add_event_cb(s_ui.tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL_END, NULL);
 
+    create_face_swipe_layer();
     create_dots();
     create_brightness_pull_hint();
     create_brightness_edge_sensor();
