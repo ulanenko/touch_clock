@@ -75,7 +75,16 @@ static void show_digital_face_snapshot(void)
 
 static void sync_face_animation_state(clock_face_id_t face)
 {
-    if (face == CLOCK_FACE_DIGITAL && !s_ui.faces.tileview_scrolling) {
+    bool brightness_overlay_visible = s_ui.brightness.overlay != NULL &&
+                                      !lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+    bool keep_digital_live = face == CLOCK_FACE_DIGITAL &&
+                             !s_ui.faces.tileview_scrolling &&
+                             !s_ui.brightness.animating &&
+                             !s_ui.brightness.dragging &&
+                             !brightness_overlay_visible &&
+                             !brightness_panel_is_open();
+
+    if (keep_digital_live) {
         show_digital_face_live();
     } else {
         show_digital_face_snapshot();

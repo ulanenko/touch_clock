@@ -24,7 +24,7 @@
 #define TICK_INNER 315
 #define TICK_OUTER 338
 
-#define BOTTOM_EDGE_ZONE 140
+#define BOTTOM_EDGE_ZONE 196
 #define QUICK_ACTION_SWIPE_TRIGGER 28
 #define BRIGHTNESS_SHEET_WIDTH SCREEN_SIZE
 #define BRIGHTNESS_SHEET_HEIGHT 244
@@ -128,6 +128,7 @@ typedef struct {
     bool animating;
     bool dragging;
     bool drag_from_edge;
+    bool edge_swipe_triggered;
     bool target_open;
     bool ui_synced;
     lv_point_t drag_start_point;
