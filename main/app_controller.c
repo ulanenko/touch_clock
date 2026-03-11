@@ -49,6 +49,12 @@ static void apply_runtime_brightness(void)
 {
     uint8_t target_brightness = s_app.settings.base_brightness;
 
+    if (s_app.runtime.alarm_ringing) {
+        target_brightness = 100;
+    } else if (s_app.runtime.in_night_mode) {
+        target_brightness = s_app.settings.night_mode.brightness;
+    }
+
     s_app.runtime.effective_brightness = target_brightness;
 
     if (s_app.applied_brightness == target_brightness) {

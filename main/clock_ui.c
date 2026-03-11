@@ -192,6 +192,7 @@ typedef struct {
     lv_obj_t *night_end_hour_dd;
     lv_obj_t *night_end_min_dd;
     lv_obj_t *night_face_dd;
+    lv_obj_t *night_brightness_dd;
     lv_obj_t *night_status_label;
     network_ctx_t network_ctx[WIFI_TIME_MAX_SCAN_RESULTS];
 } clock_ui_settings_state_t;

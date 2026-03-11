@@ -152,6 +152,7 @@ static void sync_night_controls(void)
 {
     char face_label[64];
     char status[96];
+    char brightness_label[32];
 
     if (s_ui.settings_ui.night_enabled_sw == NULL) {
         return;
@@ -172,6 +173,8 @@ static void sync_night_controls(void)
 
     settings_format_face_label(face_label, sizeof(face_label), s_ui.settings->night_mode.face);
     settings_set_label_text_if_changed(s_ui.settings_ui.night_face_dd, face_label);
+    snprintf(brightness_label, sizeof(brightness_label), "%u%%", s_ui.settings->night_mode.brightness);
+    settings_set_label_text_if_changed(s_ui.settings_ui.night_brightness_dd, brightness_label);
 }
 
 static void sync_wifi_controls(void)
@@ -682,6 +685,32 @@ static void night_face_next_event_cb(lv_event_t *event)
     sync_night_controls();
 }
 
+static void night_brightness_prev_event_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    if (s_ui.settings->night_mode.brightness <= DISPLAY_BRIGHTNESS_MIN_PERCENT) {
+        s_ui.settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MAX_PERCENT;
+    } else {
+        s_ui.settings->night_mode.brightness = (uint8_t)LV_MAX(DISPLAY_BRIGHTNESS_MIN_PERCENT,
+                                                               s_ui.settings->night_mode.brightness - 5);
+    }
+    notify_settings_changed();
+    sync_night_controls();
+}
+
+static void night_brightness_next_event_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    if (s_ui.settings->night_mode.brightness >= DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+        s_ui.settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    } else {
+        s_ui.settings->night_mode.brightness = (uint8_t)LV_MIN(DISPLAY_BRIGHTNESS_MAX_PERCENT,
+                                                               s_ui.settings->night_mode.brightness + 5);
+    }
+    notify_settings_changed();
+    sync_night_controls();
+}
+
 static void create_wifi_card(lv_obj_t *parent)
 {
     lv_obj_t *row;
@@ -823,6 +852,21 @@ static void create_night_card(lv_obj_t *parent)
                                night_face_prev_event_cb,
                                NULL,
                                night_face_next_event_cb,
+                               NULL);
+    center_row(row);
+
+    card = create_card(parent);
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 16, 0);
+    create_section_title(card, "Brightness", NULL);
+    row = create_step_selector(card,
+                               220,
+                               78,
+                               &s_ui.settings_ui.night_brightness_dd,
+                               night_brightness_prev_event_cb,
+                               NULL,
+                               night_brightness_next_event_cb,
                                NULL);
     center_row(row);
 }

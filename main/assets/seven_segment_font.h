@@ -18,3 +18,5 @@ extern const lv_font_t avenir_book_9;
 extern const lv_font_t avenir_book_7;
 extern const lv_font_t helvetica_neue_8;
 extern const lv_font_t helvetica_neue_5;
+extern const lv_font_t helvetica_neue_10;
+extern const lv_font_t helvetica_neue_6;

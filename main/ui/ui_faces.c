@@ -426,7 +426,12 @@ static void digital_face_swipe_event_cb(lv_event_t *event)
 
     set_active_face(target_face, LV_ANIM_ON);
     show_affordances_temporarily();
-    if (!s_ui.runtime->in_night_mode && s_ui.settings->current_face != target_face) {
+    if (s_ui.runtime->in_night_mode) {
+        if (s_ui.settings->night_mode.face != target_face) {
+            s_ui.settings->night_mode.face = target_face;
+            notify_settings_changed();
+        }
+    } else if (s_ui.settings->current_face != target_face) {
         s_ui.settings->current_face = target_face;
         notify_settings_changed();
     }
@@ -1301,30 +1306,45 @@ static void sternglas_transform_point(float x,
     out->y = sternglas_map(ry) + shadow_dy;
 }
 
+static void draw_face_quad(lv_layer_t *layer,
+                           const lv_point_precise_t *points,
+                           lv_color_t color,
+                           lv_opa_t opa);
+
 static void draw_sternglas_hand_polygon(lv_layer_t *layer,
                                         const lv_point_precise_t *points,
                                         lv_color_t color,
                                         lv_opa_t opa)
 {
+    lv_point_precise_t base_center;
+    lv_point_precise_t shoulder_center;
+    lv_draw_line_dsc_t line_dsc;
     lv_draw_triangle_dsc_t tri_dsc;
+    float dx = points[1].x - points[0].x;
+    float dy = points[1].y - points[0].y;
+    lv_coord_t shaft_width = LV_MAX(1, (lv_coord_t)lrintf(sqrtf(dx * dx + dy * dy)));
+
+    base_center.x = (points[0].x + points[1].x) * 0.5f;
+    base_center.y = (points[0].y + points[1].y) * 0.5f;
+    shoulder_center.x = (points[2].x + points[4].x) * 0.5f;
+    shoulder_center.y = (points[2].y + points[4].y) * 0.5f;
+
+    lv_draw_line_dsc_init(&line_dsc);
+    line_dsc.color = color;
+    line_dsc.opa = opa;
+    line_dsc.round_start = 0;
+    line_dsc.round_end = 0;
+    line_dsc.width = shaft_width;
+    line_dsc.p1 = base_center;
+    line_dsc.p2 = shoulder_center;
+    lv_draw_line(layer, &line_dsc);
 
     lv_draw_triangle_dsc_init(&tri_dsc);
     tri_dsc.color = color;
     tri_dsc.opa = opa;
-
-    tri_dsc.p[0] = points[0];
-    tri_dsc.p[1] = points[1];
-    tri_dsc.p[2] = points[2];
-    lv_draw_triangle(layer, &tri_dsc);
-
-    tri_dsc.p[0] = points[0];
+    tri_dsc.p[0] = points[4];
     tri_dsc.p[1] = points[2];
-    tri_dsc.p[2] = points[4];
-    lv_draw_triangle(layer, &tri_dsc);
-
-    tri_dsc.p[0] = points[2];
-    tri_dsc.p[1] = points[3];
-    tri_dsc.p[2] = points[4];
+    tri_dsc.p[2] = points[3];
     lv_draw_triangle(layer, &tri_dsc);
 }
 
@@ -1562,8 +1582,8 @@ static void create_avenir_face(lv_obj_t *parent)
         create_avenir_label(root, hour_text, &avenir_book_22, lv_color_hex(0x2A2A2A), 0, x, y);
     }
 
-    create_avenir_label(root, "QUARTZ", &avenir_book_9, lv_color_hex(0x2A2A2A), 1, 170.0f, 226.0f);
-    create_avenir_label(root, "ALARM CLOCK", &avenir_book_7, lv_color_hex(0x2A2A2A), 1, 170.0f, 238.0f);
+    create_avenir_label(root, "QUARTZ", &avenir_book_9, lv_color_hex(0x2A2A2A), 1, 170.0f, 224.0f);
+    create_avenir_label(root, "ALARM CLOCK", &avenir_book_8, lv_color_hex(0x2A2A2A), 1, 170.0f, 237.0f);
 
     make_face_layer_passive(root);
     lv_obj_update_layout(root);
@@ -1732,10 +1752,9 @@ static void modern_transform_point(float x,
 static void create_modern_silver_face(lv_obj_t *parent)
 {
     lv_obj_t *root;
-    lv_obj_t *body;
-    lv_obj_t *rim;
+    lv_obj_t *outer_ring;
+    lv_obj_t *inner_ring;
     lv_obj_t *dial;
-    lv_obj_t *highlight;
     lv_coord_t ext_draw = 0;
 
     lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
@@ -1748,51 +1767,33 @@ static void create_modern_silver_face(lv_obj_t *parent)
     lv_obj_set_style_pad_all(root, 0, 0);
     lv_obj_clear_flag(root, LV_OBJ_FLAG_SCROLLABLE);
 
-    body = lv_obj_create(root);
-    lv_obj_set_size(body, modern_size(340.0f), modern_size(340.0f));
-    lv_obj_center(body);
-    lv_obj_set_style_radius(body, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(body, lv_color_hex(0xF0F2F3), 0);
-    lv_obj_set_style_bg_grad_color(body, lv_color_hex(0x9CA0A5), 0);
-    lv_obj_set_style_bg_grad_dir(body, LV_GRAD_DIR_HOR, 0);
-    lv_obj_set_style_bg_opa(body, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(body, 0, 0);
-    lv_obj_set_style_shadow_color(body, lv_color_black(), 0);
-    lv_obj_set_style_shadow_opa(body, LV_OPA_30, 0);
-    lv_obj_set_style_shadow_width(body, modern_size(30.0f), 0);
-    lv_obj_set_style_shadow_spread(body, 0, 0);
-    lv_obj_set_style_shadow_offset_x(body, 0, 0);
-    lv_obj_set_style_shadow_offset_y(body, modern_size(10.0f), 0);
-    lv_obj_set_style_pad_all(body, 0, 0);
+    outer_ring = lv_obj_create(root);
+    lv_obj_set_size(outer_ring, modern_size(340.0f), modern_size(340.0f));
+    lv_obj_center(outer_ring);
+    lv_obj_set_style_radius(outer_ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(outer_ring, lv_color_hex(0xE7EAED), 0);
+    lv_obj_set_style_bg_opa(outer_ring, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(outer_ring, modern_size(2.0f), 0);
+    lv_obj_set_style_border_color(outer_ring, lv_color_hex(0xC8CDD2), 0);
+    lv_obj_set_style_shadow_width(outer_ring, 0, 0);
+    lv_obj_set_style_pad_all(outer_ring, 0, 0);
 
-    highlight = lv_obj_create(body);
-    lv_obj_set_size(highlight, modern_size(260.0f), modern_size(260.0f));
-    lv_obj_align(highlight, LV_ALIGN_TOP_LEFT, modern_size(20.0f), modern_size(18.0f));
-    lv_obj_set_style_radius(highlight, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(highlight, lv_color_white(), 0);
-    lv_obj_set_style_bg_opa(highlight, LV_OPA_30, 0);
-    lv_obj_set_style_border_width(highlight, 0, 0);
-    lv_obj_set_style_pad_all(highlight, 0, 0);
+    inner_ring = lv_obj_create(outer_ring);
+    lv_obj_set_size(inner_ring, modern_size(324.0f), modern_size(324.0f));
+    lv_obj_center(inner_ring);
+    lv_obj_set_style_radius(inner_ring, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(inner_ring, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(inner_ring, modern_size(1.0f), 0);
+    lv_obj_set_style_border_color(inner_ring, lv_color_hex(0xD9DDE1), 0);
+    lv_obj_set_style_pad_all(inner_ring, 0, 0);
 
-    rim = lv_obj_create(body);
-    lv_obj_set_size(rim, modern_size(299.0f), modern_size(299.0f));
-    lv_obj_center(rim);
-    lv_obj_set_style_radius(rim, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(rim, lv_color_hex(0xF5F5F5), 0);
-    lv_obj_set_style_bg_opa(rim, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(rim, modern_size(2.0f), 0);
-    lv_obj_set_style_border_color(rim, lv_color_hex(0xD0D3D6), 0);
-    lv_obj_set_style_shadow_width(rim, 0, 0);
-    lv_obj_set_style_pad_all(rim, 0, 0);
-
-    dial = lv_obj_create(rim);
-    lv_obj_set_size(dial, modern_size(287.0f), modern_size(287.0f));
+    dial = lv_obj_create(outer_ring);
+    lv_obj_set_size(dial, modern_size(314.0f), modern_size(314.0f));
     lv_obj_center(dial);
     lv_obj_set_style_radius(dial, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dial, lv_color_white(), 0);
     lv_obj_set_style_bg_opa(dial, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(dial, modern_size(1.0f), 0);
-    lv_obj_set_style_border_color(dial, lv_color_hex(0xECECEC), 0);
+    lv_obj_set_style_border_width(dial, 0, 0);
     lv_obj_set_style_pad_all(dial, 0, 0);
 
     for (int i = 0; i < 60; ++i) {
@@ -1800,8 +1801,8 @@ static void create_modern_silver_face(lv_obj_t *parent)
         float x;
         float y;
         lv_obj_t *dot = lv_obj_create(root);
-        float radius = 135.0f;
-        float size = (i % 5) == 0 ? 7.0f : 3.0f;
+        float radius = 146.0f;
+        float size = (i % 5) == 0 ? 6.0f : 3.0f;
 
         modern_rotate_point(MODERN_CENTER_SRC, MODERN_CENTER_SRC - radius, angle, &x, &y);
         lv_obj_set_size(dot, modern_size(size), modern_size(size));
@@ -1815,8 +1816,8 @@ static void create_modern_silver_face(lv_obj_t *parent)
                        modern_map_y(y) - lv_obj_get_height(dot) / 2);
     }
 
-    create_modern_label(root, "GEORG JENSEN", &helvetica_neue_8, lv_color_hex(0x111111), LV_OPA_80, 1, 170.0f, 230.0f);
-    create_modern_label(root, "DENMARK", &helvetica_neue_5, lv_color_hex(0x666666), LV_OPA_80, 1, 170.0f, 241.0f);
+    create_modern_label(root, "GEORG JENSEN", &helvetica_neue_10, lv_color_hex(0x111111), LV_OPA_80, 1, 170.0f, 228.0f);
+    create_modern_label(root, "DENMARK", &helvetica_neue_6, lv_color_hex(0x666666), LV_OPA_80, 1, 170.0f, 241.0f);
 
     make_face_layer_passive(root);
     lv_obj_update_layout(root);
@@ -1861,16 +1862,16 @@ static void update_modern_silver_face(void)
     float minute_angle = (ti.tm_min + ti.tm_sec / 60.0f) * 6.0f;
     float second_angle = ti.tm_sec * 6.0f;
     static const float s_hour_hand[4][2] = {
-        {170.0f, 60.0f},
-        {173.5f, 142.5f},
+        {170.0f, 72.0f},
+        {173.5f, 146.0f},
         {170.0f, 170.0f},
-        {166.5f, 142.5f},
+        {166.5f, 146.0f},
     };
     static const float s_minute_hand[4][2] = {
-        {170.0f, 10.0f},
-        {172.8f, 134.8f},
+        {170.0f, 28.0f},
+        {172.8f, 138.0f},
         {170.0f, 170.0f},
-        {167.2f, 134.8f},
+        {167.2f, 138.0f},
     };
     static const int s_shadow_offsets[2][2] = {
         {1, 2},
@@ -1897,8 +1898,8 @@ static void update_modern_silver_face(void)
         modern_transform_point(s_hour_hand[i][0], s_hour_hand[i][1], hour_angle, 0, 0, &hour_pts[i]);
         modern_transform_point(s_minute_hand[i][0], s_minute_hand[i][1], minute_angle, 0, 0, &minute_pts[i]);
     }
-    modern_transform_point(170.0f, 40.0f, second_angle, 0, 0, &second_pts[0]);
-    modern_transform_point(170.0f, 205.0f, second_angle, 0, 0, &second_pts[1]);
+    modern_transform_point(170.0f, 44.0f, second_angle, 0, 0, &second_pts[0]);
+    modern_transform_point(170.0f, 198.0f, second_angle, 0, 0, &second_pts[1]);
 
     lv_canvas_fill_bg(s_ui.faces.modern_silver_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
     lv_canvas_init_layer(s_ui.faces.modern_silver_hands_canvas, &layer);

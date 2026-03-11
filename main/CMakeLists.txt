@@ -25,6 +25,8 @@ idf_component_register(
         assets/avenir_book_7.c
         assets/helvetica_neue_8.c
         assets/helvetica_neue_5.c
+        assets/helvetica_neue_10.c
+        assets/helvetica_neue_6.c
         assets/slava_face_img.c
         assets/slava_dark_face_img.c
         ui/ui_controls.c

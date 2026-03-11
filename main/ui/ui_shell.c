@@ -61,7 +61,12 @@ static void tileview_value_changed_cb(lv_event_t *event)
     sync_alarm_banner_style(face);
     show_affordances_temporarily();
 
-    if (!s_ui.runtime->in_night_mode && s_ui.settings->current_face != face) {
+    if (s_ui.runtime->in_night_mode) {
+        if (s_ui.settings->night_mode.face != face) {
+            s_ui.settings->night_mode.face = face;
+            notify_settings_changed();
+        }
+    } else if (s_ui.settings->current_face != face) {
         s_ui.settings->current_face = face;
         notify_settings_changed();
     }

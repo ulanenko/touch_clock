@@ -2,7 +2,7 @@ static void alarm_set_label_text_if_changed(lv_obj_t *label, const char *text);
 
 static void sync_alarm_banner_style(clock_face_id_t face)
 {
-    bool dark_badge = (face == CLOCK_FACE_SLAVA);
+    bool dark_badge = (face == CLOCK_FACE_SLAVA || face >= CLOCK_FACE_STERNGLAS);
 
     lv_obj_set_style_bg_color(s_ui.alarms.banner,
                               dark_badge ? lv_color_hex(0x101010) : lv_color_hex(0xECEFF2),
@@ -699,6 +699,7 @@ static void create_alarm_banner(void)
 static void create_alarm_overlay(void)
 {
     lv_obj_t *actions;
+    lv_obj_t *label;
 
     s_ui.alarms.overlay = lv_obj_create(s_ui.screen);
     lv_obj_set_size(s_ui.alarms.overlay, SCREEN_SIZE, SCREEN_SIZE);
@@ -715,10 +716,12 @@ static void create_alarm_overlay(void)
     s_ui.alarms.overlay_subtitle = NULL;
 
     actions = create_row(s_ui.alarms.overlay);
-    lv_obj_set_style_pad_column(actions, 24, 0);
+    lv_obj_set_style_pad_column(actions, 0, 0);
+    lv_obj_set_style_pad_row(actions, 18, 0);
+    lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_width(actions, lv_pct(100));
-    lv_obj_align(actions, LV_ALIGN_CENTER, 0, 36);
+    lv_obj_set_width(actions, LV_SIZE_CONTENT);
+    lv_obj_align(actions, LV_ALIGN_CENTER, 0, 24);
 
     s_ui.alarms.snooze_btn = create_big_action_button(actions,
                                                       "Snooze 10 min",
@@ -730,6 +733,32 @@ static void create_alarm_overlay(void)
                                                     lv_color_hex(0xB54B3D),
                                                     alarm_stop_event_cb,
                                                     NULL);
+
+    lv_obj_set_size(s_ui.alarms.snooze_btn, 272, 272);
+    lv_obj_set_style_radius(s_ui.alarms.snooze_btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_all(s_ui.alarms.snooze_btn, 0, 0);
+    lv_obj_set_style_shadow_width(s_ui.alarms.snooze_btn, 28, 0);
+    label = lv_obj_get_child(s_ui.alarms.snooze_btn, 0);
+    if (label != NULL) {
+        lv_obj_set_width(label, 184);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_36, 0);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+        lv_obj_center(label);
+    }
+
+    lv_obj_set_size(s_ui.alarms.stop_btn, 272, 272);
+    lv_obj_set_style_radius(s_ui.alarms.stop_btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_all(s_ui.alarms.stop_btn, 0, 0);
+    lv_obj_set_style_shadow_width(s_ui.alarms.stop_btn, 28, 0);
+    label = lv_obj_get_child(s_ui.alarms.stop_btn, 0);
+    if (label != NULL) {
+        lv_obj_set_width(label, 184);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_36, 0);
+        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+        lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+        lv_obj_center(label);
+    }
 }
 
 static lv_obj_t *create_filter_chip(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void *user_data)
