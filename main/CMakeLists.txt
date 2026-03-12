@@ -2,11 +2,19 @@ idf_component_register(
     SRCS
         alarm_audio.c
         alarm_logic.c
+        app/app_actions.c
+        app/app_controller_core.c
+        app/app_settings_storage.c
         app_settings.c
         clock_ui.c
         clock_model.c
+        domain/alarm_scheduler.c
+        domain/brightness_policy.c
+        domain/face_catalog.c
+        domain/settings_policy.c
         main.c
         app_controller.c
+        platform/platform_esp_services.c
         wifi_time.c
         assets/alarm_pcm.c
         assets/dseg7_classic_italic_112.c
@@ -30,6 +38,11 @@ idf_component_register(
         assets/montserrat_digits_56.c
         assets/slava_face_img.c
         assets/slava_dark_face_img.c
+        ui/ui_alarms.c
+        ui/ui_brightness.c
         ui/ui_controls.c
+        ui/ui_faces.c
+        ui/ui_settings.c
+        ui/ui_shell.c
         ui/ui_surface.c
     INCLUDE_DIRS .)

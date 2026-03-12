@@ -2,318 +2,303 @@
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <sys/time.h>
-#include <time.h>
+#include <string.h>
 
-#include "alarm_audio.h"
-#include "alarm_logic.h"
-#include "app_settings.h"
+#include "app/app_actions.h"
+#include "app/app_controller_core.h"
 #include "clock_ui.h"
 #include "esp_check.h"
 #include "esp_log.h"
 #include "esp_timer.h"
 #include "lvgl.h"
-#include "wifi_time.h"
+#include "platform/platform_esp_services.h"
 
 typedef struct {
-    app_settings_t settings;
-    app_runtime_state_t runtime;
+    app_controller_core_t core;
     lv_timer_t *tick_timer;
-    int64_t save_deadline_ms;
-    int64_t cancel_revert_deadline_ms;
-    uint8_t applied_brightness;
-    bool audio_available;
-    bool settings_dirty;
-    bool cancel_revert_available;
-    bool cancel_revert_was_one_time;
-    bool cancel_revert_was_enabled;
-    int8_t cancel_revert_alarm_index;
-    time_t cancel_revert_alarm_epoch;
 } app_controller_t;
 
 static const char *TAG = "clock_app";
 static app_controller_t s_app = {0};
 
-static int64_t monotonic_ms(void)
+static int64_t monotonic_ms(void *ctx)
 {
+    (void)ctx;
     return esp_timer_get_time() / 1000;
 }
 
-static void mark_settings_dirty(void)
+static void ui_refresh(void *ctx)
 {
-    s_app.settings_dirty = true;
-    s_app.save_deadline_ms = monotonic_ms() + 1000;
+    LV_UNUSED(ctx);
+    clock_ui_refresh();
 }
 
-static void apply_runtime_brightness(void)
-{
-    uint8_t target_brightness = s_app.runtime.effective_brightness;
-
-    s_app.runtime.effective_brightness = target_brightness;
-
-    if (s_app.applied_brightness == target_brightness) {
-        return;
-    }
-
-    esp_err_t err = bsp_display_brightness_set(target_brightness);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to set brightness to %u%%: %s",
-                 target_brightness, esp_err_to_name(err));
-        return;
-    }
-
-    s_app.applied_brightness = target_brightness;
-}
-
-static void maybe_save_settings(bool force)
-{
-    if (!s_app.settings_dirty) {
-        return;
-    }
-
-    if (!force && monotonic_ms() < s_app.save_deadline_ms) {
-        return;
-    }
-
-    esp_err_t err = app_settings_save(&s_app.settings);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to save settings: %s", esp_err_to_name(err));
-        s_app.save_deadline_ms = monotonic_ms() + 2000;
-        return;
-    }
-
-    s_app.settings_dirty = false;
-}
-
-static void on_settings_changed(void *user_ctx)
+static void on_set_base_brightness(void *user_ctx, uint8_t hw_percent)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-    time_t now;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_base_brightness(&app->core.state, hw_percent, now);
 
-    app_settings_apply_timezone(&app->settings);
-    if (app->audio_available) {
-        alarm_audio_set_volume(app->settings.alarm_volume);
-    }
-    time(&now);
-    app->runtime.effective_brightness = alarm_logic_get_target_brightness(&app->runtime, &app->settings, now);
-    apply_runtime_brightness();
-    mark_settings_dirty();
+    app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
-static void on_runtime_brightness_changed(void *user_ctx)
+static void on_set_runtime_night_brightness(void *user_ctx, uint8_t hw_percent)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-    time_t now;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result =
+        app_action_set_runtime_night_brightness_override(&app->core.state, hw_percent, now);
 
-    time(&now);
-    app->runtime.effective_brightness = alarm_logic_get_target_brightness(&app->runtime, &app->settings, now);
-    apply_runtime_brightness();
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_current_face(void *user_ctx, clock_face_id_t face)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_current_face(&app->core.state, face);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
+static void on_set_night_face(void *user_ctx, clock_face_id_t face)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_night_face(&app->core.state, face);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
+static void on_set_timezone(void *user_ctx, int8_t utc_offset_hours)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_timezone(&app->core.state, utc_offset_hours, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_save_wifi_credentials(void *user_ctx, const char *ssid, const char *password)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_save_wifi_credentials(&app->core.state, ssid, password);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
 static void on_wifi_scan_requested(void *user_ctx)
 {
-    LV_UNUSED(user_ctx);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(wifi_time_start_scan());
-}
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_request_wifi_scan(&app->core.state);
 
-static void on_wifi_connect_requested(void *user_ctx, const char *ssid, const char *password)
-{
-    LV_UNUSED(user_ctx);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(wifi_time_connect(ssid, password));
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
 static void on_wifi_forget_requested(void *user_ctx)
 {
-    LV_UNUSED(user_ctx);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(wifi_time_forget());
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_forget_wifi(&app->core.state);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
 static void on_wifi_sync_requested(void *user_ctx)
 {
-    LV_UNUSED(user_ctx);
-    ESP_ERROR_CHECK_WITHOUT_ABORT(wifi_time_request_sync());
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_request_time_sync(&app->core.state);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
+static void on_set_night_mode_enabled(void *user_ctx, bool enabled)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_night_mode_enabled(&app->core.state, enabled, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_night_schedule(void *user_ctx,
+                                  uint8_t start_hour,
+                                  uint8_t start_minute,
+                                  uint8_t end_hour,
+                                  uint8_t end_minute)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_night_schedule(&app->core.state,
+                                                               start_hour,
+                                                               start_minute,
+                                                               end_hour,
+                                                               end_minute,
+                                                               now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_night_brightness(void *user_ctx, uint8_t hw_percent)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_night_brightness(&app->core.state, hw_percent, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_alarm_volume(void *user_ctx, uint8_t volume)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_alarm_volume(&app->core.state, volume, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_snooze_minutes(void *user_ctx, uint8_t minutes)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_snooze_minutes(&app->core.state, minutes);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
+static void on_set_alarm_enabled(void *user_ctx, uint8_t alarm_index, bool enabled)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_alarm_enabled(&app->core.state, alarm_index, enabled, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_save_alarm(void *user_ctx, uint8_t alarm_index, const alarm_config_t *alarm)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_save_alarm(&app->core.state, alarm_index, alarm, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_delete_alarm(void *user_ctx, uint8_t alarm_index)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_delete_alarm(&app->core.state, alarm_index, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
 static void on_alarm_snooze_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-    time_t now;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_alarm_snooze(&app->core.state, now);
 
-    time(&now);
-    alarm_logic_snooze(&app->runtime, &app->settings, now);
-    if (app->audio_available) {
-        alarm_audio_stop();
-        app->runtime.alarm_test_active = alarm_audio_is_test_active();
-    }
+    app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
 static void on_alarm_stop_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_alarm_stop(&app->core.state);
 
-    alarm_logic_stop(&app->runtime);
-    if (app->audio_available) {
-        alarm_audio_stop();
-        app->runtime.alarm_test_active = alarm_audio_is_test_active();
-    }
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
 static void on_alarm_test_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-
-    if (!app->audio_available) {
-        return;
-    }
-
-    if (alarm_audio_is_test_active()) {
-        alarm_audio_stop();
-    } else {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(alarm_audio_start_test(app->settings.alarm_volume));
-    }
-
-    app->runtime.alarm_test_active = alarm_audio_is_test_active();
+    app_controller_core_toggle_alarm_test(&app->core, app->core.config.clock_service->now());
 }
 
 static void on_next_alarm_cancel_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-    time_t now;
-    int8_t alarm_index = app->runtime.next_alarm_index;
-    time_t alarm_epoch = app->runtime.next_alarm_epoch;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_cancel_next_alarm(&app->core.state, now);
 
-    time(&now);
-    if (app->runtime.snooze_active) {
-        alarm_logic_stop(&app->runtime);
-        app->cancel_revert_available = false;
-        mark_settings_dirty();
-    } else if (alarm_index >= 0 &&
-               alarm_index < MAX_ALARMS &&
-               alarm_epoch > now &&
-               alarm_logic_cancel_next_alarm(&app->runtime, &app->settings, now)) {
-        app->cancel_revert_available = true;
-        app->cancel_revert_alarm_index = alarm_index;
-        app->cancel_revert_alarm_epoch = alarm_epoch;
-        app->cancel_revert_was_one_time = (app->settings.alarms[alarm_index].repeat_mode == ALARM_REPEAT_ONCE);
-        app->cancel_revert_was_enabled = true;
-        app->cancel_revert_deadline_ms = monotonic_ms() + 2500;
-        mark_settings_dirty();
+    if (result.settings_changed) {
+        app_controller_core_arm_cancel_revert_window(&app->core, 2500);
     }
+    app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
 static void on_next_alarm_cancel_undo_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result;
 
-    if (!app->cancel_revert_available ||
-        monotonic_ms() > app->cancel_revert_deadline_ms ||
-        app->cancel_revert_alarm_index < 0 ||
-        app->cancel_revert_alarm_index >= MAX_ALARMS) {
+    if (!app_controller_core_cancel_revert_window_active(&app->core)) {
         return;
     }
 
-    if (app->cancel_revert_was_one_time) {
-        app->settings.alarms[app->cancel_revert_alarm_index].enabled = app->cancel_revert_was_enabled;
-    } else if (app->settings.skipped_alarm_index == app->cancel_revert_alarm_index &&
-               app->settings.skipped_alarm_epoch == app->cancel_revert_alarm_epoch) {
-        app->settings.skipped_alarm_index = -1;
-        app->settings.skipped_alarm_epoch = 0;
-    }
-
-    app->runtime.next_alarm_epoch = app->cancel_revert_alarm_epoch;
-    app->runtime.next_alarm_index = app->cancel_revert_alarm_index;
-    app->cancel_revert_available = false;
-    mark_settings_dirty();
+    result = app_action_undo_cancel_next_alarm(&app->core.state, app->core.config.clock_service->now());
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
 static void clock_tick_cb(lv_timer_t *timer)
 {
+    app_controller_t *app = &s_app;
     time_t now;
 
     LV_UNUSED(timer);
 
-    time(&now);
-    wifi_time_snapshot(&s_app.runtime);
-    if (alarm_logic_tick(&s_app.runtime, &s_app.settings, now)) {
-        mark_settings_dirty();
-    }
-    if (s_app.audio_available) {
-        if (s_app.runtime.alarm_ringing) {
-            if (!alarm_audio_is_alarm_active()) {
-                ESP_ERROR_CHECK_WITHOUT_ABORT(alarm_audio_start_alarm(s_app.settings.alarm_volume));
-            }
-        } else if (alarm_audio_is_alarm_active()) {
-            alarm_audio_stop();
-        }
-        s_app.runtime.alarm_test_active = alarm_audio_is_test_active();
-    } else {
-        s_app.runtime.alarm_test_active = false;
-    }
-
-    if (s_app.runtime.time_synced &&
-        now > 1700000000 &&
-        (s_app.settings.last_synced_epoch == 0 || (now - s_app.settings.last_synced_epoch) >= 300)) {
-        s_app.settings.last_synced_epoch = now;
-        mark_settings_dirty();
-    }
-
-    apply_runtime_brightness();
+    now = app_controller_core_tick(&app->core);
     clock_ui_tick(now);
-    maybe_save_settings(false);
 }
 
 esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
 {
     clock_ui_callbacks_t ui_callbacks = {
-        .on_settings_changed = on_settings_changed,
-        .on_runtime_brightness_changed = on_runtime_brightness_changed,
+        .on_set_base_brightness = on_set_base_brightness,
+        .on_set_runtime_night_brightness = on_set_runtime_night_brightness,
+        .on_set_current_face = on_set_current_face,
+        .on_set_night_face = on_set_night_face,
+        .on_set_timezone = on_set_timezone,
+        .on_save_wifi_credentials = on_save_wifi_credentials,
         .on_wifi_scan_requested = on_wifi_scan_requested,
-        .on_wifi_connect_requested = on_wifi_connect_requested,
         .on_wifi_forget_requested = on_wifi_forget_requested,
         .on_wifi_sync_requested = on_wifi_sync_requested,
+        .on_set_night_mode_enabled = on_set_night_mode_enabled,
+        .on_set_night_schedule = on_set_night_schedule,
+        .on_set_night_brightness = on_set_night_brightness,
+        .on_set_alarm_volume = on_set_alarm_volume,
+        .on_set_snooze_minutes = on_set_snooze_minutes,
+        .on_set_alarm_enabled = on_set_alarm_enabled,
+        .on_save_alarm = on_save_alarm,
+        .on_delete_alarm = on_delete_alarm,
         .on_alarm_snooze_requested = on_alarm_snooze_requested,
         .on_alarm_stop_requested = on_alarm_stop_requested,
         .on_alarm_test_requested = on_alarm_test_requested,
         .on_next_alarm_cancel_requested = on_next_alarm_cancel_requested,
         .on_next_alarm_cancel_undo_requested = on_next_alarm_cancel_undo_requested,
     };
-    struct timeval boot_time = {
-        .tv_sec = 1741500000,
-        .tv_usec = 0,
-    };
     bsp_display_cfg_t display_cfg_copy = *display_cfg;
+    app_controller_core_config_t core_config = {
+        .clock_service = platform_esp_clock_time_service(),
+        .audio_service = platform_esp_audio_service(),
+        .wifi_service = platform_esp_wifi_service(),
+        .display_service = platform_esp_display_service(),
+        .settings_store = platform_esp_settings_store(),
+        .monotonic_ms = monotonic_ms,
+        .monotonic_ctx = NULL,
+        .ui_refresh = ui_refresh,
+        .ui_refresh_ctx = NULL,
+    };
     esp_err_t err;
 
-    app_settings_set_defaults(&s_app.settings);
-    err = app_settings_load(&s_app.settings);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to load saved settings: %s", esp_err_to_name(err));
-        app_settings_set_defaults(&s_app.settings);
-    }
-
-    app_settings_apply_timezone(&s_app.settings);
-    if (s_app.settings.last_synced_epoch > 1700000000) {
-        boot_time.tv_sec = s_app.settings.last_synced_epoch;
-    }
-    settimeofday(&boot_time, NULL);
-
-    alarm_logic_init(&s_app.runtime, &s_app.settings);
-    s_app.applied_brightness = UINT8_MAX;
+    memset(&s_app, 0, sizeof(s_app));
+    app_controller_core_init(&s_app.core, &core_config);
 
     bsp_display_start_with_config(&display_cfg_copy);
     bsp_display_backlight_on();
 
-    err = alarm_audio_init(s_app.settings.alarm_volume);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Failed to initialize alarm audio: %s", esp_err_to_name(err));
-    } else {
-        s_app.audio_available = true;
-    }
-
-    ESP_RETURN_ON_ERROR(wifi_time_init(&s_app.settings), TAG, "Failed to initialize Wi-Fi time");
+    err = (esp_err_t)app_controller_core_bootstrap(&s_app.core, 1741500000);
+    ESP_RETURN_ON_ERROR(err, TAG, "Failed to initialize controller core");
 
     ESP_RETURN_ON_ERROR(bsp_display_lock(1000), TAG, "Failed to lock display");
-    err = clock_ui_init(&s_app.settings, &s_app.runtime, &ui_callbacks, &s_app);
+    err = clock_ui_init(&s_app.core.state.settings, &s_app.core.state.runtime, &ui_callbacks, &s_app);
     if (err == ESP_OK) {
         clock_ui_refresh();
     }

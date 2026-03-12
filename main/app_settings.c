@@ -1,115 +1,119 @@
 #include "app_settings.h"
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "app/app_settings_storage.h"
+#include "domain/settings_policy.h"
 #include "nvs.h"
 
 #define SETTINGS_NAMESPACE "clock"
-#define SETTINGS_VERSION 4U
+#define SETTINGS_VERSION_V5 5U
 
-static void clamp_settings(app_settings_t *settings)
+static esp_err_t storage_get_u32(void *ctx, const char *key, uint32_t *value)
 {
-    if (settings->base_brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT ||
-        settings->base_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
-        settings->base_brightness = 50;
-    }
-
-    if (settings->alarm_volume > 100) {
-        settings->alarm_volume = 70;
-    }
-
-    if (settings->snooze_minutes < 1 || settings->snooze_minutes > 60) {
-        settings->snooze_minutes = 10;
-    }
-
-    if (!clock_face_is_valid(settings->current_face)) {
-        settings->current_face = CLOCK_FACE_DIGITAL;
-    }
-
-    if (!clock_face_is_valid(settings->night_mode.face)) {
-        settings->night_mode.face = CLOCK_FACE_DIGITAL;
-    }
-
-    if (settings->night_mode.brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT ||
-        settings->night_mode.brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
-        settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    }
-    if (settings->night_mode.start_hour > 23) {
-        settings->night_mode.start_hour = 22;
-    }
-    if (settings->night_mode.start_minute > 59) {
-        settings->night_mode.start_minute = 0;
-    }
-    if (settings->night_mode.end_hour > 23) {
-        settings->night_mode.end_hour = 7;
-    }
-    if (settings->night_mode.end_minute > 59) {
-        settings->night_mode.end_minute = 0;
-    }
-
-    if (settings->wifi.timezone_offset_hours < -12 || settings->wifi.timezone_offset_hours > 14) {
-        settings->wifi.timezone_offset_hours = 0;
-    }
-
-    for (size_t i = 0; i < MAX_ALARMS; ++i) {
-        if (settings->alarms[i].hour > 23) {
-            settings->alarms[i].hour = 7;
-        }
-        if (settings->alarms[i].minute > 59) {
-            settings->alarms[i].minute = 0;
-        }
-        if (settings->alarms[i].repeat_mode > ALARM_REPEAT_ONCE) {
-            settings->alarms[i].repeat_mode = ALARM_REPEAT_WEEKLY;
-        }
-        if (settings->alarms[i].days_mask == 0) {
-            settings->alarms[i].days_mask = 0x7F;
-        }
-    }
-
-    if (settings->skipped_alarm_index < -1 || settings->skipped_alarm_index >= MAX_ALARMS) {
-        settings->skipped_alarm_index = -1;
-        settings->skipped_alarm_epoch = 0;
-    }
+    return nvs_get_u32(*(nvs_handle_t *)ctx, key, value);
 }
+
+static esp_err_t storage_get_u8(void *ctx, const char *key, uint8_t *value)
+{
+    return nvs_get_u8(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_get_i8(void *ctx, const char *key, int8_t *value)
+{
+    return nvs_get_i8(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_get_i64(void *ctx, const char *key, int64_t *value)
+{
+    return nvs_get_i64(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_get_str(void *ctx, const char *key, char *buffer, size_t *size)
+{
+    return nvs_get_str(*(nvs_handle_t *)ctx, key, buffer, size);
+}
+
+static esp_err_t storage_get_blob(void *ctx, const char *key, void *buffer, size_t *size)
+{
+    return nvs_get_blob(*(nvs_handle_t *)ctx, key, buffer, size);
+}
+
+static esp_err_t storage_set_u32(void *ctx, const char *key, uint32_t value)
+{
+    return nvs_set_u32(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_set_u8(void *ctx, const char *key, uint8_t value)
+{
+    return nvs_set_u8(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_set_i8(void *ctx, const char *key, int8_t value)
+{
+    return nvs_set_i8(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_set_i64(void *ctx, const char *key, int64_t value)
+{
+    return nvs_set_i64(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_set_str(void *ctx, const char *key, const char *value)
+{
+    return nvs_set_str(*(nvs_handle_t *)ctx, key, value);
+}
+
+static esp_err_t storage_set_blob(void *ctx, const char *key, const void *value, size_t size)
+{
+    return nvs_set_blob(*(nvs_handle_t *)ctx, key, value, size);
+}
+
+static esp_err_t storage_erase_key(void *ctx, const char *key)
+{
+    return nvs_erase_key(*(nvs_handle_t *)ctx, key);
+}
+
+static esp_err_t storage_commit(void *ctx)
+{
+    return nvs_commit(*(nvs_handle_t *)ctx);
+}
+
+static const app_settings_storage_t s_nvs_storage = {
+    .ctx = NULL,
+    .get_u32 = storage_get_u32,
+    .get_u8 = storage_get_u8,
+    .get_i8 = storage_get_i8,
+    .get_i64 = storage_get_i64,
+    .get_str = storage_get_str,
+    .get_blob = storage_get_blob,
+    .set_u32 = storage_set_u32,
+    .set_u8 = storage_set_u8,
+    .set_i8 = storage_set_i8,
+    .set_i64 = storage_set_i64,
+    .set_str = storage_set_str,
+    .set_blob = storage_set_blob,
+    .erase_key = storage_erase_key,
+    .commit = storage_commit,
+};
 
 void app_settings_set_defaults(app_settings_t *settings)
 {
-    memset(settings, 0, sizeof(*settings));
-    settings->version = SETTINGS_VERSION;
-    settings->base_brightness = 50;
-    settings->alarm_volume = 70;
-    settings->snooze_minutes = 10;
-    settings->current_face = CLOCK_FACE_DIGITAL;
-    settings->wifi.timezone_offset_hours = 0;
-    settings->night_mode.enabled = false;
-    settings->night_mode.start_hour = 22;
-    settings->night_mode.start_minute = 0;
-    settings->night_mode.end_hour = 7;
-    settings->night_mode.end_minute = 0;
-    settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    settings->night_mode.face = CLOCK_FACE_SLAVA_DARK;
-    settings->skipped_alarm_index = -1;
-
-    for (size_t i = 0; i < MAX_ALARMS; ++i) {
-        settings->alarms[i].enabled = false;
-        settings->alarms[i].hour = 7;
-        settings->alarms[i].minute = 0;
-        settings->alarms[i].days_mask = 0x7F;
-        settings->alarms[i].repeat_mode = ALARM_REPEAT_WEEKLY;
-    }
+    settings_policy_set_defaults(settings);
+    settings->version = SETTINGS_VERSION_V5;
 }
 
 esp_err_t app_settings_load(app_settings_t *settings)
 {
-    app_settings_t loaded;
-    size_t size = sizeof(loaded);
     nvs_handle_t handle;
+    esp_err_t err;
 
     app_settings_set_defaults(settings);
 
-    esp_err_t err = nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle);
+    err = nvs_open(SETTINGS_NAMESPACE, NVS_READONLY, &handle);
     if (err == ESP_ERR_NVS_NOT_FOUND) {
         return ESP_OK;
     }
@@ -117,37 +121,32 @@ esp_err_t app_settings_load(app_settings_t *settings)
         return err;
     }
 
-    err = nvs_get_blob(handle, "settings", &loaded, &size);
+    {
+        app_settings_storage_t storage = s_nvs_storage;
+
+        storage.ctx = &handle;
+        err = app_settings_load_from_storage(&storage, settings);
+    }
+
     nvs_close(handle);
-    if (err == ESP_ERR_NVS_NOT_FOUND) {
-        return ESP_OK;
-    }
-    if (err != ESP_OK) {
-        return err;
-    }
-    if (size != sizeof(loaded)) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    if (loaded.version != SETTINGS_VERSION) {
-        return ESP_ERR_INVALID_VERSION;
-    }
-
-    *settings = loaded;
-    clamp_settings(settings);
-    return ESP_OK;
+    return err;
 }
 
 esp_err_t app_settings_save(const app_settings_t *settings)
 {
     nvs_handle_t handle;
-    esp_err_t err = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
+    esp_err_t err;
+
+    err = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
         return err;
     }
 
-    err = nvs_set_blob(handle, "settings", settings, sizeof(*settings));
-    if (err == ESP_OK) {
-        err = nvs_commit(handle);
+    {
+        app_settings_storage_t storage = s_nvs_storage;
+
+        storage.ctx = &handle;
+        err = app_settings_save_to_storage(&storage, settings);
     }
 
     nvs_close(handle);

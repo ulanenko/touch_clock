@@ -1,8 +1,10 @@
+#include "ui/clock_ui_internal.h"
+
 static void alarm_set_label_text_if_changed(lv_obj_t *label, const char *text);
 static void alarm_set_button_text_if_changed(lv_obj_t *button, const char *text);
 static void style_alarm_switch(lv_obj_t *sw);
 
-static void sync_alarm_banner_style(clock_face_id_t face)
+void sync_alarm_banner_style(clock_face_id_t face)
 {
     bool dark_badge = (face == CLOCK_FACE_SLAVA || face >= CLOCK_FACE_STERNGLAS);
 
@@ -28,7 +30,7 @@ static void sync_alarm_banner_style(clock_face_id_t face)
                                 0);
 }
 
-static void update_alarm_banner(time_t now)
+void update_alarm_banner(time_t now)
 {
     char text[96];
 
@@ -75,7 +77,7 @@ static void update_alarm_banner(time_t now)
     lv_obj_add_flag(s_ui.alarms.banner, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void sync_alarm_overlay(time_t now)
+void sync_alarm_overlay(time_t now)
 {
     LV_UNUSED(now);
 
@@ -364,7 +366,7 @@ static void alarm_set_switch_checked_if_changed(lv_obj_t *sw, bool checked)
     }
 }
 
-static bool alarm_controls_need_sync(void)
+bool alarm_controls_need_sync(void)
 {
     if (!s_ui.alarms.cache_valid) {
         return true;
@@ -434,14 +436,7 @@ static bool alarm_slot_is_empty(const alarm_config_t *alarm)
 
 static void clear_cancelled_occurrence_for_alarm(uint8_t alarm_index)
 {
-    if (alarm_index >= MAX_ALARMS) {
-        return;
-    }
-
-    if (s_ui.settings->skipped_alarm_index == (int8_t)alarm_index) {
-        s_ui.settings->skipped_alarm_index = -1;
-        s_ui.settings->skipped_alarm_epoch = 0;
-    }
+    LV_UNUSED(alarm_index);
 }
 
 static void alarm_list_swipe_event_cb(lv_event_t *event)
@@ -513,7 +508,7 @@ static void alarm_list_swipe_event_cb(lv_event_t *event)
     }
 }
 
-static void sync_alarm_controls(void)
+void sync_alarm_controls(void)
 {
     char volume[32];
     char status[96];
@@ -756,7 +751,7 @@ static void alarm_banner_event_cb(lv_event_t *event)
     update_alarm_banner(now);
 }
 
-static void create_alarm_banner(void)
+void create_alarm_banner(void)
 {
     s_ui.alarms.banner = lv_obj_create(s_ui.screen);
     lv_obj_set_size(s_ui.alarms.banner, 430, LV_SIZE_CONTENT);
@@ -783,7 +778,7 @@ static void create_alarm_banner(void)
     lv_label_set_text(s_ui.alarms.banner_label, "");
 }
 
-static void create_alarm_overlay(void)
+void create_alarm_overlay(void)
 {
     lv_obj_t *actions;
     lv_obj_t *label;
@@ -894,8 +889,7 @@ static void alarm_manage_snooze_event_cb(lv_event_t *event)
         }
     }
 
-    s_ui.settings->snooze_minutes = options[(current_index + 1) % (sizeof(options) / sizeof(options[0]))];
-    notify_settings_changed();
+    request_set_snooze_minutes(options[(current_index + 1) % (sizeof(options) / sizeof(options[0]))]);
     sync_alarm_controls();
 }
 
@@ -917,8 +911,7 @@ static void alarm_manage_snooze_step(int direction)
         current_index++;
     }
 
-    s_ui.settings->snooze_minutes = options[current_index];
-    notify_settings_changed();
+    request_set_snooze_minutes(options[current_index]);
     sync_alarm_controls();
 }
 
@@ -940,8 +933,7 @@ static void alarm_manage_volume_event_cb(lv_event_t *event)
         return;
     }
 
-    s_ui.settings->alarm_volume = lv_slider_get_value(lv_event_get_target(event));
-    notify_settings_changed();
+    request_set_alarm_volume((uint8_t)lv_slider_get_value(lv_event_get_target(event)));
     sync_alarm_controls();
 }
 
@@ -981,10 +973,8 @@ static void alarm_list_toggle_event_cb(lv_event_t *event)
         return;
     }
 
-    s_ui.settings->alarms[ctx->alarm_index].enabled =
-        lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED);
-    clear_cancelled_occurrence_for_alarm(ctx->alarm_index);
-    notify_settings_changed();
+    request_set_alarm_enabled(ctx->alarm_index,
+                              lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
     sync_alarm_controls();
 }
 
@@ -996,13 +986,8 @@ static void alarm_list_delete_event_cb(lv_event_t *event)
         return;
     }
 
-    s_ui.settings->alarms[ctx->alarm_index].enabled = false;
-    s_ui.settings->alarms[ctx->alarm_index].hour = 7;
-    s_ui.settings->alarms[ctx->alarm_index].minute = 0;
-    s_ui.settings->alarms[ctx->alarm_index].repeat_mode = ALARM_REPEAT_WEEKLY;
-    s_ui.settings->alarms[ctx->alarm_index].days_mask = 0x7F;
     close_alarm_delete_action((int8_t)ctx->alarm_index);
-    notify_settings_changed();
+    request_delete_alarm(ctx->alarm_index);
     sync_alarm_controls();
 }
 
@@ -1030,7 +1015,6 @@ static void alarm_editor_enabled_event_cb(lv_event_t *event)
     }
 
     s_ui.alarms.editor_draft.enabled = lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED);
-    clear_cancelled_occurrence_for_alarm((uint8_t)s_ui.alarms.editor_index);
     sync_alarm_controls();
 }
 
@@ -1073,9 +1057,8 @@ static void alarm_editor_save_event_cb(lv_event_t *event)
         return;
     }
 
-    s_ui.settings->alarms[s_ui.alarms.editor_index] = s_ui.alarms.editor_draft;
+    request_save_alarm((uint8_t)s_ui.alarms.editor_index, &s_ui.alarms.editor_draft);
     s_ui.alarms.focus_alarm_index = s_ui.alarms.editor_index;
-    notify_settings_changed();
     alarm_editor_close();
     sync_alarm_controls();
 }
@@ -1088,12 +1071,7 @@ static void alarm_editor_delete_event_cb(lv_event_t *event)
         return;
     }
 
-    s_ui.settings->alarms[s_ui.alarms.editor_index].enabled = false;
-    s_ui.settings->alarms[s_ui.alarms.editor_index].hour = 7;
-    s_ui.settings->alarms[s_ui.alarms.editor_index].minute = 0;
-    s_ui.settings->alarms[s_ui.alarms.editor_index].repeat_mode = ALARM_REPEAT_WEEKLY;
-    s_ui.settings->alarms[s_ui.alarms.editor_index].days_mask = 0x7F;
-    notify_settings_changed();
+    request_delete_alarm((uint8_t)s_ui.alarms.editor_index);
     alarm_editor_close();
     sync_alarm_controls();
 }
@@ -1209,7 +1187,7 @@ static void alarm_custom_create_event_cb(lv_event_t *event)
     open_alarm_editor((uint8_t)slot, true);
 }
 
-static void alarm_management_open(void)
+void alarm_management_open(void)
 {
     brightness_overlay_hide_immediately();
     brightness_panel_hide();
@@ -1229,7 +1207,7 @@ static void alarm_management_open(void)
     refresh_alarm_management_layout();
 }
 
-static void alarm_management_close(void)
+void alarm_management_close(void)
 {
     close_alarm_delete_action(s_ui.alarms.swipe_open_index);
     alarm_settings_close();
@@ -1269,7 +1247,7 @@ static void alarm_management_scroll_event_cb(lv_event_t *event)
     }
 }
 
-static void alarm_editor_close(void)
+void alarm_editor_close(void)
 {
     s_ui.alarms.editor_open = false;
     s_ui.alarms.close_swipe_consumed = false;
@@ -1282,7 +1260,7 @@ static void alarm_editor_close(void)
     }
 }
 
-static void open_alarm_editor(uint8_t alarm_index, bool is_new)
+void open_alarm_editor(uint8_t alarm_index, bool is_new)
 {
     time_t now;
     struct tm now_tm;
@@ -1325,7 +1303,7 @@ static void open_alarm_editor(uint8_t alarm_index, bool is_new)
     lv_obj_move_foreground(s_ui.alarms.editor_overlay);
 }
 
-static void create_alarm_management_overlay(void)
+void create_alarm_management_overlay(void)
 {
     ui_surface_t surface;
     lv_obj_t *header;
@@ -1549,7 +1527,7 @@ static lv_obj_t *create_alarm_settings_round_button(lv_obj_t *parent, const char
     return button;
 }
 
-static void create_alarm_settings_overlay(void)
+void create_alarm_settings_overlay(void)
 {
     ui_surface_t surface;
     lv_obj_t *content;
@@ -1661,7 +1639,7 @@ static void create_alarm_settings_overlay(void)
                                   (void *)UI_SURFACE_EDGE_RIGHT);
 }
 
-static void create_alarm_editor_overlay(void)
+void create_alarm_editor_overlay(void)
 {
     static const char *repeat_labels[4] = {"One time", "Every day", "Weekdays", "Weekends"};
     static const uint8_t display_day_order[7] = {1, 2, 3, 4, 5, 6, 0};

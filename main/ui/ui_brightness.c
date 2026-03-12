@@ -1,3 +1,5 @@
+#include "ui/clock_ui_internal.h"
+
 static void affordance_opa_anim_cb(void *obj, int32_t value)
 {
     lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)value, 0);
@@ -68,7 +70,7 @@ static void set_affordances_visible(bool visible)
     animate_affordance(s_ui.brightness.pull_hint, visible);
 }
 
-static void affordance_hide_timer_cb(lv_timer_t *timer)
+void affordance_hide_timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
     set_affordances_visible(false);
@@ -77,7 +79,7 @@ static void affordance_hide_timer_cb(lv_timer_t *timer)
     }
 }
 
-static void show_affordances_temporarily(void)
+void show_affordances_temporarily(void)
 {
     if (s_ui.settings_ui.open || alarm_surface_is_open() || brightness_panel_is_open()) {
         return;
@@ -115,7 +117,7 @@ static uint8_t brightness_ui_get_target_hw(void)
     return s_ui.settings->base_brightness;
 }
 
-static void update_brightness_ui(void)
+void update_brightness_ui(void)
 {
     char buffer[32];
     uint8_t ui_brightness;
@@ -138,7 +140,7 @@ static void update_brightness_ui(void)
     }
 }
 
-static bool brightness_panel_is_open(void)
+bool brightness_panel_is_open(void)
 {
     return s_ui.brightness.panel_overlay != NULL &&
            !lv_obj_has_flag(s_ui.brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -261,7 +263,7 @@ static void brightness_overlay_set_visible(bool show)
     }
 }
 
-static void brightness_overlay_hide_immediately(void)
+void brightness_overlay_hide_immediately(void)
 {
     brightness_overlay_set_visible(false);
 }
@@ -275,7 +277,7 @@ static void brightness_overlay_hide(void)
     brightness_animate_sheet_to(BRIGHTNESS_SHEET_CLOSED_Y);
 }
 
-static void brightness_panel_hide(void)
+void brightness_panel_hide(void)
 {
     if (s_ui.brightness.panel_overlay == NULL) {
         return;
@@ -295,16 +297,9 @@ static void brightness_slider_event_cb(lv_event_t *event)
 
     target_brightness = brightness_ui_to_hw(lv_slider_get_value(lv_event_get_target(event)));
     if (s_ui.runtime != NULL && s_ui.runtime->in_night_mode) {
-        s_ui.runtime->night_brightness_override = target_brightness;
-        s_ui.runtime->night_brightness_override_active =
-            (target_brightness != s_ui.settings->night_mode.brightness);
-        if (!s_ui.runtime->night_brightness_override_active) {
-            s_ui.runtime->night_brightness_override = s_ui.settings->night_mode.brightness;
-        }
-        notify_runtime_brightness_changed();
+        request_set_runtime_night_brightness(target_brightness);
     } else {
-        s_ui.settings->base_brightness = target_brightness;
-        notify_settings_changed();
+        request_set_base_brightness(target_brightness);
     }
 
     update_brightness_ui();
@@ -477,7 +472,7 @@ static void brightness_drag_event_cb(lv_event_t *event)
     }
 }
 
-static void create_brightness_pull_hint(void)
+void create_brightness_pull_hint(void)
 {
     s_ui.brightness.pull_hint = lv_obj_create(s_ui.screen);
     lv_obj_set_size(s_ui.brightness.pull_hint, 88, 6);
@@ -492,7 +487,7 @@ static void create_brightness_pull_hint(void)
     lv_obj_align(s_ui.brightness.pull_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
 }
 
-static void create_brightness_edge_sensor(void)
+void create_brightness_edge_sensor(void)
 {
     s_ui.brightness.edge_sensor = lv_obj_create(s_ui.screen);
     lv_obj_set_size(s_ui.brightness.edge_sensor, SCREEN_SIZE, BOTTOM_EDGE_ZONE);
@@ -528,7 +523,7 @@ static lv_obj_t *create_quick_action_button(lv_obj_t *parent,
     return button;
 }
 
-static void create_brightness_overlay(void)
+void create_brightness_overlay(void)
 {
     lv_obj_t *sheet_grabber;
     lv_obj_t *actions;
@@ -609,7 +604,7 @@ static void create_brightness_overlay(void)
     create_quick_action_button(actions, LV_SYMBOL_SETTINGS, settings_action_event_cb);
 }
 
-static void create_brightness_panel(void)
+void create_brightness_panel(void)
 {
     lv_obj_t *panel;
     lv_obj_t *title;

@@ -1,4 +1,6 @@
-static void update_dots(clock_face_id_t active_face)
+#include "ui/clock_ui_internal.h"
+
+void update_dots(clock_face_id_t active_face)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
         if (s_ui.page_dots[i] == NULL) {
@@ -11,7 +13,7 @@ static void update_dots(clock_face_id_t active_face)
     }
 }
 
-static clock_face_id_t tile_to_face(lv_obj_t *tile)
+clock_face_id_t tile_to_face(lv_obj_t *tile)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
         if (!clock_face_is_enabled((clock_face_id_t)i)) {
@@ -86,12 +88,10 @@ static void face_swipe_event_cb(lv_event_t *event)
 
     if (s_ui.runtime->in_night_mode) {
         if (s_ui.settings->night_mode.face != target_face) {
-            s_ui.settings->night_mode.face = target_face;
-            notify_settings_changed();
+            request_set_night_face(target_face);
         }
     } else if (s_ui.settings->current_face != target_face) {
-        s_ui.settings->current_face = target_face;
-        notify_settings_changed();
+        request_set_current_face(target_face);
     }
 }
 
@@ -110,7 +110,7 @@ static void create_face_swipe_layer(void)
     lv_obj_add_event_cb(s_ui.faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_PRESS_LOST, NULL);
 }
 
-static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
+void set_active_face(clock_face_id_t face, lv_anim_enable_t anim)
 {
     int visible_index;
 
@@ -157,12 +157,10 @@ static void tileview_value_changed_cb(lv_event_t *event)
 
     if (s_ui.runtime->in_night_mode) {
         if (s_ui.settings->night_mode.face != face) {
-            s_ui.settings->night_mode.face = face;
-            notify_settings_changed();
+            request_set_night_face(face);
         }
     } else if (s_ui.settings->current_face != face) {
-        s_ui.settings->current_face = face;
-        notify_settings_changed();
+        request_set_current_face(face);
     }
 }
 
@@ -232,7 +230,7 @@ static void create_settings_button(void)
     lv_obj_center(label);
 }
 
-static void build_root_ui(void)
+void build_root_ui(void)
 {
     s_ui.screen = lv_screen_active();
     lv_obj_set_style_bg_color(s_ui.screen, lv_color_black(), 0);

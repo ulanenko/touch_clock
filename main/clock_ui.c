@@ -7,6 +7,8 @@
 
 #include "assets/slava_assets.h"
 #include "assets/seven_segment_font.h"
+#include "clock_model.h"
+#include "domain/brightness_policy.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "lvgl.h"
@@ -160,6 +162,8 @@ typedef struct {
     bool close_swipe_consumed;
     bool wifi_scrolling;
     bool night_scrolling;
+    bool night_control_dragging;
+    bool night_control_interaction_suppressed;
     bool wifi_cache_valid;
     bool night_cache_valid;
     bool cached_night_enabled;
@@ -177,6 +181,8 @@ typedef struct {
     char cached_wifi_saved_ssid[33];
     char pending_ssid[33];
     lv_point_t close_drag_start_point;
+    lv_point_t night_control_drag_start_point;
+    lv_obj_t *night_control_drag_target;
     lv_obj_t *overlay;
     lv_obj_t *panel;
     lv_obj_t *content;
@@ -225,8 +231,11 @@ typedef struct {
     lv_obj_t *night_end_hour_dd;
     lv_obj_t *night_end_min_dd;
     lv_obj_t *night_face_button;
+    lv_obj_t *night_face_preview_shell;
     lv_obj_t *night_face_preview;
     lv_draw_buf_t *night_face_preview_buf;
+    lv_obj_t *night_face_preview_scroll;
+    lv_draw_buf_t *night_face_preview_scroll_buf;
     lv_obj_t *night_face_render_canvas;
     lv_obj_t *night_face_dd;
     lv_obj_t *night_face_picker_overlay;
@@ -422,8 +431,8 @@ typedef struct {
 } clock_ui_face_state_t;
 
 typedef struct {
-    app_settings_t *settings;
-    app_runtime_state_t *runtime;
+    const app_settings_t *settings;
+    const app_runtime_state_t *runtime;
     clock_ui_callbacks_t callbacks;
     void *user_ctx;
     bool suppress_events;
@@ -444,13 +453,13 @@ typedef struct {
     clock_ui_face_state_t faces;
 } clock_ui_state_t;
 
-static clock_ui_state_t s_ui = {0};
+clock_ui_state_t s_ui = {0};
 
-static lv_style_t s_style_hour;
-static lv_style_t s_style_min;
-static lv_style_t s_style_sec;
+lv_style_t s_style_hour;
+lv_style_t s_style_min;
+lv_style_t s_style_sec;
 
-static const uint8_t s_matrix_font[10][MTX_DIGIT_H] = {
+const uint8_t s_matrix_font[10][MTX_DIGIT_H] = {
     {0x0E, 0x11, 0x13, 0x15, 0x19, 0x11, 0x0E},
     {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
     {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F},
@@ -463,12 +472,12 @@ static const uint8_t s_matrix_font[10][MTX_DIGIT_H] = {
     {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
 };
 
-static clock_face_id_t tile_to_face(lv_obj_t *tile);
-static void set_active_face(clock_face_id_t face, lv_anim_enable_t anim);
-static void show_affordances_temporarily(void);
-static void refresh_digital_face_snapshot(void);
+clock_face_id_t tile_to_face(lv_obj_t *tile);
+void set_active_face(clock_face_id_t face, lv_anim_enable_t anim);
+void show_affordances_temporarily(void);
+void refresh_digital_face_snapshot(void);
 
-static const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
+const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
     {0x0E, 0x11, 0x11, 0x11, 0x11, 0x11, 0x0E},
     {0x04, 0x0C, 0x04, 0x04, 0x04, 0x04, 0x0E},
     {0x0E, 0x11, 0x01, 0x02, 0x04, 0x08, 0x1F},
@@ -481,16 +490,16 @@ static const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
     {0x0E, 0x11, 0x11, 0x0F, 0x01, 0x02, 0x0C},
 };
 
-static const uint8_t s_segment_font[10] = {
+const uint8_t s_segment_font[10] = {
     0x3F, 0x06, 0x5B, 0x4F, 0x66,
     0x6D, 0x7D, 0x07, 0x7F, 0x6F,
 };
 
-static const uint8_t s_matrix_digit_col[4] = {3, 9, 19, 25};
-static const uint8_t s_matrix_colon_col = 16;
-static const uint8_t s_matrix_digit_row0 = (MTX_GRID_Y - MTX_DIGIT_H) / 2;
-static const char *s_day_short[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-static const char *s_month_short[12] = {
+const uint8_t s_matrix_digit_col[4] = {3, 9, 19, 25};
+const uint8_t s_matrix_colon_col = 16;
+const uint8_t s_matrix_digit_row0 = (MTX_GRID_Y - MTX_DIGIT_H) / 2;
+const char *s_day_short[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+const char *s_month_short[12] = {
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
 };
@@ -502,39 +511,131 @@ enum {
     ALARM_REPEAT_PRESET_WEEKENDS = 3,
 };
 
-static void wifi_network_btn_event_cb(lv_event_t *event);
-static void update_matrix_face(void);
-static void update_wharton_face(void);
-static void update_slava_face(void);
-static void update_slava_dark_face(void);
-static void update_sternglas_face(void);
-static void update_avenir_face(void);
-static void update_modern_silver_face(void);
-static void update_face(clock_face_id_t face);
-static void sync_face_animation_state(clock_face_id_t face);
-static bool brightness_panel_is_open(void);
-static void open_settings_tab(uint32_t tab_idx);
-static void sync_alarm_controls(void);
-static void alarm_management_open(void);
-static void alarm_management_close(void);
-static void alarm_editor_close(void);
-static void open_alarm_editor(uint8_t alarm_index, bool is_new);
+void affordance_hide_timer_cb(lv_timer_t *timer);
+void update_face(clock_face_id_t face);
+void sync_face_animation_state(clock_face_id_t face);
+bool brightness_panel_is_open(void);
+void update_brightness_ui(void);
+void open_settings_tab(uint32_t tab_idx);
+void sync_alarm_controls(void);
+void sync_alarm_banner_style(clock_face_id_t face);
+void alarm_management_open(void);
+void alarm_management_close(void);
+void alarm_editor_close(void);
+void open_alarm_editor(uint8_t alarm_index, bool is_new);
+void refresh_settings_controls(void);
+bool wifi_controls_need_sync(void);
+void sync_wifi_controls(void);
+bool night_controls_need_sync(void);
+void sync_night_controls(void);
+void update_alarm_banner(time_t now);
+void sync_alarm_overlay(time_t now);
+bool alarm_controls_need_sync(void);
+void build_root_ui(void);
+void update_dots(clock_face_id_t active_face);
 
-static void notify_settings_changed(void)
+void request_set_base_brightness(uint8_t hw_percent)
 {
-    if (s_ui.callbacks.on_settings_changed != NULL) {
-        s_ui.callbacks.on_settings_changed(s_ui.user_ctx);
+    if (s_ui.callbacks.on_set_base_brightness != NULL) {
+        s_ui.callbacks.on_set_base_brightness(s_ui.user_ctx, hw_percent);
     }
 }
 
-static void notify_runtime_brightness_changed(void)
+void request_set_runtime_night_brightness(uint8_t hw_percent)
 {
-    if (s_ui.callbacks.on_runtime_brightness_changed != NULL) {
-        s_ui.callbacks.on_runtime_brightness_changed(s_ui.user_ctx);
+    if (s_ui.callbacks.on_set_runtime_night_brightness != NULL) {
+        s_ui.callbacks.on_set_runtime_night_brightness(s_ui.user_ctx, hw_percent);
     }
 }
 
-static void set_root_ui_hidden(bool hidden)
+void request_set_current_face(clock_face_id_t face)
+{
+    if (s_ui.callbacks.on_set_current_face != NULL) {
+        s_ui.callbacks.on_set_current_face(s_ui.user_ctx, face);
+    }
+}
+
+void request_set_night_face(clock_face_id_t face)
+{
+    if (s_ui.callbacks.on_set_night_face != NULL) {
+        s_ui.callbacks.on_set_night_face(s_ui.user_ctx, face);
+    }
+}
+
+void request_set_timezone(int8_t utc_offset_hours)
+{
+    if (s_ui.callbacks.on_set_timezone != NULL) {
+        s_ui.callbacks.on_set_timezone(s_ui.user_ctx, utc_offset_hours);
+    }
+}
+
+void request_save_wifi_credentials(const char *ssid, const char *password)
+{
+    if (s_ui.callbacks.on_save_wifi_credentials != NULL) {
+        s_ui.callbacks.on_save_wifi_credentials(s_ui.user_ctx, ssid, password);
+    }
+}
+
+void request_set_night_mode_enabled(bool enabled)
+{
+    if (s_ui.callbacks.on_set_night_mode_enabled != NULL) {
+        s_ui.callbacks.on_set_night_mode_enabled(s_ui.user_ctx, enabled);
+    }
+}
+
+void request_set_night_schedule(uint8_t start_hour,
+                                uint8_t start_minute,
+                                uint8_t end_hour,
+                                uint8_t end_minute)
+{
+    if (s_ui.callbacks.on_set_night_schedule != NULL) {
+        s_ui.callbacks.on_set_night_schedule(s_ui.user_ctx, start_hour, start_minute, end_hour, end_minute);
+    }
+}
+
+void request_set_night_brightness(uint8_t hw_percent)
+{
+    if (s_ui.callbacks.on_set_night_brightness != NULL) {
+        s_ui.callbacks.on_set_night_brightness(s_ui.user_ctx, hw_percent);
+    }
+}
+
+void request_set_alarm_volume(uint8_t volume)
+{
+    if (s_ui.callbacks.on_set_alarm_volume != NULL) {
+        s_ui.callbacks.on_set_alarm_volume(s_ui.user_ctx, volume);
+    }
+}
+
+void request_set_snooze_minutes(uint8_t minutes)
+{
+    if (s_ui.callbacks.on_set_snooze_minutes != NULL) {
+        s_ui.callbacks.on_set_snooze_minutes(s_ui.user_ctx, minutes);
+    }
+}
+
+void request_set_alarm_enabled(uint8_t alarm_index, bool enabled)
+{
+    if (s_ui.callbacks.on_set_alarm_enabled != NULL) {
+        s_ui.callbacks.on_set_alarm_enabled(s_ui.user_ctx, alarm_index, enabled);
+    }
+}
+
+void request_save_alarm(uint8_t alarm_index, const alarm_config_t *alarm)
+{
+    if (s_ui.callbacks.on_save_alarm != NULL) {
+        s_ui.callbacks.on_save_alarm(s_ui.user_ctx, alarm_index, alarm);
+    }
+}
+
+void request_delete_alarm(uint8_t alarm_index)
+{
+    if (s_ui.callbacks.on_delete_alarm != NULL) {
+        s_ui.callbacks.on_delete_alarm(s_ui.user_ctx, alarm_index);
+    }
+}
+
+void set_root_ui_hidden(bool hidden)
 {
     if (s_ui.tileview != NULL) {
         if (hidden) {
@@ -573,7 +674,7 @@ static void set_root_ui_hidden(bool hidden)
     }
 }
 
-static clock_face_id_t sanitize_enabled_face(clock_face_id_t face)
+clock_face_id_t sanitize_enabled_face(clock_face_id_t face)
 {
     if (!clock_face_is_enabled(face)) {
         return clock_face_first_enabled();
@@ -582,7 +683,7 @@ static clock_face_id_t sanitize_enabled_face(clock_face_id_t face)
     return face;
 }
 
-static struct tm get_local_time_now(void)
+struct tm get_local_time_now(void)
 {
     time_t now;
     struct tm local_tm;
@@ -592,7 +693,7 @@ static struct tm get_local_time_now(void)
     return local_tm;
 }
 
-static void hand_endpoint(int cx, int cy, int length, float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
+void hand_endpoint(int cx, int cy, int length, float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
 {
     float rad = (angle_deg - 90.0f) * (M_PI / 180.0f);
 
@@ -602,8 +703,8 @@ static void hand_endpoint(int cx, int cy, int length, float angle_deg, lv_point_
     p1->y = cy + (int)(length * sinf(rad));
 }
 
-static void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
-                                float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
+void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
+                         float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
 {
     float rad = (angle_deg - 90.0f) * (M_PI / 180.0f);
 
@@ -722,38 +823,27 @@ static int clamp_brightness_ui(int brightness)
     return brightness;
 }
 
-static uint8_t brightness_ui_to_hw(int ui_percent)
+uint8_t brightness_ui_to_hw(int ui_percent)
 {
-    int clamped = clamp_brightness_ui(ui_percent);
-    int span = DISPLAY_BRIGHTNESS_MAX_PERCENT - DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    int hw = DISPLAY_BRIGHTNESS_MIN_PERCENT + ((clamped * span + 50) / 100);
-
-    return (uint8_t)clamp_brightness(hw);
+    return brightness_policy_ui_to_hw((uint8_t)clamp_brightness_ui(ui_percent));
 }
 
-static uint8_t brightness_hw_to_ui(int hw_percent)
+uint8_t brightness_hw_to_ui(int hw_percent)
 {
-    int clamped = clamp_brightness(hw_percent);
-    int span = DISPLAY_BRIGHTNESS_MAX_PERCENT - DISPLAY_BRIGHTNESS_MIN_PERCENT;
-
-    if (span <= 0) {
-        return 100;
-    }
-
-    return (uint8_t)clamp_brightness_ui(((clamped - DISPLAY_BRIGHTNESS_MIN_PERCENT) * 100 + (span / 2)) / span);
+    return brightness_policy_hw_to_ui((uint8_t)clamp_brightness(hw_percent));
 }
 
-static bool alarm_surface_is_open(void)
+bool alarm_surface_is_open(void)
 {
     return s_ui.alarms.open || s_ui.alarms.editor_open || s_ui.alarms.settings_open;
 }
 
-static void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
+void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
 {
     snprintf(buffer, size, "%02u:%02u", hour, minute);
 }
 
-static void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm)
+void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm)
 {
     static const uint8_t s_day_display_order[7] = {1, 2, 3, 4, 5, 6, 0};
     size_t pos = 0;
@@ -795,7 +885,7 @@ static void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_c
     }
 }
 
-static int count_enabled_alarms(void)
+int count_enabled_alarms(void)
 {
     int count = 0;
 
@@ -808,7 +898,7 @@ static int count_enabled_alarms(void)
     return count;
 }
 
-static int find_alarm_slot_for_new_alarm(void)
+int find_alarm_slot_for_new_alarm(void)
 {
     for (int i = 0; i < MAX_ALARMS; ++i) {
         if (!s_ui.settings->alarms[i].enabled) {
@@ -816,10 +906,10 @@ static int find_alarm_slot_for_new_alarm(void)
         }
     }
 
-    return MAX_ALARMS - 1;
+    return -1;
 }
 
-static uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm)
+uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm)
 {
     if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {
         return ALARM_REPEAT_PRESET_ONCE;
@@ -837,7 +927,7 @@ static uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm)
     return 0xFF;
 }
 
-static void apply_repeat_preset_to_alarm(alarm_config_t *alarm, uint8_t preset)
+void apply_repeat_preset_to_alarm(alarm_config_t *alarm, uint8_t preset)
 {
     switch (preset) {
     case ALARM_REPEAT_PRESET_ONCE:
@@ -861,14 +951,8 @@ static void apply_repeat_preset_to_alarm(alarm_config_t *alarm, uint8_t preset)
     }
 }
 
-#include "ui/ui_brightness.c"
-#include "ui/ui_alarms.c"
-#include "ui/ui_settings.c"
-#include "ui/ui_faces.c"
-#include "ui/ui_shell.c"
-
-esp_err_t clock_ui_init(app_settings_t *settings,
-                        app_runtime_state_t *runtime,
+esp_err_t clock_ui_init(const app_settings_t *settings,
+                        const app_runtime_state_t *runtime,
                         const clock_ui_callbacks_t *callbacks,
                         void *user_ctx)
 {
@@ -897,32 +981,22 @@ esp_err_t clock_ui_init(app_settings_t *settings,
 
 void clock_ui_refresh(void)
 {
-    bool faces_sanitized = false;
+    clock_face_id_t current_face;
+    clock_face_id_t night_face;
 
     refresh_settings_controls();
     update_brightness_ui();
 
-    if (s_ui.settings->current_face != sanitize_enabled_face(s_ui.settings->current_face)) {
-        s_ui.settings->current_face = sanitize_enabled_face(s_ui.settings->current_face);
-        faces_sanitized = true;
-    }
-    if (s_ui.settings->night_mode.face != sanitize_enabled_face(s_ui.settings->night_mode.face)) {
-        s_ui.settings->night_mode.face = sanitize_enabled_face(s_ui.settings->night_mode.face);
-        faces_sanitized = true;
-    }
-    if (faces_sanitized) {
-        notify_settings_changed();
-    }
-
-    set_active_face(s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face, LV_ANIM_OFF);
+    current_face = sanitize_enabled_face(s_ui.settings->current_face);
+    night_face = sanitize_enabled_face(s_ui.settings->night_mode.face);
+    set_active_face(s_ui.runtime->in_night_mode ? night_face : current_face, LV_ANIM_OFF);
 }
 
 void clock_ui_tick(time_t now)
 {
-    s_ui.settings->current_face = sanitize_enabled_face(s_ui.settings->current_face);
-    s_ui.settings->night_mode.face = sanitize_enabled_face(s_ui.settings->night_mode.face);
-
-    clock_face_id_t desired_face = s_ui.runtime->in_night_mode ? s_ui.settings->night_mode.face : s_ui.settings->current_face;
+    clock_face_id_t desired_face =
+        s_ui.runtime->in_night_mode ? sanitize_enabled_face(s_ui.settings->night_mode.face)
+                                    : sanitize_enabled_face(s_ui.settings->current_face);
     clock_face_id_t active_face;
     bool opaque_menu_open = s_ui.settings_ui.open ||
                             s_ui.alarms.open ||

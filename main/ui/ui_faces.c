@@ -1,3 +1,5 @@
+#include "ui/clock_ui_internal.h"
+
 static const char *s_day_caps[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 static const char *s_month_caps[12] = {
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
@@ -9,6 +11,14 @@ static const int s_sternglas_odd_hours[6] = {1, 3, 5, 7, 9, 11};
 static lv_point_precise_t s_sternglas_minute_tick_pts[48][2];
 static lv_point_precise_t s_sternglas_odd_hour_pts[6][2];
 static lv_point_precise_t s_sternglas_radio_wave_pts[4][5];
+
+static void update_matrix_face(void);
+static void update_wharton_face(void);
+static void update_slava_face(void);
+static void update_slava_dark_face(void);
+static void update_sternglas_face(void);
+static void update_avenir_face(void);
+static void update_modern_silver_face(void);
 
 #define STERNGLAS_SCALE 1.80f
 #define STERNGLAS_OFFSET 0.0f
@@ -73,7 +83,7 @@ static void show_digital_face_snapshot(void)
     lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void sync_face_animation_state(clock_face_id_t face)
+void sync_face_animation_state(clock_face_id_t face)
 {
     bool brightness_overlay_visible = s_ui.brightness.overlay != NULL &&
                                       !lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
@@ -470,7 +480,7 @@ static void make_face_layer_passive(lv_obj_t *obj)
     }
 }
 
-static void refresh_digital_face_snapshot(void)
+void refresh_digital_face_snapshot(void)
 {
     lv_coord_t ext_draw;
 
@@ -507,7 +517,7 @@ static void refresh_digital_face_snapshot(void)
     lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void create_digital_face(lv_obj_t *parent)
+void create_digital_face(lv_obj_t *parent)
 {
     lv_obj_t *clock_center;
     lv_obj_t *time_holder;
@@ -729,7 +739,7 @@ static void update_digital_face(void)
     LV_UNUSED(content_changed);
 }
 
-static void update_face(clock_face_id_t face)
+void update_face(clock_face_id_t face)
 {
     switch (face) {
     case CLOCK_FACE_DIGITAL:
@@ -788,7 +798,7 @@ static void build_matrix_state(void)
     }
 }
 
-static void create_matrix_face(lv_obj_t *parent)
+void create_matrix_face(lv_obj_t *parent)
 {
     int total_w = (MTX_GRID_X - 1) * MTX_PITCH + MTX_DOT_SIZE;
     int total_h = (MTX_GRID_Y - 1) * MTX_PITCH + MTX_DOT_SIZE;
@@ -855,7 +865,7 @@ static void build_wharton_state(void)
     s_ui.faces.wharton_second_count = ti.tm_sec;
 }
 
-static void create_wharton_face(lv_obj_t *parent)
+void create_wharton_face(lv_obj_t *parent)
 {
     lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
 
@@ -1135,7 +1145,7 @@ static void update_seven_segment_face(void)
     lv_obj_align_to(s_ui.faces.segment_date_label, s_ui.faces.segment_panel, LV_ALIGN_OUT_BOTTOM_MID, 0, 24);
 }
 
-static void create_sternglas_face(lv_obj_t *parent)
+void create_sternglas_face(lv_obj_t *parent)
 {
     lv_obj_t *root;
     lv_obj_t *dial_shadow;
@@ -1531,7 +1541,7 @@ static void draw_face_quad(lv_layer_t *layer,
     lv_draw_triangle(layer, &dsc);
 }
 
-static void create_avenir_face(lv_obj_t *parent)
+void create_avenir_face(lv_obj_t *parent)
 {
     static const int s_numbers[12] = {12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     lv_obj_t *root;
@@ -1794,7 +1804,7 @@ static void modern_transform_point(float x,
     out->y = modern_map_y(ry) + shadow_dy;
 }
 
-static void create_modern_silver_face(lv_obj_t *parent)
+void create_modern_silver_face(lv_obj_t *parent)
 {
     lv_obj_t *root;
     lv_obj_t *outer_ring;
@@ -2032,7 +2042,7 @@ static void update_modern_silver_face(void)
                                     &s_ui.faces.modern_silver_composite_buf);
 }
 
-static void create_slava_face(lv_obj_t *parent)
+void create_slava_face(lv_obj_t *parent)
 {
     lv_obj_t *face = lv_image_create(parent);
 
@@ -2081,7 +2091,7 @@ static void update_slava_face(void)
     lv_line_set_points(s_ui.faces.slava_line_sec, s_ui.faces.slava_sec_pts, 2);
 }
 
-static void create_slava_dark_face(lv_obj_t *parent)
+void create_slava_dark_face(lv_obj_t *parent)
 {
     lv_obj_t *face = lv_image_create(parent);
 
