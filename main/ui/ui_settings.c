@@ -11,31 +11,14 @@ static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_colo
 static void close_wifi_dialog(void);
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text);
 static const void *settings_get_face_preview_src(clock_face_id_t face);
-static void sync_night_schedule_lock_state(void);
 static void sync_night_face_preview(void);
 static void sync_night_face_picker_previews(void);
 static void sync_night_face_picker_selection(void);
 static void close_night_face_picker(void);
-static void settings_set_face_preview_src(lv_obj_t *image, clock_face_id_t face);
+static void close_night_schedule_editor(void);
+static void settings_render_face_preview(lv_obj_t *canvas, lv_draw_buf_t **draw_buf, uint16_t size, clock_face_id_t face);
 #define WIFI_UI_MAX_VISIBLE_NETWORKS 8
 #define NIGHT_FACE_PREVIEW_SIZE 120
-
-static void settings_set_roller_locked(lv_obj_t *roller, bool locked)
-{
-    if (roller == NULL) {
-        return;
-    }
-
-    if (locked) {
-        lv_obj_set_scroll_dir(roller, LV_DIR_NONE);
-        lv_roller_set_visible_row_count(roller, 1);
-        lv_obj_add_state(roller, LV_STATE_DISABLED);
-    } else {
-        lv_obj_set_scroll_dir(roller, LV_DIR_VER);
-        lv_roller_set_visible_row_count(roller, 5);
-        lv_obj_remove_state(roller, LV_STATE_DISABLED);
-    }
-}
 
 static void invalidate_settings_ui_cache(void)
 {
@@ -76,6 +59,15 @@ static void settings_format_timezone_label(char *buffer, size_t size, int tz)
 static void settings_format_face_label(char *buffer, size_t size, clock_face_id_t face)
 {
     snprintf(buffer, size, "%s", clock_face_name(face));
+}
+
+static void settings_format_night_schedule_label(char *buffer, size_t size)
+{
+    snprintf(buffer, size, "%02u:%02u  ->  %02u:%02u",
+             s_ui.settings->night_mode.start_hour,
+             s_ui.settings->night_mode.start_minute,
+             s_ui.settings->night_mode.end_hour,
+             s_ui.settings->night_mode.end_minute);
 }
 
 static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked)
@@ -198,7 +190,9 @@ static void sync_night_controls(void)
 {
     char face_label[64];
     char brightness_label[32];
+    char schedule_label[32];
     uint8_t brightness_ui;
+    bool face_changed;
 
     if (s_ui.settings_ui.night_enabled_sw == NULL) {
         return;
@@ -211,14 +205,21 @@ static void sync_night_controls(void)
     settings_set_roller_selected_if_changed(s_ui.settings_ui.night_end_hour_dd, s_ui.settings->night_mode.end_hour);
     settings_set_roller_selected_if_changed(s_ui.settings_ui.night_end_min_dd, s_ui.settings->night_mode.end_minute);
     s_ui.suppress_events = false;
-
-    sync_night_schedule_lock_state();
+    settings_format_night_schedule_label(schedule_label, sizeof(schedule_label));
+    settings_set_label_text_if_changed(s_ui.settings_ui.night_schedule_summary, schedule_label);
 
     s_ui.settings->night_mode.face = sanitize_enabled_face(s_ui.settings->night_mode.face);
+    face_changed = !s_ui.settings_ui.night_cache_valid ||
+                   s_ui.settings_ui.cached_night_face != s_ui.settings->night_mode.face;
     settings_format_face_label(face_label, sizeof(face_label), s_ui.settings->night_mode.face);
     settings_set_label_text_if_changed(s_ui.settings_ui.night_face_dd, face_label);
-    sync_night_face_preview();
-    sync_night_face_picker_selection();
+    if (face_changed) {
+        sync_night_face_preview();
+        if (s_ui.settings_ui.night_face_picker_open) {
+            sync_night_face_picker_previews();
+            sync_night_face_picker_selection();
+        }
+    }
 
     brightness_ui = brightness_hw_to_ui(s_ui.settings->night_mode.brightness);
     snprintf(brightness_label, sizeof(brightness_label), "%u%%", brightness_ui);
@@ -358,52 +359,44 @@ static const void *settings_get_face_preview_src(clock_face_id_t face)
     }
 }
 
-static void settings_set_face_preview_src(lv_obj_t *image, clock_face_id_t face)
+static void settings_render_face_preview(lv_obj_t *image, lv_draw_buf_t **draw_buf, uint16_t size, clock_face_id_t face)
 {
     const void *src;
 
-    if (image == NULL) {
+    if (image == NULL || draw_buf == NULL || s_ui.settings_ui.night_face_render_canvas == NULL) {
         return;
     }
 
     src = settings_get_face_preview_src(face);
-
     if (src == NULL) {
         return;
     }
 
-    if (lv_image_get_src(image) != src) {
-        lv_image_set_src(image, src);
-    }
-}
+    lv_obj_set_size(s_ui.settings_ui.night_face_render_canvas, size, size);
+    lv_image_set_src(s_ui.settings_ui.night_face_render_canvas, src);
+    lv_image_set_inner_align(s_ui.settings_ui.night_face_render_canvas, LV_IMAGE_ALIGN_COVER);
+    lv_obj_update_layout(s_ui.settings_ui.night_face_render_canvas);
 
-static void sync_night_schedule_lock_state(void)
-{
-    settings_set_roller_locked(s_ui.settings_ui.night_start_hour_dd, s_ui.settings_ui.night_schedule_locked);
-    settings_set_roller_locked(s_ui.settings_ui.night_start_min_dd, s_ui.settings_ui.night_schedule_locked);
-    settings_set_roller_locked(s_ui.settings_ui.night_end_hour_dd, s_ui.settings_ui.night_schedule_locked);
-    settings_set_roller_locked(s_ui.settings_ui.night_end_min_dd, s_ui.settings_ui.night_schedule_locked);
-
-    if (s_ui.settings_ui.night_start_hour_cover != NULL) {
-        if (s_ui.settings_ui.night_schedule_locked) {
-            lv_obj_clear_flag(s_ui.settings_ui.night_start_hour_cover, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(s_ui.settings_ui.night_start_min_cover, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(s_ui.settings_ui.night_end_hour_cover, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_clear_flag(s_ui.settings_ui.night_end_min_cover, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(s_ui.settings_ui.night_start_hour_cover, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s_ui.settings_ui.night_start_min_cover, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s_ui.settings_ui.night_end_hour_cover, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(s_ui.settings_ui.night_end_min_cover, LV_OBJ_FLAG_HIDDEN);
+    if (*draw_buf == NULL || lv_snapshot_reshape_draw_buf(s_ui.settings_ui.night_face_render_canvas, *draw_buf) != LV_RESULT_OK) {
+        if (*draw_buf != NULL) {
+            lv_draw_buf_destroy(*draw_buf);
+        }
+        *draw_buf = lv_snapshot_create_draw_buf(s_ui.settings_ui.night_face_render_canvas, LV_COLOR_FORMAT_RGB565);
+        if (*draw_buf == NULL) {
+            return;
         }
     }
-}
 
-static void night_schedule_lock_if_editing(void)
-{
-    if (!s_ui.settings_ui.night_schedule_locked) {
-        s_ui.settings_ui.night_schedule_locked = true;
-        sync_night_controls();
+    if (lv_snapshot_take_to_draw_buf(s_ui.settings_ui.night_face_render_canvas,
+                                     LV_COLOR_FORMAT_RGB565,
+                                     *draw_buf) != LV_RESULT_OK) {
+        return;
+    }
+
+    if (lv_image_get_src(image) != *draw_buf) {
+        lv_image_set_src(image, *draw_buf);
+    } else {
+        lv_obj_invalidate(image);
     }
 }
 
@@ -413,7 +406,10 @@ static void sync_night_face_preview(void)
         return;
     }
 
-    settings_set_face_preview_src(s_ui.settings_ui.night_face_preview, s_ui.settings->night_mode.face);
+    settings_render_face_preview(s_ui.settings_ui.night_face_preview,
+                                 &s_ui.settings_ui.night_face_preview_buf,
+                                 NIGHT_FACE_PREVIEW_SIZE,
+                                 s_ui.settings->night_mode.face);
 }
 
 static void sync_night_face_picker_previews(void)
@@ -425,7 +421,10 @@ static void sync_night_face_picker_previews(void)
         lv_obj_t *preview = s_ui.settings_ui.night_face_picker_preview[face];
 
         if (preview != NULL) {
-            settings_set_face_preview_src(preview, face);
+            settings_render_face_preview(preview,
+                                         &s_ui.settings_ui.night_face_picker_preview_buf[face],
+                                         96,
+                                         face);
         }
     }
 }
@@ -655,12 +654,14 @@ static void settings_show_root(void)
     s_ui.settings_ui.night_open = false;
     s_ui.settings_ui.other_open = false;
     s_ui.settings_ui.night_face_picker_open = false;
+    s_ui.settings_ui.night_schedule_editor_open = false;
     s_ui.settings_ui.close_swipe_consumed = false;
     s_ui.settings_ui.wifi_scrolling = false;
     s_ui.settings_ui.night_scrolling = false;
     invalidate_settings_ui_cache();
     close_wifi_dialog();
     close_night_face_picker();
+    close_night_schedule_editor();
     clear_wifi_list();
     if (s_ui.settings_ui.wifi_overlay != NULL) {
         lv_obj_add_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -709,7 +710,6 @@ static void settings_open_night_detail(void)
     s_ui.settings_ui.night_open = true;
     s_ui.settings_ui.wifi_open = false;
     s_ui.settings_ui.other_open = false;
-    s_ui.settings_ui.night_schedule_locked = true;
     s_ui.settings_ui.close_swipe_consumed = false;
     s_ui.settings_ui.night_cache_valid = false;
     lv_obj_add_flag(s_ui.settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
@@ -720,6 +720,7 @@ static void settings_open_night_detail(void)
         lv_obj_add_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
     }
     close_night_face_picker();
+    close_night_schedule_editor();
     sync_night_controls();
     lv_obj_clear_flag(s_ui.settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(s_ui.settings_ui.night_overlay);
@@ -773,6 +774,10 @@ static void settings_back_event_cb(lv_event_t *event)
         close_night_face_picker();
         return;
     }
+    if (s_ui.settings_ui.night_schedule_editor_open) {
+        close_night_schedule_editor();
+        return;
+    }
     settings_show_root();
 }
 
@@ -813,6 +818,7 @@ static void settings_close_event_cb(lv_event_t *event)
     s_ui.settings_ui.night_open = false;
     s_ui.settings_ui.other_open = false;
     s_ui.settings_ui.night_face_picker_open = false;
+    s_ui.settings_ui.night_schedule_editor_open = false;
     s_ui.settings_ui.wifi_scrolling = false;
     s_ui.settings_ui.night_scrolling = false;
     s_ui.settings_ui.close_dragging = false;
@@ -820,6 +826,7 @@ static void settings_close_event_cb(lv_event_t *event)
     invalidate_settings_ui_cache();
     close_wifi_dialog();
     close_night_face_picker();
+    close_night_schedule_editor();
     clear_wifi_list();
     if (s_ui.settings_ui.wifi_overlay != NULL) {
         lv_obj_add_flag(s_ui.settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -951,7 +958,6 @@ static void night_enabled_event_cb(lv_event_t *event)
         return;
     }
 
-    night_schedule_lock_if_editing();
     s_ui.settings->night_mode.enabled = lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED);
     notify_settings_changed();
     sync_night_controls();
@@ -979,46 +985,43 @@ static void night_hour_minute_event_cb(lv_event_t *event)
     sync_night_controls();
 }
 
-static void night_schedule_roller_event_cb(lv_event_t *event)
+static void open_night_schedule_editor(void)
 {
-    lv_event_code_t code = lv_event_get_code(event);
-
-    if (code == LV_EVENT_CLICKED) {
-        if (s_ui.settings_ui.night_schedule_locked) {
-            s_ui.settings_ui.night_schedule_locked = false;
-            sync_night_controls();
-        }
+    if (s_ui.settings_ui.night_schedule_overlay == NULL) {
         return;
     }
 
-    if (code == LV_EVENT_SCROLL_END && !s_ui.settings_ui.night_schedule_locked) {
-        s_ui.settings_ui.night_schedule_locked = true;
-        sync_night_controls();
+    s_ui.settings_ui.night_schedule_editor_open = true;
+    sync_night_controls();
+    lv_obj_clear_flag(s_ui.settings_ui.night_schedule_overlay, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_ui.settings_ui.night_schedule_overlay);
+}
+
+static void close_night_schedule_editor(void)
+{
+    s_ui.settings_ui.night_schedule_editor_open = false;
+    if (s_ui.settings_ui.night_schedule_overlay != NULL) {
+        lv_obj_add_flag(s_ui.settings_ui.night_schedule_overlay, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
-static void night_schedule_activate_event_cb(lv_event_t *event)
+static void night_schedule_button_event_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
-
-    if (s_ui.settings_ui.night_schedule_locked) {
-        s_ui.settings_ui.night_schedule_locked = false;
-        sync_night_controls();
-    }
+    open_night_schedule_editor();
 }
 
-static void night_schedule_background_event_cb(lv_event_t *event)
+static void night_schedule_editor_overlay_event_cb(lv_event_t *event)
 {
-    if (lv_event_get_target(event) == lv_event_get_current_target(event) &&
-        !s_ui.settings_ui.night_schedule_locked) {
-        night_schedule_lock_if_editing();
+    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
+        close_night_schedule_editor();
     }
 }
 
-static void night_schedule_dismiss_event_cb(lv_event_t *event)
+static void night_schedule_editor_close_event_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
-    night_schedule_lock_if_editing();
+    close_night_schedule_editor();
 }
 
 static void night_brightness_slider_event_cb(lv_event_t *event)
@@ -1068,7 +1071,6 @@ static void close_night_face_picker(void)
 static void night_face_button_event_cb(lv_event_t *event)
 {
     LV_UNUSED(event);
-    night_schedule_lock_if_editing();
     open_night_face_picker();
 }
 
@@ -1160,7 +1162,6 @@ static void create_networks_card(lv_obj_t *parent)
 
 static void create_night_card(lv_obj_t *parent)
 {
-    static const char *range_arrow = "->";
     lv_obj_t *row;
     lv_obj_t *label;
     lv_obj_t *card;
@@ -1170,7 +1171,6 @@ static void create_night_card(lv_obj_t *parent)
     lv_obj_set_width(s_ui.settings_ui.night_card, 540);
     lv_obj_set_style_pad_all(s_ui.settings_ui.night_card, 24, 0);
     lv_obj_set_style_pad_row(s_ui.settings_ui.night_card, 14, 0);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_card, night_schedule_dismiss_event_cb, LV_EVENT_CLICKED, NULL);
 
     row = create_row(s_ui.settings_ui.night_card);
     center_row(row);
@@ -1186,87 +1186,31 @@ static void create_night_card(lv_obj_t *parent)
     card = create_card(parent);
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 14, 0);
-    lv_obj_add_event_cb(card, night_schedule_background_event_cb, LV_EVENT_CLICKED, NULL);
+    lv_obj_set_style_pad_row(card, 10, 0);
+    create_section_title(card, "Schedule", "Tap to edit");
+    s_ui.settings_ui.night_schedule_button = lv_button_create(card);
+    lv_obj_set_width(s_ui.settings_ui.night_schedule_button, lv_pct(100));
+    lv_obj_set_height(s_ui.settings_ui.night_schedule_button, LV_SIZE_CONTENT);
+    lv_obj_set_style_radius(s_ui.settings_ui.night_schedule_button, 28, 0);
+    lv_obj_set_style_bg_color(s_ui.settings_ui.night_schedule_button, lv_color_hex(0x232323), 0);
+    lv_obj_set_style_bg_color(s_ui.settings_ui.night_schedule_button, lv_color_hex(0x2D2D2D), LV_STATE_PRESSED);
+    lv_obj_set_style_border_width(s_ui.settings_ui.night_schedule_button, 0, 0);
+    lv_obj_set_style_pad_all(s_ui.settings_ui.night_schedule_button, 20, 0);
+    lv_obj_set_style_shadow_width(s_ui.settings_ui.night_schedule_button, 0, 0);
+    lv_obj_add_event_cb(s_ui.settings_ui.night_schedule_button, night_schedule_button_event_cb, LV_EVENT_CLICKED, NULL);
 
-    label = lv_label_create(card);
-    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
-    lv_label_set_text(label, "Schedule");
-
-    row = create_row(card);
-    lv_obj_set_width(row, LV_SIZE_CONTENT);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 14, 0);
-    label = lv_label_create(row);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, "Start");
-    s_ui.settings_ui.night_start_hour_dd = create_time_roller(row, s_ui.hour_options, 164, night_hour_minute_event_cb, NULL);
-    s_ui.settings_ui.night_start_min_dd = create_time_roller(row, s_ui.minute_options, 164, night_hour_minute_event_cb, NULL);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_start_hour_dd, night_schedule_roller_event_cb, LV_EVENT_SCROLL_END, NULL);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_start_min_dd, night_schedule_roller_event_cb, LV_EVENT_SCROLL_END, NULL);
-    s_ui.settings_ui.night_start_hour_cover = lv_button_create(row);
-    lv_obj_set_size(s_ui.settings_ui.night_start_hour_cover, 164, 236);
-    lv_obj_add_flag(s_ui.settings_ui.night_start_hour_cover, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_style_bg_opa(s_ui.settings_ui.night_start_hour_cover, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.settings_ui.night_start_hour_cover, 0, 0);
-    lv_obj_set_style_shadow_width(s_ui.settings_ui.night_start_hour_cover, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.settings_ui.night_start_hour_cover, 0, 0);
-    lv_obj_align_to(s_ui.settings_ui.night_start_hour_cover, s_ui.settings_ui.night_start_hour_dd, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_start_hour_cover, night_schedule_activate_event_cb, LV_EVENT_CLICKED, NULL);
-    s_ui.settings_ui.night_start_min_cover = lv_button_create(row);
-    lv_obj_set_size(s_ui.settings_ui.night_start_min_cover, 164, 236);
-    lv_obj_add_flag(s_ui.settings_ui.night_start_min_cover, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_style_bg_opa(s_ui.settings_ui.night_start_min_cover, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.settings_ui.night_start_min_cover, 0, 0);
-    lv_obj_set_style_shadow_width(s_ui.settings_ui.night_start_min_cover, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.settings_ui.night_start_min_cover, 0, 0);
-    lv_obj_align_to(s_ui.settings_ui.night_start_min_cover, s_ui.settings_ui.night_start_min_dd, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_start_min_cover, night_schedule_activate_event_cb, LV_EVENT_CLICKED, NULL);
-
-    row = create_row(card);
-    center_row(row);
-    label = lv_label_create(row);
-    lv_obj_set_style_text_color(label, lv_color_hex(0x8F8F8F), 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-    lv_label_set_text(label, range_arrow);
-
-    row = create_row(card);
-    lv_obj_set_width(row, LV_SIZE_CONTENT);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 14, 0);
-    label = lv_label_create(row);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, "End");
-    s_ui.settings_ui.night_end_hour_dd = create_time_roller(row, s_ui.hour_options, 164, night_hour_minute_event_cb, NULL);
-    s_ui.settings_ui.night_end_min_dd = create_time_roller(row, s_ui.minute_options, 164, night_hour_minute_event_cb, NULL);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_end_hour_dd, night_schedule_roller_event_cb, LV_EVENT_SCROLL_END, NULL);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_end_min_dd, night_schedule_roller_event_cb, LV_EVENT_SCROLL_END, NULL);
-    s_ui.settings_ui.night_end_hour_cover = lv_button_create(row);
-    lv_obj_set_size(s_ui.settings_ui.night_end_hour_cover, 164, 236);
-    lv_obj_add_flag(s_ui.settings_ui.night_end_hour_cover, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_style_bg_opa(s_ui.settings_ui.night_end_hour_cover, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.settings_ui.night_end_hour_cover, 0, 0);
-    lv_obj_set_style_shadow_width(s_ui.settings_ui.night_end_hour_cover, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.settings_ui.night_end_hour_cover, 0, 0);
-    lv_obj_align_to(s_ui.settings_ui.night_end_hour_cover, s_ui.settings_ui.night_end_hour_dd, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_end_hour_cover, night_schedule_activate_event_cb, LV_EVENT_CLICKED, NULL);
-    s_ui.settings_ui.night_end_min_cover = lv_button_create(row);
-    lv_obj_set_size(s_ui.settings_ui.night_end_min_cover, 164, 236);
-    lv_obj_add_flag(s_ui.settings_ui.night_end_min_cover, LV_OBJ_FLAG_FLOATING);
-    lv_obj_set_style_bg_opa(s_ui.settings_ui.night_end_min_cover, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.settings_ui.night_end_min_cover, 0, 0);
-    lv_obj_set_style_shadow_width(s_ui.settings_ui.night_end_min_cover, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.settings_ui.night_end_min_cover, 0, 0);
-    lv_obj_align_to(s_ui.settings_ui.night_end_min_cover, s_ui.settings_ui.night_end_min_dd, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_event_cb(s_ui.settings_ui.night_end_min_cover, night_schedule_activate_event_cb, LV_EVENT_CLICKED, NULL);
+    s_ui.settings_ui.night_schedule_summary = lv_label_create(s_ui.settings_ui.night_schedule_button);
+    lv_obj_set_width(s_ui.settings_ui.night_schedule_summary, lv_pct(100));
+    lv_obj_set_style_text_font(s_ui.settings_ui.night_schedule_summary, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(s_ui.settings_ui.night_schedule_summary, lv_color_white(), 0);
+    lv_obj_set_style_text_align(s_ui.settings_ui.night_schedule_summary, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(s_ui.settings_ui.night_schedule_summary, "");
+    lv_obj_center(s_ui.settings_ui.night_schedule_summary);
 
     card = create_card(parent);
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 16, 0);
-    lv_obj_add_event_cb(card, night_schedule_dismiss_event_cb, LV_EVENT_CLICKED, NULL);
     create_section_title(card, "Night face", "Tap to choose from previews");
     s_ui.settings_ui.night_face_button = lv_button_create(card);
     lv_obj_set_width(s_ui.settings_ui.night_face_button, lv_pct(100));
@@ -1277,6 +1221,7 @@ static void create_night_card(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_ui.settings_ui.night_face_button, 0, 0);
     lv_obj_set_style_pad_all(s_ui.settings_ui.night_face_button, 18, 0);
     lv_obj_set_style_shadow_width(s_ui.settings_ui.night_face_button, 0, 0);
+    lv_obj_add_flag(s_ui.settings_ui.night_face_button, LV_OBJ_FLAG_GESTURE_BUBBLE);
     lv_obj_add_event_cb(s_ui.settings_ui.night_face_button, night_face_button_event_cb, LV_EVENT_CLICKED, NULL);
 
     preview_wrap = lv_obj_create(s_ui.settings_ui.night_face_button);
@@ -1313,7 +1258,7 @@ static void create_night_card(lv_obj_t *parent)
     lv_obj_set_style_border_width(s_ui.settings_ui.night_face_preview, 0, 0);
     lv_obj_set_style_pad_all(s_ui.settings_ui.night_face_preview, 0, 0);
     lv_obj_clear_flag(s_ui.settings_ui.night_face_preview, LV_OBJ_FLAG_SCROLLABLE);
-    lv_image_set_inner_align(s_ui.settings_ui.night_face_preview, LV_IMAGE_ALIGN_COVER);
+    lv_image_set_inner_align(s_ui.settings_ui.night_face_preview, LV_IMAGE_ALIGN_CENTER);
     lv_obj_center(s_ui.settings_ui.night_face_preview);
 
     s_ui.settings_ui.night_face_dd = lv_label_create(preview_wrap);
@@ -1328,7 +1273,6 @@ static void create_night_card(lv_obj_t *parent)
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 14, 0);
-    lv_obj_add_event_cb(card, night_schedule_dismiss_event_cb, LV_EVENT_CLICKED, NULL);
     create_section_title(card, "Brightness", "Matches the main slider interaction");
 
     row = create_row(card);
@@ -1428,7 +1372,7 @@ static void create_night_face_picker_overlay(void)
         lv_obj_set_style_border_width(preview, 0, 0);
         lv_obj_set_style_pad_all(preview, 0, 0);
         lv_obj_clear_flag(preview, LV_OBJ_FLAG_SCROLLABLE);
-        lv_image_set_inner_align(preview, LV_IMAGE_ALIGN_COVER);
+        lv_image_set_inner_align(preview, LV_IMAGE_ALIGN_CENTER);
         lv_obj_center(preview);
 
         label = lv_label_create(card);
@@ -1447,6 +1391,94 @@ static void create_night_face_picker_overlay(void)
                                   ALARM_CLOSE_BOTTOM_EDGE_ZONE,
                                   settings_close_swipe_event_cb,
                                   (void *)UI_SURFACE_EDGE_BOTTOM);
+
+    s_ui.settings_ui.night_face_render_canvas = lv_image_create(s_ui.screen);
+    lv_obj_set_pos(s_ui.settings_ui.night_face_render_canvas, -2000, -2000);
+    lv_obj_clear_flag(s_ui.settings_ui.night_face_render_canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(s_ui.settings_ui.night_face_render_canvas, LV_OBJ_FLAG_CLICKABLE);
+}
+
+static void create_night_schedule_overlay(void)
+{
+    ui_surface_t surface;
+    lv_obj_t *sensor;
+    lv_obj_t *title;
+    lv_obj_t *card;
+    lv_obj_t *row;
+    lv_obj_t *label;
+
+    ui_surface_create_fullscreen(&surface,
+                                 s_ui.screen,
+                                 lv_color_black(),
+                                 LV_OPA_70,
+                                 lv_color_hex(0x0D0D0D),
+                                 SETTINGS_HEADER_HEIGHT,
+                                 "Night schedule",
+                                 night_schedule_editor_overlay_event_cb,
+                                 night_schedule_editor_close_event_cb);
+    s_ui.settings_ui.night_schedule_overlay = surface.overlay;
+    s_ui.settings_ui.night_schedule_content = surface.content;
+    title = surface.title;
+    lv_obj_set_width(title, lv_pct(100));
+    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
+
+    card = create_card(surface.content);
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 16, 0);
+
+    label = lv_label_create(card);
+    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
+    lv_label_set_text(label, "Start");
+
+    row = create_row(card);
+    lv_obj_set_width(row, LV_SIZE_CONTENT);
+    center_row(row);
+    lv_obj_set_style_pad_column(row, 14, 0);
+    s_ui.settings_ui.night_start_hour_dd = create_time_roller(row, s_ui.hour_options, 164, night_hour_minute_event_cb, NULL);
+    s_ui.settings_ui.night_start_min_dd = create_time_roller(row, s_ui.minute_options, 164, night_hour_minute_event_cb, NULL);
+
+    label = lv_label_create(card);
+    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
+    lv_label_set_text(label, "End");
+
+    row = create_row(card);
+    lv_obj_set_width(row, LV_SIZE_CONTENT);
+    center_row(row);
+    lv_obj_set_style_pad_column(row, 14, 0);
+    s_ui.settings_ui.night_end_hour_dd = create_time_roller(row, s_ui.hour_options, 164, night_hour_minute_event_cb, NULL);
+    s_ui.settings_ui.night_end_min_dd = create_time_roller(row, s_ui.minute_options, 164, night_hour_minute_event_cb, NULL);
+
+    row = create_row(card);
+    center_row(row);
+    create_action_button(row, "Done", night_schedule_editor_close_event_cb, NULL);
+
+    ui_surface_create_edge_sensor(s_ui.settings_ui.night_schedule_overlay,
+                                  &sensor,
+                                  UI_SURFACE_EDGE_TOP,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  settings_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_TOP);
+    ui_surface_create_edge_sensor(s_ui.settings_ui.night_schedule_overlay,
+                                  &sensor,
+                                  UI_SURFACE_EDGE_BOTTOM,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  settings_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_BOTTOM);
+    ui_surface_create_edge_sensor(s_ui.settings_ui.night_schedule_overlay,
+                                  &sensor,
+                                  UI_SURFACE_EDGE_LEFT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  settings_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_LEFT);
+    ui_surface_create_edge_sensor(s_ui.settings_ui.night_schedule_overlay,
+                                  &sensor,
+                                  UI_SURFACE_EDGE_RIGHT,
+                                  SETTINGS_CLOSE_EDGE_ZONE,
+                                  settings_close_swipe_event_cb,
+                                  (void *)UI_SURFACE_EDGE_RIGHT);
 }
 
 static void create_wifi_dialog(void)
@@ -1734,6 +1766,7 @@ static void create_settings_overlay(void)
     create_wifi_overlay();
     create_other_overlay();
     create_night_overlay();
+    create_night_schedule_overlay();
     create_night_face_picker_overlay();
     create_wifi_dialog();
 }

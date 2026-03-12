@@ -156,7 +156,7 @@ typedef struct {
     bool night_open;
     bool other_open;
     bool night_face_picker_open;
-    bool night_schedule_locked;
+    bool night_schedule_editor_open;
     bool close_swipe_consumed;
     bool wifi_scrolling;
     bool night_scrolling;
@@ -202,6 +202,8 @@ typedef struct {
     lv_obj_t *night_bottom_sensor;
     lv_obj_t *night_left_sensor;
     lv_obj_t *night_right_sensor;
+    lv_obj_t *night_schedule_overlay;
+    lv_obj_t *night_schedule_content;
     lv_obj_t *wifi_card;
     lv_obj_t *timezone_card;
     lv_obj_t *networks_card;
@@ -216,25 +218,22 @@ typedef struct {
     lv_obj_t *wifi_network_list;
     lv_obj_t *wifi_timezone_dd;
     lv_obj_t *night_enabled_sw;
+    lv_obj_t *night_schedule_button;
+    lv_obj_t *night_schedule_summary;
     lv_obj_t *night_start_hour_dd;
     lv_obj_t *night_start_min_dd;
     lv_obj_t *night_end_hour_dd;
     lv_obj_t *night_end_min_dd;
-    lv_obj_t *night_start_hour_cover;
-    lv_obj_t *night_start_min_cover;
-    lv_obj_t *night_end_hour_cover;
-    lv_obj_t *night_end_min_cover;
-    lv_obj_t *night_schedule_lock_btn;
-    lv_obj_t *night_schedule_hint;
     lv_obj_t *night_face_button;
     lv_obj_t *night_face_preview;
-    void *night_face_preview_buf;
+    lv_draw_buf_t *night_face_preview_buf;
+    lv_obj_t *night_face_render_canvas;
     lv_obj_t *night_face_dd;
     lv_obj_t *night_face_picker_overlay;
     lv_obj_t *night_face_picker_content;
     lv_obj_t *night_face_picker_card[CLOCK_FACE_COUNT];
     lv_obj_t *night_face_picker_preview[CLOCK_FACE_COUNT];
-    void *night_face_picker_preview_buf[CLOCK_FACE_COUNT];
+    lv_draw_buf_t *night_face_picker_preview_buf[CLOCK_FACE_COUNT];
     lv_obj_t *night_face_picker_label[CLOCK_FACE_COUNT];
     lv_obj_t *night_brightness_slider;
     lv_obj_t *night_brightness_dd;
@@ -251,9 +250,12 @@ typedef struct {
     bool close_swipe_consumed;
     bool management_scrolling;
     bool editor_is_new;
-    bool editor_time_locked;
+    bool cache_valid;
     bool list_swipe_dragging;
     bool list_swipe_consumed;
+    bool cached_alarm_ringing;
+    bool cached_alarm_test_active;
+    bool cached_snooze_active;
     lv_point_t close_drag_start_point;
     lv_point_t list_swipe_start_point;
     lv_obj_t *banner;
@@ -289,10 +291,6 @@ typedef struct {
     lv_obj_t *editor_enabled_sw;
     lv_obj_t *editor_hour_roller;
     lv_obj_t *editor_minute_roller;
-    lv_obj_t *editor_hour_cover;
-    lv_obj_t *editor_minute_cover;
-    lv_obj_t *editor_time_lock_btn;
-    lv_obj_t *editor_time_hint;
     lv_obj_t *editor_repeat_btn[4];
     lv_obj_t *editor_day_btn[7];
     lv_obj_t *editor_delete_btn;
@@ -307,15 +305,23 @@ typedef struct {
     lv_obj_t *snooze_btn;
     lv_obj_t *stop_btn;
     time_t banner_feedback_until;
+    time_t cached_snooze_deadline;
+    time_t cached_next_alarm_epoch;
+    time_t cached_skipped_alarm_epoch;
     bool banner_feedback_revertible;
     char banner_feedback_text[48];
     alarm_ctx_t alarm_ctx[MAX_ALARMS];
     alarm_day_ctx_t alarm_day_ctx[MAX_ALARMS][7];
     alarm_config_t editor_draft;
+    alarm_config_t cached_alarms[MAX_ALARMS];
+    int8_t cached_next_alarm_index;
+    int8_t cached_skipped_alarm_index;
     int8_t editor_index;
     int8_t focus_alarm_index;
     int8_t swipe_open_index;
     int8_t swipe_drag_index;
+    uint8_t cached_alarm_volume;
+    uint8_t cached_snooze_minutes;
     uint8_t management_card_count;
 } clock_ui_alarm_state_t;
 
@@ -744,13 +750,7 @@ static bool alarm_surface_is_open(void)
 
 static void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
 {
-    int display_hour = hour % 12;
-
-    if (display_hour == 0) {
-        display_hour = 12;
-    }
-
-    snprintf(buffer, size, "%d:%02u %s", display_hour, minute, (hour < 12) ? "AM" : "PM");
+    snprintf(buffer, size, "%02u:%02u", hour, minute);
 }
 
 static void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm)
@@ -944,7 +944,8 @@ void clock_ui_tick(time_t now)
     sync_alarm_overlay(now);
     if ((s_ui.alarms.open || s_ui.alarms.settings_open) &&
         !s_ui.alarms.editor_open &&
-        !s_ui.alarms.management_scrolling) {
+        !s_ui.alarms.management_scrolling &&
+        alarm_controls_need_sync()) {
         sync_alarm_controls();
     }
     if ((s_ui.settings_ui.wifi_open || s_ui.settings_ui.other_open) &&
