@@ -17,6 +17,7 @@ static void sync_night_face_picker_selection(void);
 static void close_night_face_picker(void);
 static void close_night_schedule_editor(void);
 static void settings_render_face_preview(lv_obj_t *canvas, lv_draw_buf_t **draw_buf, uint16_t size, clock_face_id_t face);
+static void style_settings_switch(lv_obj_t *sw);
 #define WIFI_UI_MAX_VISIBLE_NETWORKS 8
 #define NIGHT_FACE_PREVIEW_SIZE 120
 
@@ -63,7 +64,7 @@ static void settings_format_face_label(char *buffer, size_t size, clock_face_id_
 
 static void settings_format_night_schedule_label(char *buffer, size_t size)
 {
-    snprintf(buffer, size, "%02u:%02u  ->  %02u:%02u",
+    snprintf(buffer, size, "%02u:%02u  " LV_SYMBOL_RIGHT "  %02u:%02u",
              s_ui.settings->night_mode.start_hour,
              s_ui.settings->night_mode.start_minute,
              s_ui.settings->night_mode.end_hour,
@@ -88,6 +89,39 @@ static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked)
     } else {
         lv_obj_remove_state(sw, LV_STATE_CHECKED);
     }
+}
+
+static void settings_set_slider_value_if_changed(lv_obj_t *slider, int32_t value)
+{
+    if (slider == NULL) {
+        return;
+    }
+
+    if (lv_slider_get_value(slider) != value) {
+        lv_slider_set_value(slider, value, LV_ANIM_OFF);
+    }
+}
+
+static void style_settings_switch(lv_obj_t *sw)
+{
+    if (sw == NULL) {
+        return;
+    }
+
+    lv_obj_set_size(sw, 96, 56);
+    lv_obj_set_style_pad_all(sw, 4, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0x2E2E2E), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(sw, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(sw, LV_RADIUS_CIRCLE, LV_PART_MAIN);
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0x7D8894), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_radius(sw, LV_RADIUS_CIRCLE, LV_PART_INDICATOR | LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(sw, lv_color_hex(0xF4F6F8), LV_PART_KNOB);
+    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_KNOB);
+    lv_obj_set_style_shadow_width(sw, 0, LV_PART_KNOB);
+    lv_obj_set_style_shadow_opa(sw, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_set_style_bg_color(sw, lv_color_white(), LV_PART_KNOB | LV_STATE_CHECKED);
 }
 
 static void create_centered_card_title(lv_obj_t *parent, const char *title)
@@ -226,7 +260,7 @@ static void sync_night_controls(void)
     settings_set_label_text_if_changed(s_ui.settings_ui.night_brightness_dd, brightness_label);
     if (s_ui.settings_ui.night_brightness_slider != NULL) {
         s_ui.suppress_events = true;
-        lv_slider_set_value(s_ui.settings_ui.night_brightness_slider, brightness_ui, LV_ANIM_OFF);
+        settings_set_slider_value_if_changed(s_ui.settings_ui.night_brightness_slider, brightness_ui);
         s_ui.suppress_events = false;
     }
 
@@ -1179,8 +1213,7 @@ static void create_night_card(lv_obj_t *parent)
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_label_set_text(label, "Enabled");
     s_ui.settings_ui.night_enabled_sw = lv_switch_create(row);
-    lv_obj_set_style_bg_color(s_ui.settings_ui.night_enabled_sw, lv_color_hex(0x313131), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(s_ui.settings_ui.night_enabled_sw, lv_color_hex(UI_ACCENT_COL), LV_PART_INDICATOR | LV_STATE_CHECKED);
+    style_settings_switch(s_ui.settings_ui.night_enabled_sw);
     lv_obj_add_event_cb(s_ui.settings_ui.night_enabled_sw, night_enabled_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
 
     card = create_card(parent);
@@ -1664,6 +1697,7 @@ static void create_night_overlay(void)
     s_ui.settings_ui.night_content = surface.content;
     lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_bottom(surface.content, 72, 0);
+    lv_obj_add_flag(surface.content, LV_OBJ_FLAG_SCROLL_MOMENTUM);
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, NULL);
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL, NULL);
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_END, NULL);
