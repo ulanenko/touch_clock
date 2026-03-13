@@ -1,14 +1,43 @@
 #include "domain/face_catalog.h"
 
-static const bool s_face_enabled[CLOCK_FACE_COUNT] = {
-    [CLOCK_FACE_DIGITAL] = true,
-    [CLOCK_FACE_MATRIX] = true,
-    [CLOCK_FACE_WHARTON] = true,
-    [CLOCK_FACE_SLAVA] = CLOCK_FACE_ENABLE_SLAVA,
-    [CLOCK_FACE_SLAVA_DARK] = CLOCK_FACE_ENABLE_SLAVA_DARK,
-    [CLOCK_FACE_STERNGLAS] = true,
-    [CLOCK_FACE_AVENIR] = true,
-    [CLOCK_FACE_MODERN_SILVER] = true,
+typedef struct {
+    bool enabled;
+    const char *name;
+} face_manifest_entry_t;
+
+static const face_manifest_entry_t s_face_manifest[CLOCK_FACE_COUNT] = {
+    [CLOCK_FACE_DIGITAL] = {
+        .enabled = true,
+        .name = "Digital",
+    },
+    [CLOCK_FACE_MATRIX] = {
+        .enabled = true,
+        .name = "Matrix",
+    },
+    [CLOCK_FACE_WHARTON] = {
+        .enabled = true,
+        .name = "Wharton",
+    },
+    [CLOCK_FACE_SLAVA] = {
+        .enabled = CLOCK_FACE_ENABLE_SLAVA,
+        .name = "Slava",
+    },
+    [CLOCK_FACE_SLAVA_DARK] = {
+        .enabled = CLOCK_FACE_ENABLE_SLAVA_DARK,
+        .name = "Slava Dark",
+    },
+    [CLOCK_FACE_STERNGLAS] = {
+        .enabled = true,
+        .name = "Sternglas",
+    },
+    [CLOCK_FACE_AVENIR] = {
+        .enabled = true,
+        .name = "Avenir",
+    },
+    [CLOCK_FACE_MODERN_SILVER] = {
+        .enabled = true,
+        .name = "Modern Silver",
+    },
 };
 
 bool face_catalog_is_valid(int face)
@@ -22,7 +51,7 @@ bool face_catalog_is_enabled(clock_face_id_t face)
         return false;
     }
 
-    return s_face_enabled[face];
+    return s_face_manifest[face].enabled;
 }
 
 clock_face_id_t face_catalog_default_face(void)
@@ -118,24 +147,9 @@ clock_face_id_t face_catalog_step_enabled(clock_face_id_t face, int direction)
 
 const char *face_catalog_name(clock_face_id_t face)
 {
-    switch (face) {
-    case CLOCK_FACE_DIGITAL:
-        return "Digital";
-    case CLOCK_FACE_MATRIX:
-        return "Matrix";
-    case CLOCK_FACE_WHARTON:
-        return "Wharton";
-    case CLOCK_FACE_SLAVA:
-        return "Slava";
-    case CLOCK_FACE_SLAVA_DARK:
-        return "Slava Dark";
-    case CLOCK_FACE_STERNGLAS:
-        return "Sternglas";
-    case CLOCK_FACE_AVENIR:
-        return "Avenir";
-    case CLOCK_FACE_MODERN_SILVER:
-        return "Modern Silver";
-    default:
+    if (!face_catalog_is_valid(face)) {
         return "Unknown";
     }
+
+    return s_face_manifest[face].name;
 }

@@ -6,10 +6,6 @@
 
 static clock_face_id_t default_night_face(void)
 {
-    if (face_catalog_is_enabled(CLOCK_FACE_SLAVA_DARK)) {
-        return CLOCK_FACE_SLAVA_DARK;
-    }
-
     return face_catalog_default_face();
 }
 

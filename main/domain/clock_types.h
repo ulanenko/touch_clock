@@ -1,12 +1,14 @@
 #pragma once
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <time.h>
 
 #define MAX_ALARMS 5
 #define DISPLAY_BRIGHTNESS_MIN_PERCENT 19
 #define DISPLAY_BRIGHTNESS_MAX_PERCENT 100
+#define CLOCK_WIFI_SCAN_RESULT_MAX 16
 #define CLOCK_FACE_ENABLE_SLAVA 0
 #define CLOCK_FACE_ENABLE_SLAVA_DARK 0
 
@@ -52,6 +54,12 @@ typedef struct {
 } wifi_settings_t;
 
 typedef struct {
+    char ssid[33];
+    int rssi;
+    int authmode;
+} clock_wifi_scan_result_t;
+
+typedef struct {
     bool wifi_connected;
     bool wifi_connecting;
     bool wifi_scanning;
@@ -63,6 +71,9 @@ typedef struct {
     bool alarm_test_active;
     bool snooze_active;
     time_t snooze_deadline;
+    uint32_t wifi_scan_generation;
+    size_t wifi_scan_count;
+    clock_wifi_scan_result_t wifi_scan_results[CLOCK_WIFI_SCAN_RESULT_MAX];
     bool sunrise_active;
     bool in_night_mode;
     bool night_brightness_override_active;

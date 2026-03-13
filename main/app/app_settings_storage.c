@@ -1,5 +1,6 @@
 #include "app/app_settings_storage.h"
 
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -37,50 +38,192 @@
 #define SETTINGS_KEY_SKIPPED_EPOCH "skip_epoch"
 #define SETTINGS_KEY_SKIPPED_INDEX "skip_idx"
 
+typedef enum {
+    SETTINGS_FIELD_U8,
+    SETTINGS_FIELD_I8,
+    SETTINGS_FIELD_I64,
+    SETTINGS_FIELD_STR,
+} settings_field_kind_t;
+
+typedef struct {
+    const char *key;
+    settings_field_kind_t kind;
+    size_t offset;
+    size_t size;
+} settings_field_descriptor_t;
+
+static const settings_field_descriptor_t s_settings_fields[] = {
+    {
+        .key = SETTINGS_KEY_BASE_BRIGHTNESS,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, base_brightness),
+    },
+    {
+        .key = SETTINGS_KEY_ALARM_VOLUME,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, alarm_volume),
+    },
+    {
+        .key = SETTINGS_KEY_SNOOZE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, snooze_minutes),
+    },
+    {
+        .key = SETTINGS_KEY_CURRENT_FACE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, current_face),
+    },
+    {
+        .key = SETTINGS_KEY_WIFI_SSID,
+        .kind = SETTINGS_FIELD_STR,
+        .offset = offsetof(app_settings_t, wifi.ssid),
+        .size = sizeof(((app_settings_t *)0)->wifi.ssid),
+    },
+    {
+        .key = SETTINGS_KEY_WIFI_PASSWORD,
+        .kind = SETTINGS_FIELD_STR,
+        .offset = offsetof(app_settings_t, wifi.password),
+        .size = sizeof(((app_settings_t *)0)->wifi.password),
+    },
+    {
+        .key = SETTINGS_KEY_TIMEZONE,
+        .kind = SETTINGS_FIELD_I8,
+        .offset = offsetof(app_settings_t, wifi.timezone_offset_hours),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_ENABLED,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.enabled),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_START_HOUR,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.start_hour),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_START_MINUTE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.start_minute),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_END_HOUR,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.end_hour),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_END_MINUTE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.end_minute),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_BRIGHTNESS,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.brightness),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_FACE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.face),
+    },
+    {
+        .key = SETTINGS_KEY_LAST_SYNCED,
+        .kind = SETTINGS_FIELD_I64,
+        .offset = offsetof(app_settings_t, last_synced_epoch),
+    },
+    {
+        .key = SETTINGS_KEY_SKIPPED_EPOCH,
+        .kind = SETTINGS_FIELD_I64,
+        .offset = offsetof(app_settings_t, skipped_alarm_epoch),
+    },
+    {
+        .key = SETTINGS_KEY_SKIPPED_INDEX,
+        .kind = SETTINGS_FIELD_I8,
+        .offset = offsetof(app_settings_t, skipped_alarm_index),
+    },
+};
+
 static void set_defaults(app_settings_t *settings)
 {
     settings_policy_set_defaults(settings);
     settings->version = SETTINGS_VERSION_V5;
 }
 
-static void load_u8_if_present(const app_settings_storage_t *storage, const char *key, uint8_t *value)
+static void *field_ptr(void *base, size_t offset)
 {
-    uint8_t loaded = 0;
+    return ((uint8_t *)base) + offset;
+}
 
-    if (storage->get_u8 != NULL && storage->get_u8(storage->ctx, key, &loaded) == ESP_OK) {
-        *value = loaded;
+static const void *field_const_ptr(const void *base, size_t offset)
+{
+    return ((const uint8_t *)base) + offset;
+}
+
+static void load_field_if_present(const app_settings_storage_t *storage,
+                                  app_settings_t *settings,
+                                  const settings_field_descriptor_t *field)
+{
+    switch (field->kind) {
+    case SETTINGS_FIELD_U8: {
+        uint8_t loaded = 0;
+
+        if (storage->get_u8 != NULL && storage->get_u8(storage->ctx, field->key, &loaded) == ESP_OK) {
+            *(uint8_t *)field_ptr(settings, field->offset) = loaded;
+        }
+        break;
+    }
+    case SETTINGS_FIELD_I8: {
+        int8_t loaded = 0;
+
+        if (storage->get_i8 != NULL && storage->get_i8(storage->ctx, field->key, &loaded) == ESP_OK) {
+            *(int8_t *)field_ptr(settings, field->offset) = loaded;
+        }
+        break;
+    }
+    case SETTINGS_FIELD_I64: {
+        int64_t loaded = 0;
+
+        if (storage->get_i64 != NULL && storage->get_i64(storage->ctx, field->key, &loaded) == ESP_OK) {
+            *(time_t *)field_ptr(settings, field->offset) = (time_t)loaded;
+        }
+        break;
+    }
+    case SETTINGS_FIELD_STR: {
+        size_t required_size = field->size;
+        char *buffer = (char *)field_ptr(settings, field->offset);
+
+        if (storage->get_str == NULL ||
+            storage->get_str(storage->ctx, field->key, buffer, &required_size) != ESP_OK) {
+            buffer[0] = '\0';
+        }
+        break;
+    }
     }
 }
 
-static void load_i8_if_present(const app_settings_storage_t *storage, const char *key, int8_t *value)
+static esp_err_t save_field(const app_settings_storage_t *storage,
+                            const app_settings_t *settings,
+                            const settings_field_descriptor_t *field)
 {
-    int8_t loaded = 0;
-
-    if (storage->get_i8 != NULL && storage->get_i8(storage->ctx, key, &loaded) == ESP_OK) {
-        *value = loaded;
+    switch (field->kind) {
+    case SETTINGS_FIELD_U8:
+        return storage->set_u8(storage->ctx,
+                               field->key,
+                               *(const uint8_t *)field_const_ptr(settings, field->offset));
+    case SETTINGS_FIELD_I8:
+        return storage->set_i8(storage->ctx,
+                               field->key,
+                               *(const int8_t *)field_const_ptr(settings, field->offset));
+    case SETTINGS_FIELD_I64:
+        return storage->set_i64(storage->ctx,
+                                field->key,
+                                (int64_t)*(const time_t *)field_const_ptr(settings, field->offset));
+    case SETTINGS_FIELD_STR:
+        return storage->set_str(storage->ctx,
+                                field->key,
+                                (const char *)field_const_ptr(settings, field->offset));
     }
-}
 
-static void load_i64_if_present(const app_settings_storage_t *storage, const char *key, time_t *value)
-{
-    int64_t loaded = 0;
-
-    if (storage->get_i64 != NULL && storage->get_i64(storage->ctx, key, &loaded) == ESP_OK) {
-        *value = (time_t)loaded;
-    }
-}
-
-static void load_string_if_present(const app_settings_storage_t *storage,
-                                   const char *key,
-                                   char *buffer,
-                                   size_t size)
-{
-    size_t required_size = size;
-
-    if (storage->get_str == NULL ||
-        storage->get_str(storage->ctx, key, buffer, &required_size) != ESP_OK) {
-        buffer[0] = '\0';
-    }
+    return ESP_FAIL;
 }
 
 static esp_err_t load_v5_settings(const app_settings_storage_t *storage, app_settings_t *settings)
@@ -90,29 +233,17 @@ static esp_err_t load_v5_settings(const app_settings_storage_t *storage, app_set
 
     set_defaults(settings);
     defaults = *settings;
-    settings->version = SETTINGS_VERSION_V5;
-    load_u8_if_present(storage, SETTINGS_KEY_BASE_BRIGHTNESS, &settings->base_brightness);
-    load_u8_if_present(storage, SETTINGS_KEY_ALARM_VOLUME, &settings->alarm_volume);
-    load_u8_if_present(storage, SETTINGS_KEY_SNOOZE, &settings->snooze_minutes);
-    load_u8_if_present(storage, SETTINGS_KEY_CURRENT_FACE, (uint8_t *)&settings->current_face);
-    load_string_if_present(storage, SETTINGS_KEY_WIFI_SSID, settings->wifi.ssid, sizeof(settings->wifi.ssid));
-    load_string_if_present(storage, SETTINGS_KEY_WIFI_PASSWORD, settings->wifi.password, sizeof(settings->wifi.password));
-    load_i8_if_present(storage, SETTINGS_KEY_TIMEZONE, &settings->wifi.timezone_offset_hours);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_ENABLED, (uint8_t *)&settings->night_mode.enabled);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_START_HOUR, &settings->night_mode.start_hour);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_START_MINUTE, &settings->night_mode.start_minute);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_END_HOUR, &settings->night_mode.end_hour);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_END_MINUTE, &settings->night_mode.end_minute);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_BRIGHTNESS, &settings->night_mode.brightness);
-    load_u8_if_present(storage, SETTINGS_KEY_NIGHT_FACE, (uint8_t *)&settings->night_mode.face);
+
+    for (size_t i = 0; i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]); ++i) {
+        load_field_if_present(storage, settings, &s_settings_fields[i]);
+    }
+
     if (storage->get_blob == NULL ||
         storage->get_blob(storage->ctx, SETTINGS_KEY_ALARMS, settings->alarms, &alarms_size) != ESP_OK ||
         alarms_size != sizeof(settings->alarms)) {
         memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
     }
-    load_i64_if_present(storage, SETTINGS_KEY_LAST_SYNCED, &settings->last_synced_epoch);
-    load_i64_if_present(storage, SETTINGS_KEY_SKIPPED_EPOCH, &settings->skipped_alarm_epoch);
-    load_i8_if_present(storage, SETTINGS_KEY_SKIPPED_INDEX, &settings->skipped_alarm_index);
+
     settings_policy_sanitize(settings);
     settings->version = SETTINGS_VERSION_V5;
     return ESP_OK;
@@ -185,59 +316,13 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
     copy.version = SETTINGS_VERSION_V5;
 
     err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V5);
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_BASE_BRIGHTNESS, copy.base_brightness);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_ALARM_VOLUME, copy.alarm_volume);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_SNOOZE, copy.snooze_minutes);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_CURRENT_FACE, (uint8_t)copy.current_face);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_str(storage->ctx, SETTINGS_KEY_WIFI_SSID, copy.wifi.ssid);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_str(storage->ctx, SETTINGS_KEY_WIFI_PASSWORD, copy.wifi.password);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_i8(storage->ctx, SETTINGS_KEY_TIMEZONE, copy.wifi.timezone_offset_hours);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_ENABLED, (uint8_t)copy.night_mode.enabled);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_START_HOUR, copy.night_mode.start_hour);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_START_MINUTE, copy.night_mode.start_minute);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_END_HOUR, copy.night_mode.end_hour);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_END_MINUTE, copy.night_mode.end_minute);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_BRIGHTNESS, copy.night_mode.brightness);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_u8(storage->ctx, SETTINGS_KEY_NIGHT_FACE, (uint8_t)copy.night_mode.face);
+    for (size_t i = 0;
+         err == ESP_OK && i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]);
+         ++i) {
+        err = save_field(storage, &copy, &s_settings_fields[i]);
     }
     if (err == ESP_OK) {
         err = storage->set_blob(storage->ctx, SETTINGS_KEY_ALARMS, copy.alarms, sizeof(copy.alarms));
-    }
-    if (err == ESP_OK) {
-        err = storage->set_i64(storage->ctx, SETTINGS_KEY_LAST_SYNCED, (int64_t)copy.last_synced_epoch);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_i64(storage->ctx, SETTINGS_KEY_SKIPPED_EPOCH, (int64_t)copy.skipped_alarm_epoch);
-    }
-    if (err == ESP_OK) {
-        err = storage->set_i8(storage->ctx, SETTINGS_KEY_SKIPPED_INDEX, copy.skipped_alarm_index);
     }
     if (err == ESP_OK || err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
         err = storage->erase_key(storage->ctx, SETTINGS_KEY_LEGACY_BLOB);

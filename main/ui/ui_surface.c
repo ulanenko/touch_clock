@@ -8,7 +8,8 @@ void ui_surface_create_fullscreen(ui_surface_t *surface,
                                   lv_coord_t header_height,
                                   const char *title_text,
                                   lv_event_cb_t overlay_cb,
-                                  lv_event_cb_t close_cb)
+                                  lv_event_cb_t close_cb,
+                                  void *user_data)
 {
     lv_obj_t *close_label;
 
@@ -21,7 +22,7 @@ void ui_surface_create_fullscreen(ui_surface_t *surface,
     lv_obj_set_style_pad_all(surface->overlay, 0, 0);
     lv_obj_add_flag(surface->overlay, LV_OBJ_FLAG_HIDDEN);
     if (overlay_cb != NULL) {
-        lv_obj_add_event_cb(surface->overlay, overlay_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(surface->overlay, overlay_cb, LV_EVENT_CLICKED, user_data);
     }
 
     surface->panel = lv_obj_create(surface->overlay);
@@ -63,7 +64,7 @@ void ui_surface_create_fullscreen(ui_surface_t *surface,
     lv_obj_set_style_border_width(surface->close_btn, 0, 0);
     lv_obj_align(surface->close_btn, LV_ALIGN_TOP_RIGHT, 0, 0);
     if (close_cb != NULL) {
-        lv_obj_add_event_cb(surface->close_btn, close_cb, LV_EVENT_CLICKED, NULL);
+        lv_obj_add_event_cb(surface->close_btn, close_cb, LV_EVENT_CLICKED, user_data);
     }
     close_label = lv_label_create(surface->close_btn);
     lv_label_set_text(close_label, LV_SYMBOL_CLOSE);

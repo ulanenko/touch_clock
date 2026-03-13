@@ -4,6 +4,7 @@ This document defines the behavior that must remain stable while the internal st
 
 ## UX invariants
 
+- The active face carousel remains `Digital`, `Matrix`, `Wharton`, `Sternglas`, `Avenir`, `Modern Silver` in that order; legacy `Slava` face IDs remain persistence-only.
 - Face navigation keeps the existing swipe model, page-dot semantics, enabled-face ordering, and night-face substitution behavior.
 - The quick-actions sheet keeps the same open zones, drag model, button set, and brightness interaction semantics.
 - Alarm management keeps the current list layout, editor flow, settings surface, ringing overlay, snooze flow, stop flow, preview-tone behavior, cancel-next flow, and undo window behavior.
@@ -17,8 +18,9 @@ This document defines the behavior that must remain stable while the internal st
 - `clock_ui.h` remains the public UI boundary.
 - `app_controller` remains the integration point that connects persistence, services, domain logic, and UI callbacks.
 - Durable state continues to live in `app_settings_t`; ephemeral runtime state continues to live in `app_runtime_state_t`.
+- Wi-Fi scan cache and connection status flow into the UI only through controller-owned runtime snapshots.
 - Pure business logic stays under `main/domain/` with no LVGL, FreeRTOS, ESP-IDF, or BSP dependencies.
-- UI feature files compile as separate translation units and communicate through `main/ui/clock_ui_internal.h` rather than textual `.c` inclusion.
+- UI feature files compile as separate translation units and communicate through the private UI headers in `main/ui/`.
 - Settings writes and runtime mutations should flow through app actions or controller-owned logic, not direct UI mutations.
 
 ## Test fixtures to preserve

@@ -102,31 +102,6 @@ static int esp_wifi_request_sync_service(void)
     return wifi_time_request_sync();
 }
 
-static size_t esp_wifi_get_scan_results(platform_wifi_scan_result_t *results,
-                                        size_t max_results,
-                                        uint32_t *generation)
-{
-    wifi_scan_result_t source_results[WIFI_TIME_MAX_SCAN_RESULTS];
-    size_t count = wifi_time_get_scan_results(source_results, WIFI_TIME_MAX_SCAN_RESULTS, generation);
-
-    if (results != NULL) {
-        size_t copy_count = (count > max_results) ? max_results : count;
-
-        for (size_t i = 0; i < copy_count; ++i) {
-            snprintf(results[i].ssid, sizeof(results[i].ssid), "%s", source_results[i].ssid);
-            results[i].rssi = source_results[i].rssi;
-            results[i].authmode = source_results[i].authmode;
-        }
-    }
-
-    return count;
-}
-
-static uint32_t esp_wifi_get_scan_generation_service(void)
-{
-    return wifi_time_get_scan_generation();
-}
-
 static int esp_display_set_brightness(uint8_t hw_percent)
 {
     return bsp_display_brightness_set(hw_percent);
@@ -165,8 +140,6 @@ static const wifi_service_t s_wifi_service = {
     .connect = esp_wifi_connect_service,
     .forget = esp_wifi_forget_service,
     .request_sync = esp_wifi_request_sync_service,
-    .get_scan_generation = esp_wifi_get_scan_generation_service,
-    .get_scan_results = esp_wifi_get_scan_results,
 };
 
 static const display_service_t s_display_service = {

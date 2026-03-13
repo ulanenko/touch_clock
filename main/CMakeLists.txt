@@ -36,8 +36,6 @@ idf_component_register(
         assets/helvetica_neue_10.c
         assets/helvetica_neue_6.c
         assets/montserrat_digits_56.c
-        assets/slava_face_img.c
-        assets/slava_dark_face_img.c
         ui/ui_alarms.c
         ui/ui_brightness.c
         ui/ui_controls.c

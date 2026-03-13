@@ -209,8 +209,24 @@ void wifi_time_snapshot(app_runtime_state_t *runtime)
     runtime->wifi_scanning = s_wifi.scanning;
     runtime->time_synced = runtime->time_synced || s_wifi.time_synced;
     runtime->wifi_rssi = s_wifi.rssi;
+    runtime->wifi_scan_generation = s_wifi.scan_generation;
+    runtime->wifi_scan_count = s_wifi.scan_count;
     snprintf(runtime->wifi_ip, sizeof(runtime->wifi_ip), "%s", s_wifi.ip);
     snprintf(runtime->wifi_status, sizeof(runtime->wifi_status), "%s", s_wifi.status);
+    for (size_t i = 0; i < CLOCK_WIFI_SCAN_RESULT_MAX; ++i) {
+        if (i < s_wifi.scan_count) {
+            snprintf(runtime->wifi_scan_results[i].ssid,
+                     sizeof(runtime->wifi_scan_results[i].ssid),
+                     "%s",
+                     s_wifi.scan_results[i].ssid);
+            runtime->wifi_scan_results[i].rssi = s_wifi.scan_results[i].rssi;
+            runtime->wifi_scan_results[i].authmode = (int)s_wifi.scan_results[i].authmode;
+        } else {
+            runtime->wifi_scan_results[i].ssid[0] = '\0';
+            runtime->wifi_scan_results[i].rssi = 0;
+            runtime->wifi_scan_results[i].authmode = 0;
+        }
+    }
     xSemaphoreGive(s_wifi.lock);
 }
 
@@ -309,17 +325,6 @@ esp_err_t wifi_time_request_sync(void)
     return ESP_OK;
 }
 
-uint32_t wifi_time_get_scan_generation(void)
-{
-    uint32_t generation;
-
-    xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
-    generation = s_wifi.scan_generation;
-    xSemaphoreGive(s_wifi.lock);
-
-    return generation;
-}
-
 bool wifi_time_is_scanning(void)
 {
     bool scanning;
@@ -329,24 +334,4 @@ bool wifi_time_is_scanning(void)
     xSemaphoreGive(s_wifi.lock);
 
     return scanning;
-}
-
-size_t wifi_time_get_scan_results(wifi_scan_result_t *results, size_t max_results, uint32_t *generation)
-{
-    size_t count;
-
-    xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
-    count = s_wifi.scan_count;
-    if (count > max_results) {
-        count = max_results;
-    }
-    if (results != NULL && count > 0) {
-        memcpy(results, s_wifi.scan_results, count * sizeof(wifi_scan_result_t));
-    }
-    if (generation != NULL) {
-        *generation = s_wifi.scan_generation;
-    }
-    xSemaphoreGive(s_wifi.lock);
-
-    return count;
 }

@@ -280,10 +280,23 @@ static int test_v5_round_trip(void)
     saved.night_mode.start_hour = 21;
     saved.night_mode.end_hour = 6;
     saved.night_mode.brightness = 25;
+    saved.night_mode.face = CLOCK_FACE_MODERN_SILVER;
     saved.last_synced_epoch = make_utc_time(2026, 3, 12, 7, 0, 0);
 
     EXPECT_EQ_INT(ESP_OK, app_settings_save_to_storage(&storage, &saved));
     EXPECT_EQ_INT(1, store.commit_calls);
+    EXPECT_TRUE(find_entry(&store, "ver") != NULL);
+    EXPECT_TRUE(find_entry(&store, "base_bri") != NULL);
+    EXPECT_TRUE(find_entry(&store, "alarm_vol") != NULL);
+    EXPECT_TRUE(find_entry(&store, "snooze") != NULL);
+    EXPECT_TRUE(find_entry(&store, "face") != NULL);
+    EXPECT_TRUE(find_entry(&store, "wifi_ssid") != NULL);
+    EXPECT_TRUE(find_entry(&store, "wifi_pass") != NULL);
+    EXPECT_TRUE(find_entry(&store, "tz") != NULL);
+    EXPECT_TRUE(find_entry(&store, "n_en") != NULL);
+    EXPECT_TRUE(find_entry(&store, "n_face") != NULL);
+    EXPECT_TRUE(find_entry(&store, "alarms") != NULL);
+    EXPECT_TRUE(find_entry(&store, "last_sync") != NULL);
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
     EXPECT_EQ_INT(77, loaded.base_brightness);
     EXPECT_EQ_INT(61, loaded.alarm_volume);
@@ -291,6 +304,7 @@ static int test_v5_round_trip(void)
     EXPECT_STR_EQ("Office", loaded.wifi.ssid);
     EXPECT_EQ_INT(3, loaded.wifi.timezone_offset_hours);
     EXPECT_TRUE(loaded.night_mode.enabled);
+    EXPECT_EQ_INT(CLOCK_FACE_MODERN_SILVER, loaded.night_mode.face);
     return 0;
 }
 

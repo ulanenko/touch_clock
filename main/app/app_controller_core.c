@@ -73,7 +73,7 @@ static void set_default_settings(app_settings_t *settings)
 
 static void execute_wifi_command(app_controller_core_t *core, const app_action_result_t *result)
 {
-    if (!result->needs_wifi_command || core->config.wifi_service == NULL) {
+    if (!app_action_has_effect(result, APP_EFFECT_WIFI_COMMAND) || core->config.wifi_service == NULL) {
         return;
     }
 
@@ -130,19 +130,21 @@ static void reconcile_alarm_audio(app_controller_core_t *core)
     }
 }
 
-static void reconcile_settings_side_effects(app_controller_core_t *core, bool audio_updated, time_t now)
+static void apply_audio_volume(app_controller_core_t *core)
 {
     const audio_service_t *audio = core->config.audio_service;
 
-    if (core->config.clock_service != NULL && core->config.clock_service->apply_timezone != NULL) {
-        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_offset_hours);
-    }
-
     if (core->state.audio_available &&
         audio != NULL &&
-        audio->set_volume != NULL &&
-        (audio_updated || audio->set_volume != NULL)) {
+        audio->set_volume != NULL) {
         audio->set_volume(core->state.settings.alarm_volume);
+    }
+}
+
+static void reconcile_settings_side_effects(app_controller_core_t *core, time_t now)
+{
+    if (core->config.clock_service != NULL && core->config.clock_service->apply_timezone != NULL) {
+        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_offset_hours);
     }
 
     core->state.runtime.effective_brightness =
@@ -204,29 +206,28 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
                                              const app_action_result_t *result,
                                              time_t now)
 {
-    if (result->settings_changed) {
-        reconcile_settings_side_effects(core, result->needs_audio_update, now);
+    if (app_action_has_effect(result, APP_EFFECT_SETTINGS_CHANGED)) {
+        reconcile_settings_side_effects(core, now);
         mark_settings_dirty(core);
-    } else if (result->needs_audio_update &&
-               core->state.audio_available &&
-               core->config.audio_service != NULL &&
-               core->config.audio_service->set_volume != NULL) {
-        core->config.audio_service->set_volume(core->state.settings.alarm_volume);
     }
 
-    if (result->needs_wifi_command) {
+    if (app_action_has_effect(result, APP_EFFECT_WIFI_COMMAND)) {
         execute_wifi_command(core, result);
     }
 
-    if (result->needs_audio_update) {
+    if (app_action_has_effect(result, APP_EFFECT_AUDIO_VOLUME)) {
+        apply_audio_volume(core);
+    }
+
+    if (app_action_has_effect(result, APP_EFFECT_AUDIO_RECONCILE)) {
         reconcile_alarm_audio(core);
     }
 
-    if (result->needs_brightness_apply) {
+    if (app_action_has_effect(result, APP_EFFECT_BRIGHTNESS_APPLY)) {
         apply_runtime_brightness(core);
     }
 
-    if (result->needs_ui_refresh && core->config.ui_refresh != NULL) {
+    if (app_action_has_effect(result, APP_EFFECT_UI_REFRESH) && core->config.ui_refresh != NULL) {
         core->config.ui_refresh(core->config.ui_refresh_ctx);
     }
 }

@@ -8,7 +8,7 @@ This README reflects the current app structure and on-device behavior.
 
 The app is in active iteration but already usable as a bedside clock:
 
-- 5 production clock faces
+- 6 production clock faces
 - dedicated alarm UX separate from settings
 - focused Wi-Fi/settings surfaces instead of the older tabbed form
 - SNTP time sync through the onboard Wi-Fi companion
@@ -39,8 +39,9 @@ Recent work focused heavily on:
 - **Digital Vintage**: DSEG7 Classic Italic digits, DSEG14 lettering, ghost digits, weekday row, date line, square mesh overlay, retro green phosphor styling
 - **Matrix**: green dot-matrix face
 - **Wharton**: amber dot ring + center time treatment
-- **Slava**: light analog Slava face
-- **Slava Dark**: dark analog Slava face
+- **Sternglas**: light minimalist analog face
+- **Avenir**: bold geometric analog face
+- **Modern Silver**: silver-toned analog face
 
 ### Main Interactions
 
@@ -89,8 +90,8 @@ The sheet is a draggable pull-up/pull-down surface, not a simple pop-in menu.
 
 These points matter because they differ from some earlier documentation and earlier iterations of the app:
 
-- the old extra seven-segment face was removed from the carousel
 - the primary digital face is now the retro/digital-vintage face
+- legacy Slava faces remain only as persistence-compatible IDs and are not part of the active carousel
 - alarms are no longer embedded inside settings
 - settings are no longer built around the old tabbed form
 - the quick-actions sheet includes manual brightness again
@@ -116,11 +117,11 @@ That last point is intentional for now:
 
 ### UI Layer
 
-- [main/clock_ui.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c): public UI entrypoints, shared UI state, top-level coordination
+- [main/clock_ui.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c): public UI entrypoints, shared UI context owner, top-level coordination
 - [main/ui/ui_shell.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_shell.c): tileview, affordances, quick-actions behavior, navigation policy
 - [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c): clock face construction and updates
 - [main/ui/ui_alarms.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_alarms.c): alarm list, editor, ringing overlay, face badge behavior
-- [main/ui/ui_settings.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_settings.c): Wi-Fi/timezone/night-mode surfaces
+- [main/ui/ui_settings.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_settings.c): Wi-Fi/timezone/night-mode surfaces driven from controller runtime snapshots
 - [main/ui/ui_brightness.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_brightness.c): quick-actions sheet and brightness panel behavior
 - [main/ui/ui_controls.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_controls.c): shared controls
 - [main/ui/ui_surface.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_surface.c): reusable full-screen surface shell and edge swipe sensors
@@ -132,7 +133,6 @@ That last point is intentional for now:
 - [main/assets/dseg14_classic_italic_36.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_36.c): large retro text
 - [main/assets/dseg14_classic_italic_24.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_24.c): date text
 - [main/assets/dseg14_classic_italic_20.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_20.c): weekday text
-- [main/assets/slava_face_img.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/slava_face_img.c), [main/assets/slava_dark_face_img.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/slava_dark_face_img.c): analog dial art
 - [main/assets/alarm_pcm.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/alarm_pcm.c): alarm tone PCM
 
 ## Performance and Optimization Notes
@@ -185,14 +185,14 @@ Important caveat:
 - bottom edge zones were reduced so buttons remain tappable
 - list resize/center-emphasis effects were quantized to avoid layout thrash during scroll
 
-## Known Cleanup Opportunities
+## Current Refactor State
 
-The app is in a much better state than the earlier monolith, but there is still useful cleanup left:
+The UI and controller boundaries were refactored without changing the on-device UX:
 
-- [main/clock_ui.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c) still owns shared global UI state
-- feature UI files are still included into `clock_ui.c` rather than being completely isolated at the state/interface level
-- there are old unused face helpers still present in [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c)
-- brightness runtime behavior should eventually be reintroduced cleanly instead of mixing manual and dynamic paths
+- [main/ui/clock_ui_internal.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/clock_ui_internal.h) now holds the single private UI context and state definition
+- [main/ui/clock_ui_private.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/clock_ui_private.h) holds cross-feature private API declarations
+- Wi-Fi scan data now flows through `app_runtime_state_t` snapshots instead of direct UI calls into `wifi_time`
+- the active face catalog is the six-face manifest in [main/domain/face_catalog.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/domain/face_catalog.c)
 
 ## Build and Flash
 

@@ -218,7 +218,7 @@ static void on_next_alarm_cancel_requested(void *user_ctx)
     time_t now = app->core.config.clock_service->now();
     app_action_result_t result = app_action_cancel_next_alarm(&app->core.state, now);
 
-    if (result.settings_changed) {
+    if (app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED)) {
         app_controller_core_arm_cancel_revert_window(&app->core, 2500);
     }
     app_controller_core_apply_action_result(&app->core, &result, now);

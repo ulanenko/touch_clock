@@ -9,7 +9,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "assets/slava_assets.h"
 #include "assets/seven_segment_font.h"
 #include "clock_model.h"
 #include "domain/brightness_policy.h"
@@ -19,7 +18,6 @@
 #include "others/snapshot/lv_snapshot.h"
 #include "ui/ui_controls.h"
 #include "ui/ui_surface.h"
-#include "wifi_time.h"
 
 #define SCREEN_SIZE 720
 #define CENTER (SCREEN_SIZE / 2)
@@ -54,14 +52,6 @@
 #define KEYBOARD_HEIGHT 208
 #define KEYBOARD_BOTTOM_INSET 18
 
-#define SLAVA_HOUR_HAND_LEN 128
-#define SLAVA_MIN_HAND_LEN 180
-#define SLAVA_SEC_HAND_LEN 204
-#define SLAVA_SEC_TAIL_LEN 38
-#define SLAVA_HAND_COL 0x1A1A1A
-#define SLAVA_DARK_HAND_COL 0xD0D0D0
-#define SLAVA_SEC_COL 0xCC1111
-
 #define MTX_GRID_X 33
 #define MTX_GRID_Y 33
 #define MTX_DIGIT_H 7
@@ -84,24 +74,6 @@
 #define WH_COL_ON 0xD4A017
 #define WH_COL_OFF 0x1E1600
 
-#define SEG_PANEL_W 648
-#define SEG_PANEL_H 324
-#define SEG_CANVAS_W 620
-#define SEG_CANVAS_H 248
-#define SEG_DIGIT_W 108
-#define SEG_DIGIT_H 176
-#define SEG_DIGIT_THICK 28
-#define SEG_DIGIT_GAP 22
-#define SEG_DIGIT_PAIR_GAP 34
-#define SEG_COLON_GAP 34
-#define SEG_COLON_SIZE 22
-#define SEG_COL_ON 0x5FFFB2
-#define SEG_COL_HIGHLIGHT 0xD8FFE8
-#define SEG_COL_GLOW 0x29C978
-#define SEG_COL_OFF 0x163523
-#define SEG_PANEL_BG 0x08110D
-#define SEG_CANVAS_BG 0x040B08
-
 #define WIFI_DIALOG_WIDTH 620
 #define WIFI_DIALOG_HEIGHT 440
 #define QUICK_ACTION_SYMBOL_BRIGHTNESS LV_SYMBOL_TINT
@@ -118,21 +90,30 @@ enum {
 };
 
 typedef struct {
+    struct clock_ui_state_t *ui;
     uint8_t alarm_index;
 } alarm_ctx_t;
 
 typedef struct {
+    struct clock_ui_state_t *ui;
     uint8_t alarm_index;
     uint8_t day_index;
 } alarm_day_ctx_t;
 
 typedef struct {
+    struct clock_ui_state_t *ui;
     uint8_t network_index;
 } network_ctx_t;
 
 typedef struct {
+    struct clock_ui_state_t *ui;
     clock_face_id_t face;
 } face_ctx_t;
+
+typedef struct {
+    struct clock_ui_state_t *ui;
+    ui_surface_edge_t edge;
+} ui_edge_ctx_t;
 
 typedef struct {
     bool animating;
@@ -251,8 +232,9 @@ typedef struct {
     lv_obj_t *night_brightness_slider;
     lv_obj_t *night_brightness_dd;
     lv_obj_t *night_status_label;
-    network_ctx_t network_ctx[WIFI_TIME_MAX_SCAN_RESULTS];
+    network_ctx_t network_ctx[CLOCK_WIFI_SCAN_RESULT_MAX];
     face_ctx_t face_ctx[CLOCK_FACE_COUNT];
+    ui_edge_ctx_t close_edge_ctx[4];
 } clock_ui_settings_state_t;
 
 typedef struct {
@@ -325,6 +307,7 @@ typedef struct {
     char banner_feedback_text[48];
     alarm_ctx_t alarm_ctx[MAX_ALARMS];
     alarm_day_ctx_t alarm_day_ctx[MAX_ALARMS][7];
+    ui_edge_ctx_t close_edge_ctx[4];
     alarm_config_t editor_draft;
     alarm_config_t cached_alarms[MAX_ALARMS];
     int8_t cached_next_alarm_index;
@@ -373,20 +356,6 @@ typedef struct {
     lv_obj_t *line_sec;
     lv_obj_t *center_dot;
     void *analog_face_buf;
-    lv_point_precise_t slava_hour_pts[2];
-    lv_point_precise_t slava_min_pts[2];
-    lv_point_precise_t slava_sec_pts[2];
-    lv_obj_t *slava_line_hour;
-    lv_obj_t *slava_line_min;
-    lv_obj_t *slava_line_sec;
-    lv_obj_t *slava_center_dot;
-    lv_point_precise_t slava_dark_hour_pts[2];
-    lv_point_precise_t slava_dark_min_pts[2];
-    lv_point_precise_t slava_dark_sec_pts[2];
-    lv_obj_t *slava_dark_line_hour;
-    lv_obj_t *slava_dark_line_min;
-    lv_obj_t *slava_dark_line_sec;
-    lv_obj_t *slava_dark_center_dot;
     lv_point_precise_t sternglas_hour_pts[2];
     lv_point_precise_t sternglas_min_pts[2];
     lv_point_precise_t sternglas_hour_shadow_pts[2];
@@ -425,16 +394,12 @@ typedef struct {
     int wharton_second_count;
     void *wharton_face_buf;
     lv_obj_t *wharton_face_obj;
-    void *segment_face_buf;
-    lv_obj_t *segment_panel;
-    lv_obj_t *segment_face_obj;
-    lv_obj_t *segment_date_label;
     lv_obj_t *face_swipe_layer;
     bool face_swipe_tracking;
     lv_point_t face_swipe_start_point;
 } clock_ui_face_state_t;
 
-typedef struct {
+typedef struct clock_ui_state_t {
     const app_settings_t *settings;
     const app_runtime_state_t *runtime;
     clock_ui_callbacks_t callbacks;
@@ -457,104 +422,4 @@ typedef struct {
     clock_ui_face_state_t faces;
 } clock_ui_state_t;
 
-extern clock_ui_state_t s_ui;
-extern lv_style_t s_style_hour;
-extern lv_style_t s_style_min;
-extern lv_style_t s_style_sec;
-extern const uint8_t s_matrix_font[10][MTX_DIGIT_H];
-extern const uint8_t s_wharton_font[10][WH_DIGIT_ROWS];
-extern const uint8_t s_segment_font[10];
-extern const uint8_t s_matrix_digit_col[4];
-extern const uint8_t s_matrix_colon_col;
-extern const uint8_t s_matrix_digit_row0;
-extern const char *s_day_short[7];
-extern const char *s_month_short[12];
-
-enum {
-    ALARM_REPEAT_PRESET_ONCE = 0,
-    ALARM_REPEAT_PRESET_EVERY_DAY = 1,
-    ALARM_REPEAT_PRESET_WEEKDAYS = 2,
-    ALARM_REPEAT_PRESET_WEEKENDS = 3,
-};
-
-void request_set_base_brightness(uint8_t hw_percent);
-void request_set_runtime_night_brightness(uint8_t hw_percent);
-void request_set_current_face(clock_face_id_t face);
-void request_set_night_face(clock_face_id_t face);
-void request_set_timezone(int8_t utc_offset_hours);
-void request_save_wifi_credentials(const char *ssid, const char *password);
-void request_set_night_mode_enabled(bool enabled);
-void request_set_night_schedule(uint8_t start_hour,
-                                uint8_t start_minute,
-                                uint8_t end_hour,
-                                uint8_t end_minute);
-void request_set_night_brightness(uint8_t hw_percent);
-void request_set_alarm_volume(uint8_t volume);
-void request_set_snooze_minutes(uint8_t minutes);
-void request_set_alarm_enabled(uint8_t alarm_index, bool enabled);
-void request_save_alarm(uint8_t alarm_index, const alarm_config_t *alarm);
-void request_delete_alarm(uint8_t alarm_index);
-
-void affordance_hide_timer_cb(lv_timer_t *timer);
-clock_face_id_t tile_to_face(lv_obj_t *tile);
-void set_active_face(clock_face_id_t face, lv_anim_enable_t anim);
-void show_affordances_temporarily(void);
-void refresh_digital_face_snapshot(void);
-void update_face(clock_face_id_t face);
-void sync_face_animation_state(clock_face_id_t face);
-bool brightness_panel_is_open(void);
-void update_brightness_ui(void);
-void brightness_overlay_hide_immediately(void);
-void brightness_panel_hide(void);
-void open_settings_tab(uint32_t tab_idx);
-void sync_alarm_controls(void);
-void sync_alarm_banner_style(clock_face_id_t face);
-void alarm_management_open(void);
-void alarm_management_close(void);
-void alarm_editor_close(void);
-void open_alarm_editor(uint8_t alarm_index, bool is_new);
-void refresh_settings_controls(void);
-void sync_wifi_controls(void);
-bool wifi_controls_need_sync(void);
-void sync_night_controls(void);
-bool night_controls_need_sync(void);
-void update_alarm_banner(time_t now);
-void sync_alarm_overlay(time_t now);
-bool alarm_controls_need_sync(void);
-void build_root_ui(void);
-void update_dots(clock_face_id_t active_face);
-void settings_button_event_cb(lv_event_t *event);
-void create_brightness_pull_hint(void);
-void create_brightness_edge_sensor(void);
-void create_brightness_overlay(void);
-void create_brightness_panel(void);
-void create_alarm_banner(void);
-void create_alarm_overlay(void);
-void create_alarm_management_overlay(void);
-void create_alarm_settings_overlay(void);
-void create_alarm_editor_overlay(void);
-void create_settings_overlay(void);
-void create_digital_face(lv_obj_t *parent);
-void create_matrix_face(lv_obj_t *parent);
-void create_wharton_face(lv_obj_t *parent);
-void create_slava_face(lv_obj_t *parent);
-void create_slava_dark_face(lv_obj_t *parent);
-void create_sternglas_face(lv_obj_t *parent);
-void create_avenir_face(lv_obj_t *parent);
-void create_modern_silver_face(lv_obj_t *parent);
-
-clock_face_id_t sanitize_enabled_face(clock_face_id_t face);
-struct tm get_local_time_now(void);
-void hand_endpoint(int cx, int cy, int length, float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1);
-void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
-                         float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1);
-uint8_t brightness_ui_to_hw(int ui_percent);
-uint8_t brightness_hw_to_ui(int hw_percent);
-bool alarm_surface_is_open(void);
-void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute);
-void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm);
-int count_enabled_alarms(void);
-int find_alarm_slot_for_new_alarm(void);
-uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm);
-void apply_repeat_preset_to_alarm(alarm_config_t *alarm, uint8_t preset);
-void set_root_ui_hidden(bool hidden);
+typedef clock_ui_state_t clock_ui_context_t;

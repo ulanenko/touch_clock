@@ -22,14 +22,13 @@ static int test_face_and_wifi_actions(void)
 
     result = app_action_set_current_face(&state, CLOCK_FACE_MATRIX);
     EXPECT_EQ_INT(CLOCK_FACE_MATRIX, state.settings.current_face);
-    EXPECT_TRUE(result.settings_changed);
-    EXPECT_TRUE(result.needs_save);
-    EXPECT_TRUE(result.needs_ui_refresh);
-    EXPECT_FALSE(result.runtime_changed);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_UI_REFRESH));
+    EXPECT_FALSE(app_action_has_effect(&result, APP_EFFECT_RUNTIME_CHANGED));
 
     result = app_action_save_wifi_credentials(&state, "Office WiFi", "secret");
-    EXPECT_TRUE(result.settings_changed);
-    EXPECT_TRUE(result.needs_wifi_command);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_WIFI_COMMAND));
     EXPECT_EQ_INT(APP_WIFI_COMMAND_CONNECT, result.wifi_command);
     EXPECT_STR_EQ("Office WiFi", state.settings.wifi.ssid);
     EXPECT_STR_EQ("secret", result.wifi_password);
@@ -43,18 +42,18 @@ static int test_alarm_enable_delete_and_invalid_save(void)
     time_t now = make_utc_time(2026, 3, 12, 6, 0, 0);
 
     result = app_action_set_alarm_enabled(&state, 0, true, now);
-    EXPECT_TRUE(result.settings_changed);
-    EXPECT_TRUE(result.runtime_changed);
-    EXPECT_TRUE(result.needs_brightness_apply);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_RUNTIME_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY));
     EXPECT_EQ_INT(0, state.runtime.next_alarm_index);
 
     result = app_action_delete_alarm(&state, 0, now);
-    EXPECT_TRUE(result.settings_changed);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
     EXPECT_FALSE(state.settings.alarms[0].enabled);
 
     result = app_action_save_alarm(&state, MAX_ALARMS, &state.settings.alarms[0], now);
-    EXPECT_FALSE(result.settings_changed);
-    EXPECT_FALSE(result.runtime_changed);
+    EXPECT_FALSE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_FALSE(app_action_has_effect(&result, APP_EFFECT_RUNTIME_CHANGED));
     return 0;
 }
 
@@ -74,14 +73,14 @@ static int test_cancel_next_and_undo(void)
     original_epoch = state.runtime.next_alarm_epoch;
 
     result = app_action_cancel_next_alarm(&state, now);
-    EXPECT_TRUE(result.settings_changed);
-    EXPECT_TRUE(result.runtime_changed);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_RUNTIME_CHANGED));
     EXPECT_TRUE(state.cancel_revert_available);
     EXPECT_TRUE(state.runtime.next_alarm_epoch > original_epoch);
 
     result = app_action_undo_cancel_next_alarm(&state, now);
-    EXPECT_TRUE(result.settings_changed);
-    EXPECT_TRUE(result.runtime_changed);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_RUNTIME_CHANGED));
     EXPECT_EQ_INT(original_epoch, state.runtime.next_alarm_epoch);
     EXPECT_FALSE(state.cancel_revert_available);
     return 0;

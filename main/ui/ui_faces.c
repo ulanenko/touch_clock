@@ -1,4 +1,4 @@
-#include "ui/clock_ui_internal.h"
+#include "ui/clock_ui_private.h"
 
 static const char *s_day_caps[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 static const char *s_month_caps[12] = {
@@ -12,13 +12,11 @@ static lv_point_precise_t s_sternglas_minute_tick_pts[48][2];
 static lv_point_precise_t s_sternglas_odd_hour_pts[6][2];
 static lv_point_precise_t s_sternglas_radio_wave_pts[4][5];
 
-static void update_matrix_face(void);
-static void update_wharton_face(void);
-static void update_slava_face(void);
-static void update_slava_dark_face(void);
-static void update_sternglas_face(void);
-static void update_avenir_face(void);
-static void update_modern_silver_face(void);
+static void update_matrix_face(clock_ui_context_t *ctx);
+static void update_wharton_face(clock_ui_context_t *ctx);
+static void update_sternglas_face(clock_ui_context_t *ctx);
+static void update_avenir_face(clock_ui_context_t *ctx);
+static void update_modern_silver_face(clock_ui_context_t *ctx);
 
 #define STERNGLAS_SCALE 1.80f
 #define STERNGLAS_OFFSET 0.0f
@@ -53,55 +51,55 @@ static void update_modern_silver_face(void);
 #define MODERN_HANDS_CENTER_X (MODERN_CENTER_X - MODERN_HANDS_CANVAS_OFFSET)
 #define MODERN_HANDS_CENTER_Y (MODERN_CENTER_Y - MODERN_HANDS_CANVAS_OFFSET)
 
-static void show_digital_face_live(void)
+static void show_digital_face_live(clock_ui_context_t *ctx)
 {
-    if (s_ui.faces.digital_live_root == NULL || s_ui.faces.digital_snapshot_img == NULL) {
+    if (ctx->faces.digital_live_root == NULL || ctx->faces.digital_snapshot_img == NULL) {
         return;
     }
 
-    lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ctx->faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void show_digital_face_snapshot(void)
+static void show_digital_face_snapshot(clock_ui_context_t *ctx)
 {
     bool live_visible;
 
-    if (s_ui.faces.digital_live_root == NULL || s_ui.faces.digital_snapshot_img == NULL) {
+    if (ctx->faces.digital_live_root == NULL || ctx->faces.digital_snapshot_img == NULL) {
         return;
     }
 
-    live_visible = !lv_obj_has_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    live_visible = !lv_obj_has_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
     if (live_visible) {
-        refresh_digital_face_snapshot();
+        refresh_digital_face_snapshot(ctx);
         return;
     }
 
-    if (s_ui.faces.digital_snapshot_buf != NULL) {
-        lv_obj_clear_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    if (ctx->faces.digital_snapshot_buf != NULL) {
+        lv_obj_clear_flag(ctx->faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
     }
-    lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 }
 
-void sync_face_animation_state(clock_face_id_t face)
+void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face)
 {
-    bool brightness_overlay_visible = s_ui.brightness.overlay != NULL &&
-                                      !lv_obj_has_flag(s_ui.brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+    bool brightness_overlay_visible = ctx->brightness.overlay != NULL &&
+                                      !lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
     bool keep_digital_live = face == CLOCK_FACE_DIGITAL &&
-                             !s_ui.faces.tileview_scrolling &&
-                             !s_ui.brightness.animating &&
-                             !s_ui.brightness.dragging &&
+                             !ctx->faces.tileview_scrolling &&
+                             !ctx->brightness.animating &&
+                             !ctx->brightness.dragging &&
                              !brightness_overlay_visible &&
-                             !brightness_panel_is_open();
+                             !brightness_panel_is_open(ctx);
 
     if (keep_digital_live) {
-        show_digital_face_live();
+        show_digital_face_live(ctx);
     } else {
-        show_digital_face_snapshot();
+        show_digital_face_snapshot(ctx);
     }
 }
 
-static void refresh_face_composite_snapshot(clock_face_id_t face,
+static void refresh_face_composite_snapshot(clock_ui_context_t *ctx, clock_face_id_t face,
                                             lv_obj_t *hands_canvas,
                                             lv_obj_t *composite_img,
                                             lv_draw_buf_t **composite_buf)
@@ -112,7 +110,7 @@ static void refresh_face_composite_snapshot(clock_face_id_t face,
         return;
     }
 
-    tile = s_ui.tiles[face];
+    tile = ctx->tiles[face];
     if (tile == NULL) {
         return;
     }
@@ -400,69 +398,6 @@ static void apply_digital_italic(lv_obj_t *obj, int32_t skew)
     LV_UNUSED(skew);
 }
 
-static void digital_face_texture_draw_cb(lv_event_t *event)
-{
-    lv_obj_t *obj = lv_event_get_target_obj(event);
-    lv_layer_t *layer = lv_event_get_layer(event);
-    lv_area_t coords;
-    lv_draw_line_dsc_t mesh_dsc;
-    lv_draw_line_dsc_t accent_dsc;
-
-    if (layer == NULL) {
-        return;
-    }
-
-    lv_obj_get_coords(obj, &coords);
-
-    lv_draw_line_dsc_init(&mesh_dsc);
-    mesh_dsc.base.layer = layer;
-    mesh_dsc.color = lv_color_hex(0x0A140A);
-    mesh_dsc.opa = LV_OPA_20;
-    mesh_dsc.width = 1;
-    mesh_dsc.round_start = 0;
-    mesh_dsc.round_end = 0;
-
-    lv_draw_line_dsc_init(&accent_dsc);
-    accent_dsc.base.layer = layer;
-    accent_dsc.color = lv_color_hex(0x000000);
-    accent_dsc.opa = 20;
-    accent_dsc.width = 1;
-    accent_dsc.round_start = 0;
-    accent_dsc.round_end = 0;
-
-    for (int y = coords.y1 + 1; y < coords.y2; y += 3) {
-        mesh_dsc.p1.x = coords.x1;
-        mesh_dsc.p1.y = y;
-        mesh_dsc.p2.x = coords.x2;
-        mesh_dsc.p2.y = y;
-        lv_draw_line(layer, &mesh_dsc);
-    }
-
-    for (int x = coords.x1 + 1; x < coords.x2; x += 3) {
-        mesh_dsc.p1.x = x;
-        mesh_dsc.p1.y = coords.y1;
-        mesh_dsc.p2.x = x;
-        mesh_dsc.p2.y = coords.y2;
-        lv_draw_line(layer, &mesh_dsc);
-    }
-
-    for (int y = coords.y1 + 1; y < coords.y2; y += 6) {
-        accent_dsc.p1.x = coords.x1;
-        accent_dsc.p1.y = y;
-        accent_dsc.p2.x = coords.x2;
-        accent_dsc.p2.y = y;
-        lv_draw_line(layer, &accent_dsc);
-    }
-
-    for (int x = coords.x1 + 1; x < coords.x2; x += 6) {
-        accent_dsc.p1.x = x;
-        accent_dsc.p1.y = coords.y1;
-        accent_dsc.p2.x = x;
-        accent_dsc.p2.y = coords.y2;
-        lv_draw_line(layer, &accent_dsc);
-    }
-}
-
 static void make_face_layer_passive(lv_obj_t *obj)
 {
     uint32_t child_count;
@@ -480,44 +415,71 @@ static void make_face_layer_passive(lv_obj_t *obj)
     }
 }
 
-void refresh_digital_face_snapshot(void)
+void refresh_digital_face_snapshot(clock_ui_context_t *ctx)
 {
     lv_coord_t ext_draw;
 
-    if (s_ui.faces.digital_live_root == NULL || s_ui.faces.digital_snapshot_img == NULL) {
+    if (ctx->faces.digital_live_root == NULL || ctx->faces.digital_snapshot_img == NULL) {
         return;
     }
 
-    lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 
-    if (s_ui.faces.digital_snapshot_buf == NULL) {
-        s_ui.faces.digital_snapshot_buf = lv_snapshot_create_draw_buf(s_ui.faces.digital_live_root,
+    if (ctx->faces.digital_snapshot_buf == NULL) {
+        ctx->faces.digital_snapshot_buf = lv_snapshot_create_draw_buf(ctx->faces.digital_live_root,
                                                                       LV_COLOR_FORMAT_RGB565);
-        if (s_ui.faces.digital_snapshot_buf == NULL) {
-            lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+        if (ctx->faces.digital_snapshot_buf == NULL) {
+            lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
             return;
         }
     }
 
-    if (lv_snapshot_take_to_draw_buf(s_ui.faces.digital_live_root,
+    if (lv_snapshot_take_to_draw_buf(ctx->faces.digital_live_root,
                                      LV_COLOR_FORMAT_RGB565,
-                                     s_ui.faces.digital_snapshot_buf) != LV_RESULT_OK) {
-        lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+                                     ctx->faces.digital_snapshot_buf) != LV_RESULT_OK) {
+        lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
-    ext_draw = (lv_coord_t)((int32_t)s_ui.faces.digital_snapshot_buf->header.w - SCREEN_SIZE) / 2;
+    ext_draw = (lv_coord_t)((int32_t)ctx->faces.digital_snapshot_buf->header.w - SCREEN_SIZE) / 2;
     if (ext_draw < 0) {
         ext_draw = 0;
     }
-    s_ui.faces.digital_snapshot_ext_draw = ext_draw;
-    lv_image_set_src(s_ui.faces.digital_snapshot_img, s_ui.faces.digital_snapshot_buf);
-    lv_obj_set_pos(s_ui.faces.digital_snapshot_img, -ext_draw, -ext_draw);
-    lv_obj_clear_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    ctx->faces.digital_snapshot_ext_draw = ext_draw;
+    lv_image_set_src(ctx->faces.digital_snapshot_img, ctx->faces.digital_snapshot_buf);
+    lv_obj_set_pos(ctx->faces.digital_snapshot_img, -ext_draw, -ext_draw);
+    lv_obj_clear_flag(ctx->faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 }
 
-void create_digital_face(lv_obj_t *parent)
+const void *ui_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    face = sanitize_enabled_face(face);
+    update_face(ctx, face);
+
+    switch (face) {
+    case CLOCK_FACE_DIGITAL:
+        refresh_digital_face_snapshot(ctx);
+        return ctx->faces.digital_snapshot_buf;
+    case CLOCK_FACE_MATRIX:
+        return (ctx->faces.matrix_face_obj != NULL) ? lv_canvas_get_draw_buf(ctx->faces.matrix_face_obj) : NULL;
+    case CLOCK_FACE_WHARTON:
+        return (ctx->faces.wharton_face_obj != NULL) ? lv_canvas_get_draw_buf(ctx->faces.wharton_face_obj) : NULL;
+    case CLOCK_FACE_STERNGLAS:
+        return (ctx->faces.sternglas_composite_buf != NULL) ? ctx->faces.sternglas_composite_buf
+                                                            : ctx->faces.sternglas_snapshot_buf;
+    case CLOCK_FACE_AVENIR:
+        return (ctx->faces.avenir_composite_buf != NULL) ? ctx->faces.avenir_composite_buf
+                                                         : ctx->faces.avenir_snapshot_buf;
+    case CLOCK_FACE_MODERN_SILVER:
+        return (ctx->faces.modern_silver_composite_buf != NULL) ? ctx->faces.modern_silver_composite_buf
+                                                                : ctx->faces.modern_silver_snapshot_buf;
+    default:
+        return ctx->faces.digital_snapshot_buf;
+    }
+}
+
+void create_digital_face(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     lv_obj_t *clock_center;
     lv_obj_t *time_holder;
@@ -526,24 +488,24 @@ void create_digital_face(lv_obj_t *parent)
 
     lv_obj_set_style_bg_color(parent, lv_color_hex(0x010401), 0);
     lv_obj_set_style_bg_grad_opa(parent, LV_OPA_TRANSP, 0);
-    s_ui.faces.digital_glow = NULL;
-    s_ui.faces.digital_cache_valid = false;
-    s_ui.faces.digital_snapshot_buf = NULL;
-    s_ui.faces.digital_snapshot_ext_draw = 0;
-    s_ui.faces.digital_snapshot_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(s_ui.faces.digital_snapshot_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.digital_snapshot_img, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.digital_snapshot_img, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_ui.faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
-    s_ui.faces.digital_live_root = lv_obj_create(parent);
-    lv_obj_set_size(s_ui.faces.digital_live_root, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_set_style_bg_color(s_ui.faces.digital_live_root, lv_color_hex(0x010401), 0);
-    lv_obj_set_style_bg_grad_opa(s_ui.faces.digital_live_root, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.digital_live_root, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.digital_live_root, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.digital_live_root, LV_OBJ_FLAG_SCROLLABLE);
-    clock_center = lv_obj_create(s_ui.faces.digital_live_root);
+    ctx->faces.digital_glow = NULL;
+    ctx->faces.digital_cache_valid = false;
+    ctx->faces.digital_snapshot_buf = NULL;
+    ctx->faces.digital_snapshot_ext_draw = 0;
+    ctx->faces.digital_snapshot_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(ctx->faces.digital_snapshot_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.digital_snapshot_img, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.digital_snapshot_img, 0, 0);
+    lv_obj_clear_flag(ctx->faces.digital_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ctx->faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
+    ctx->faces.digital_live_root = lv_obj_create(parent);
+    lv_obj_set_size(ctx->faces.digital_live_root, SCREEN_SIZE, SCREEN_SIZE);
+    lv_obj_set_style_bg_color(ctx->faces.digital_live_root, lv_color_hex(0x010401), 0);
+    lv_obj_set_style_bg_grad_opa(ctx->faces.digital_live_root, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.digital_live_root, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.digital_live_root, 0, 0);
+    lv_obj_clear_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_SCROLLABLE);
+    clock_center = lv_obj_create(ctx->faces.digital_live_root);
     lv_obj_set_size(clock_center, 664, 328);
     lv_obj_set_style_bg_opa(clock_center, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(clock_center, 0, 0);
@@ -559,20 +521,20 @@ void create_digital_face(lv_obj_t *parent)
     lv_obj_clear_flag(time_holder, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align(time_holder, LV_ALIGN_BOTTOM_LEFT, 0, 0);
 
-    s_ui.faces.digital_time_bg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x143C14), 8);
-    lv_label_set_text(s_ui.faces.digital_time_bg, "88:88");
-    lv_obj_align(s_ui.faces.digital_time_bg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_time_bg, LV_OPA_40, 0);
-    apply_digital_italic(s_ui.faces.digital_time_bg, -120);
+    ctx->faces.digital_time_bg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x143C14), 8);
+    lv_label_set_text(ctx->faces.digital_time_bg, "88:88");
+    lv_obj_align(ctx->faces.digital_time_bg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_text_opa(ctx->faces.digital_time_bg, LV_OPA_40, 0);
+    apply_digital_italic(ctx->faces.digital_time_bg, -120);
 
-    s_ui.faces.digital_time_glow = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
-    lv_obj_align(s_ui.faces.digital_time_glow, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_time_glow, 30, 0);
-    apply_digital_italic(s_ui.faces.digital_time_glow, -120);
+    ctx->faces.digital_time_glow = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
+    lv_obj_align(ctx->faces.digital_time_glow, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    lv_obj_set_style_text_opa(ctx->faces.digital_time_glow, 30, 0);
+    apply_digital_italic(ctx->faces.digital_time_glow, -120);
 
-    s_ui.faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
-    lv_obj_align(s_ui.faces.digital_time_fg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
-    apply_digital_italic(s_ui.faces.digital_time_fg, -120);
+    ctx->faces.digital_time_fg = create_digital_segment_label(time_holder, &seven_segment_font_112, lv_color_hex(0x5CFB5C), 8);
+    lv_obj_align(ctx->faces.digital_time_fg, LV_ALIGN_BOTTOM_LEFT, 0, 0);
+    apply_digital_italic(ctx->faces.digital_time_fg, -120);
 
     side_holder = lv_obj_create(clock_center);
     lv_obj_set_size(side_holder, 134, 206);
@@ -582,29 +544,29 @@ void create_digital_face(lv_obj_t *parent)
     lv_obj_clear_flag(side_holder, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_align_to(side_holder, time_holder, LV_ALIGN_OUT_RIGHT_BOTTOM, -58, -4);
 
-    s_ui.faces.digital_ampm_glow = NULL;
+    ctx->faces.digital_ampm_glow = NULL;
 
-    s_ui.faces.digital_ampm_label = create_digital_text_label(side_holder, &dseg14_classic_italic_36, lv_color_hex(0x5CFB5C), LV_OPA_80, 2);
-    lv_label_set_text(s_ui.faces.digital_ampm_label, "PM");
-    lv_obj_align(s_ui.faces.digital_ampm_label, LV_ALIGN_TOP_RIGHT, 0, 0);
-    apply_digital_italic(s_ui.faces.digital_ampm_label, -80);
+    ctx->faces.digital_ampm_label = create_digital_text_label(side_holder, &dseg14_classic_italic_36, lv_color_hex(0x5CFB5C), LV_OPA_80, 2);
+    lv_label_set_text(ctx->faces.digital_ampm_label, "PM");
+    lv_obj_align(ctx->faces.digital_ampm_label, LV_ALIGN_TOP_RIGHT, 0, 0);
+    apply_digital_italic(ctx->faces.digital_ampm_label, -80);
 
-    s_ui.faces.digital_seconds_bg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x143C14), 4);
-    lv_label_set_text(s_ui.faces.digital_seconds_bg, "88");
-    lv_obj_align(s_ui.faces.digital_seconds_bg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_bg, LV_OPA_40, 0);
-    apply_digital_italic(s_ui.faces.digital_seconds_bg, -120);
+    ctx->faces.digital_seconds_bg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x143C14), 4);
+    lv_label_set_text(ctx->faces.digital_seconds_bg, "88");
+    lv_obj_align(ctx->faces.digital_seconds_bg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_text_opa(ctx->faces.digital_seconds_bg, LV_OPA_40, 0);
+    apply_digital_italic(ctx->faces.digital_seconds_bg, -120);
 
-    s_ui.faces.digital_seconds_glow = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
-    lv_obj_align(s_ui.faces.digital_seconds_glow, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    lv_obj_set_style_text_opa(s_ui.faces.digital_seconds_glow, 30, 0);
-    apply_digital_italic(s_ui.faces.digital_seconds_glow, -120);
+    ctx->faces.digital_seconds_glow = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
+    lv_obj_align(ctx->faces.digital_seconds_glow, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    lv_obj_set_style_text_opa(ctx->faces.digital_seconds_glow, 30, 0);
+    apply_digital_italic(ctx->faces.digital_seconds_glow, -120);
 
-    s_ui.faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
-    lv_obj_align(s_ui.faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-    apply_digital_italic(s_ui.faces.digital_seconds_fg, -120);
+    ctx->faces.digital_seconds_fg = create_digital_segment_label(side_holder, &seven_segment_font_56, lv_color_hex(0x5CFB5C), 4);
+    lv_obj_align(ctx->faces.digital_seconds_fg, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
+    apply_digital_italic(ctx->faces.digital_seconds_fg, -120);
 
-    days_bar = lv_obj_create(s_ui.faces.digital_live_root);
+    days_bar = lv_obj_create(ctx->faces.digital_live_root);
     lv_obj_set_size(days_bar, 580, 36);
     lv_obj_set_style_bg_opa(days_bar, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(days_bar, 0, 0);
@@ -613,27 +575,27 @@ void create_digital_face(lv_obj_t *parent)
     lv_obj_align(days_bar, LV_ALIGN_BOTTOM_MID, 0, -136);
 
     for (int i = 0; i < 7; ++i) {
-        s_ui.faces.digital_day_glow[i] = NULL;
+        ctx->faces.digital_day_glow[i] = NULL;
 
-        s_ui.faces.digital_day_label[i] = create_digital_text_label(days_bar, &dseg14_classic_italic_20, lv_color_hex(0x143C14), LV_OPA_40, 1);
-        lv_label_set_text(s_ui.faces.digital_day_label[i], s_day_caps[i]);
-        apply_digital_italic(s_ui.faces.digital_day_label[i], -60);
+        ctx->faces.digital_day_label[i] = create_digital_text_label(days_bar, &dseg14_classic_italic_20, lv_color_hex(0x143C14), LV_OPA_40, 1);
+        lv_label_set_text(ctx->faces.digital_day_label[i], s_day_caps[i]);
+        apply_digital_italic(ctx->faces.digital_day_label[i], -60);
     }
 
-    s_ui.faces.digital_date_glow = NULL;
+    ctx->faces.digital_date_glow = NULL;
 
-    s_ui.faces.digital_date_label = create_digital_text_label(s_ui.faces.digital_live_root, &dseg14_classic_italic_24, lv_color_hex(0x5CFB5C), LV_OPA_90, 1);
-    lv_label_set_text(s_ui.faces.digital_date_label, "SUN, FEB 11");
-    lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
-    apply_digital_italic(s_ui.faces.digital_date_label, -60);
+    ctx->faces.digital_date_label = create_digital_text_label(ctx->faces.digital_live_root, &dseg14_classic_italic_24, lv_color_hex(0x5CFB5C), LV_OPA_90, 1);
+    lv_label_set_text(ctx->faces.digital_date_label, "SUN, FEB 11");
+    lv_obj_align(ctx->faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
+    apply_digital_italic(ctx->faces.digital_date_label, -60);
 
     make_face_layer_passive(clock_center);
     make_face_layer_passive(days_bar);
-    make_face_layer_passive(s_ui.faces.digital_date_label);
-    make_face_layer_passive(s_ui.faces.digital_live_root);
+    make_face_layer_passive(ctx->faces.digital_date_label);
+    make_face_layer_passive(ctx->faces.digital_live_root);
 }
 
-static void update_digital_face(void)
+static void update_digital_face(clock_ui_context_t *ctx)
 {
     struct tm ti = get_local_time_now();
     char buf_time[16];
@@ -651,16 +613,16 @@ static void update_digital_face(void)
         hour12 = 12;
     }
 
-    time_changed = !s_ui.faces.digital_cache_valid ||
-                   s_ui.faces.digital_last_hour12 != hour12 ||
-                   s_ui.faces.digital_last_minute != ti.tm_min;
-    second_changed = !s_ui.faces.digital_cache_valid ||
-                     s_ui.faces.digital_last_second != ti.tm_sec;
-    date_changed = !s_ui.faces.digital_cache_valid ||
-                   s_ui.faces.digital_last_year != ti.tm_year ||
-                   s_ui.faces.digital_last_yday != ti.tm_yday;
-    day_changed = !s_ui.faces.digital_cache_valid ||
-                  s_ui.faces.digital_last_wday != ti.tm_wday;
+    time_changed = !ctx->faces.digital_cache_valid ||
+                   ctx->faces.digital_last_hour12 != hour12 ||
+                   ctx->faces.digital_last_minute != ti.tm_min;
+    second_changed = !ctx->faces.digital_cache_valid ||
+                     ctx->faces.digital_last_second != ti.tm_sec;
+    date_changed = !ctx->faces.digital_cache_valid ||
+                   ctx->faces.digital_last_year != ti.tm_year ||
+                   ctx->faces.digital_last_yday != ti.tm_yday;
+    day_changed = !ctx->faces.digital_cache_valid ||
+                  ctx->faces.digital_last_wday != ti.tm_wday;
     content_changed = time_changed || second_changed || date_changed || day_changed;
 
     snprintf(buf_time, sizeof(buf_time), "%2d:%02d", hour12, ti.tm_min);
@@ -671,33 +633,33 @@ static void update_digital_face(void)
              ti.tm_mday);
 
     if (time_changed) {
-        if (s_ui.faces.digital_time_glow != NULL) {
-            face_set_label_text_if_changed(s_ui.faces.digital_time_glow, buf_time);
+        if (ctx->faces.digital_time_glow != NULL) {
+            face_set_label_text_if_changed(ctx->faces.digital_time_glow, buf_time);
         }
-        face_set_label_text_if_changed(s_ui.faces.digital_time_fg, buf_time);
+        face_set_label_text_if_changed(ctx->faces.digital_time_fg, buf_time);
     }
 
     if (second_changed) {
-        if (s_ui.faces.digital_seconds_glow != NULL) {
-            face_set_label_text_if_changed(s_ui.faces.digital_seconds_glow, buf_seconds);
+        if (ctx->faces.digital_seconds_glow != NULL) {
+            face_set_label_text_if_changed(ctx->faces.digital_seconds_glow, buf_seconds);
         }
-        face_set_label_text_if_changed(s_ui.faces.digital_seconds_fg, buf_seconds);
+        face_set_label_text_if_changed(ctx->faces.digital_seconds_fg, buf_seconds);
     }
 
-    if (!s_ui.faces.digital_cache_valid || s_ui.faces.digital_last_pm != is_pm) {
-        if (s_ui.faces.digital_ampm_glow != NULL) {
-            face_set_label_text_if_changed(s_ui.faces.digital_ampm_glow, is_pm ? "PM" : "AM");
+    if (!ctx->faces.digital_cache_valid || ctx->faces.digital_last_pm != is_pm) {
+        if (ctx->faces.digital_ampm_glow != NULL) {
+            face_set_label_text_if_changed(ctx->faces.digital_ampm_glow, is_pm ? "PM" : "AM");
         }
-        face_set_label_text_if_changed(s_ui.faces.digital_ampm_label, is_pm ? "PM" : "AM");
+        face_set_label_text_if_changed(ctx->faces.digital_ampm_label, is_pm ? "PM" : "AM");
     }
 
     if (date_changed) {
-        if (s_ui.faces.digital_date_glow != NULL) {
-            face_set_label_text_if_changed(s_ui.faces.digital_date_glow, buf_date);
-            lv_obj_align(s_ui.faces.digital_date_glow, LV_ALIGN_TOP_MID, 0, 98);
+        if (ctx->faces.digital_date_glow != NULL) {
+            face_set_label_text_if_changed(ctx->faces.digital_date_glow, buf_date);
+            lv_obj_align(ctx->faces.digital_date_glow, LV_ALIGN_TOP_MID, 0, 98);
         }
-        face_set_label_text_if_changed(s_ui.faces.digital_date_label, buf_date);
-        lv_obj_align(s_ui.faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
+        face_set_label_text_if_changed(ctx->faces.digital_date_label, buf_date);
+        lv_obj_align(ctx->faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
     }
 
     if (day_changed) {
@@ -706,78 +668,74 @@ static void update_digital_face(void)
             lv_coord_t slot_w = 580 / 7;
             lv_coord_t x = (lv_coord_t)(i * slot_w + slot_w / 2);
 
-            if (s_ui.faces.digital_day_glow[i] != NULL) {
-                lv_obj_set_style_text_color(s_ui.faces.digital_day_glow[i], lv_color_hex(0x5CFB5C), 0);
-                lv_obj_set_style_text_opa(s_ui.faces.digital_day_glow[i], active ? 28 : 0, 0);
-                lv_obj_align(s_ui.faces.digital_day_glow[i],
+            if (ctx->faces.digital_day_glow[i] != NULL) {
+                lv_obj_set_style_text_color(ctx->faces.digital_day_glow[i], lv_color_hex(0x5CFB5C), 0);
+                lv_obj_set_style_text_opa(ctx->faces.digital_day_glow[i], active ? 28 : 0, 0);
+                lv_obj_align(ctx->faces.digital_day_glow[i],
                              LV_ALIGN_TOP_LEFT,
-                             x - lv_obj_get_width(s_ui.faces.digital_day_glow[i]) / 2,
+                             x - lv_obj_get_width(ctx->faces.digital_day_glow[i]) / 2,
                              s_digital_day_y_offsets[i]);
             }
-            lv_obj_set_style_text_color(s_ui.faces.digital_day_label[i],
+            lv_obj_set_style_text_color(ctx->faces.digital_day_label[i],
                                         active ? lv_color_hex(0x5CFB5C) : lv_color_hex(0x143C14),
                                         0);
-            lv_obj_set_style_text_opa(s_ui.faces.digital_day_label[i],
+            lv_obj_set_style_text_opa(ctx->faces.digital_day_label[i],
                                       active ? LV_OPA_COVER : LV_OPA_40,
                                       0);
-            lv_obj_align(s_ui.faces.digital_day_label[i],
+            lv_obj_align(ctx->faces.digital_day_label[i],
                          LV_ALIGN_TOP_LEFT,
-                         x - lv_obj_get_width(s_ui.faces.digital_day_label[i]) / 2,
+                         x - lv_obj_get_width(ctx->faces.digital_day_label[i]) / 2,
                          s_digital_day_y_offsets[i]);
         }
     }
 
-    s_ui.faces.digital_last_hour12 = (uint8_t)hour12;
-    s_ui.faces.digital_last_minute = (uint8_t)ti.tm_min;
-    s_ui.faces.digital_last_second = (uint8_t)ti.tm_sec;
-    s_ui.faces.digital_last_pm = is_pm;
-    s_ui.faces.digital_last_year = (int16_t)ti.tm_year;
-    s_ui.faces.digital_last_yday = (int16_t)ti.tm_yday;
-    s_ui.faces.digital_last_wday = (int8_t)ti.tm_wday;
-    s_ui.faces.digital_cache_valid = true;
+    ctx->faces.digital_last_hour12 = (uint8_t)hour12;
+    ctx->faces.digital_last_minute = (uint8_t)ti.tm_min;
+    ctx->faces.digital_last_second = (uint8_t)ti.tm_sec;
+    ctx->faces.digital_last_pm = is_pm;
+    ctx->faces.digital_last_year = (int16_t)ti.tm_year;
+    ctx->faces.digital_last_yday = (int16_t)ti.tm_yday;
+    ctx->faces.digital_last_wday = (int8_t)ti.tm_wday;
+    ctx->faces.digital_cache_valid = true;
 
     LV_UNUSED(content_changed);
 }
 
-void update_face(clock_face_id_t face)
+void update_face(clock_ui_context_t *ctx, clock_face_id_t face)
 {
+    face = sanitize_enabled_face(face);
+
     switch (face) {
     case CLOCK_FACE_DIGITAL:
-        update_digital_face();
+        update_digital_face(ctx);
         break;
     case CLOCK_FACE_MATRIX:
-        update_matrix_face();
+        update_matrix_face(ctx);
         break;
     case CLOCK_FACE_WHARTON:
-        update_wharton_face();
-        break;
-    case CLOCK_FACE_SLAVA:
-        update_slava_face();
-        break;
-    case CLOCK_FACE_SLAVA_DARK:
-        update_slava_dark_face();
+        update_wharton_face(ctx);
         break;
     case CLOCK_FACE_STERNGLAS:
-        update_sternglas_face();
+        update_sternglas_face(ctx);
         break;
     case CLOCK_FACE_AVENIR:
-        update_avenir_face();
+        update_avenir_face(ctx);
         break;
     case CLOCK_FACE_MODERN_SILVER:
-        update_modern_silver_face();
+        update_modern_silver_face(ctx);
         break;
     default:
-        update_digital_face();
+        update_digital_face(ctx);
         break;
     }
 }
 
-static void build_matrix_state(void)
+static void build_matrix_state(clock_ui_context_t *ctx)
 {
     struct tm ti = get_local_time_now();
     int digits[4] = {ti.tm_hour / 10, ti.tm_hour % 10, ti.tm_min / 10, ti.tm_min % 10};
 
-    memset(s_ui.faces.matrix_on, 0, sizeof(s_ui.faces.matrix_on));
+    memset(ctx->faces.matrix_on, 0, sizeof(ctx->faces.matrix_on));
 
     for (int d = 0; d < 4; ++d) {
         const uint8_t *glyph = s_matrix_font[digits[d]];
@@ -786,44 +744,44 @@ static void build_matrix_state(void)
         for (int r = 0; r < MTX_DIGIT_H; ++r) {
             for (int c = 0; c < 5; ++c) {
                 if ((glyph[r] >> (4 - c)) & 1U) {
-                    s_ui.faces.matrix_on[col0 + c][s_matrix_digit_row0 + r] = true;
+                    ctx->faces.matrix_on[col0 + c][s_matrix_digit_row0 + r] = true;
                 }
             }
         }
     }
 
     if ((ti.tm_sec & 1) == 0) {
-        s_ui.faces.matrix_on[s_matrix_colon_col][s_matrix_digit_row0 + 2] = true;
-        s_ui.faces.matrix_on[s_matrix_colon_col][s_matrix_digit_row0 + 4] = true;
+        ctx->faces.matrix_on[s_matrix_colon_col][s_matrix_digit_row0 + 2] = true;
+        ctx->faces.matrix_on[s_matrix_colon_col][s_matrix_digit_row0 + 4] = true;
     }
 }
 
-void create_matrix_face(lv_obj_t *parent)
+void create_matrix_face(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     int total_w = (MTX_GRID_X - 1) * MTX_PITCH + MTX_DOT_SIZE;
     int total_h = (MTX_GRID_Y - 1) * MTX_PITCH + MTX_DOT_SIZE;
 
     lv_obj_set_style_bg_color(parent, lv_color_hex(0x050505), 0);
-    s_ui.faces.matrix_x0 = (SCREEN_SIZE - total_w) / 2;
-    s_ui.faces.matrix_y0 = (SCREEN_SIZE - total_h) / 2;
+    ctx->faces.matrix_x0 = (SCREEN_SIZE - total_w) / 2;
+    ctx->faces.matrix_y0 = (SCREEN_SIZE - total_h) / 2;
 
-    if (s_ui.faces.matrix_face_buf == NULL) {
-        s_ui.faces.matrix_face_buf = heap_caps_malloc(SCREEN_SIZE * SCREEN_SIZE * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
+    if (ctx->faces.matrix_face_buf == NULL) {
+        ctx->faces.matrix_face_buf = heap_caps_malloc(SCREEN_SIZE * SCREEN_SIZE * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
     }
 
-    s_ui.faces.matrix_face_obj = lv_canvas_create(parent);
-    lv_canvas_set_buffer(s_ui.faces.matrix_face_obj, s_ui.faces.matrix_face_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565);
-    lv_obj_clear_flag(s_ui.faces.matrix_face_obj, LV_OBJ_FLAG_SCROLLABLE);
+    ctx->faces.matrix_face_obj = lv_canvas_create(parent);
+    lv_canvas_set_buffer(ctx->faces.matrix_face_obj, ctx->faces.matrix_face_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565);
+    lv_obj_clear_flag(ctx->faces.matrix_face_obj, LV_OBJ_FLAG_SCROLLABLE);
 }
 
-static void update_matrix_face(void)
+static void update_matrix_face(clock_ui_context_t *ctx)
 {
     lv_layer_t layer;
     lv_draw_rect_dsc_t dsc;
 
-    build_matrix_state();
-    lv_canvas_fill_bg(s_ui.faces.matrix_face_obj, lv_color_hex(0x050505), LV_OPA_COVER);
-    lv_canvas_init_layer(s_ui.faces.matrix_face_obj, &layer);
+    build_matrix_state(ctx);
+    lv_canvas_fill_bg(ctx->faces.matrix_face_obj, lv_color_hex(0x050505), LV_OPA_COVER);
+    lv_canvas_init_layer(ctx->faces.matrix_face_obj, &layer);
     lv_draw_rect_dsc_init(&dsc);
     dsc.radius = MTX_DOT_RAD;
     dsc.bg_opa = LV_OPA_COVER;
@@ -835,19 +793,19 @@ static void update_matrix_face(void)
         for (int r = 0; r < MTX_GRID_Y; ++r) {
             lv_area_t area;
 
-            area.x1 = s_ui.faces.matrix_x0 + c * MTX_PITCH;
-            area.y1 = s_ui.faces.matrix_y0 + r * MTX_PITCH;
+            area.x1 = ctx->faces.matrix_x0 + c * MTX_PITCH;
+            area.y1 = ctx->faces.matrix_y0 + r * MTX_PITCH;
             area.x2 = area.x1 + MTX_DOT_SIZE - 1;
             area.y2 = area.y1 + MTX_DOT_SIZE - 1;
-            dsc.bg_color = lv_color_hex(s_ui.faces.matrix_on[c][r] ? MTX_COL_ON : MTX_COL_OFF);
+            dsc.bg_color = lv_color_hex(ctx->faces.matrix_on[c][r] ? MTX_COL_ON : MTX_COL_OFF);
             lv_draw_rect(&layer, &dsc, &area);
         }
     }
 
-    lv_canvas_finish_layer(s_ui.faces.matrix_face_obj, &layer);
+    lv_canvas_finish_layer(ctx->faces.matrix_face_obj, &layer);
 }
 
-static void build_wharton_state(void)
+static void build_wharton_state(clock_ui_context_t *ctx)
 {
     struct tm ti = get_local_time_now();
     int digits[4] = {ti.tm_hour / 10, ti.tm_hour % 10, ti.tm_min / 10, ti.tm_min % 10};
@@ -856,29 +814,29 @@ static void build_wharton_state(void)
         const uint8_t *glyph = s_wharton_font[digits[d]];
         for (int r = 0; r < WH_DIGIT_ROWS; ++r) {
             for (int c = 0; c < WH_DIGIT_COLS; ++c) {
-                s_ui.faces.wharton_digit_dots[d][c][r] = ((glyph[r] >> (4 - c)) & 1U) != 0;
+                ctx->faces.wharton_digit_dots[d][c][r] = ((glyph[r] >> (4 - c)) & 1U) != 0;
             }
         }
     }
 
-    s_ui.faces.wharton_colon_on = ((ti.tm_sec & 1) == 0);
-    s_ui.faces.wharton_second_count = ti.tm_sec;
+    ctx->faces.wharton_colon_on = ((ti.tm_sec & 1) == 0);
+    ctx->faces.wharton_second_count = ti.tm_sec;
 }
 
-void create_wharton_face(lv_obj_t *parent)
+void create_wharton_face(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
 
-    if (s_ui.faces.wharton_face_buf == NULL) {
-        s_ui.faces.wharton_face_buf = heap_caps_malloc(SCREEN_SIZE * SCREEN_SIZE * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
+    if (ctx->faces.wharton_face_buf == NULL) {
+        ctx->faces.wharton_face_buf = heap_caps_malloc(SCREEN_SIZE * SCREEN_SIZE * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
     }
 
-    s_ui.faces.wharton_face_obj = lv_canvas_create(parent);
-    lv_canvas_set_buffer(s_ui.faces.wharton_face_obj, s_ui.faces.wharton_face_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565);
-    lv_obj_clear_flag(s_ui.faces.wharton_face_obj, LV_OBJ_FLAG_SCROLLABLE);
+    ctx->faces.wharton_face_obj = lv_canvas_create(parent);
+    lv_canvas_set_buffer(ctx->faces.wharton_face_obj, ctx->faces.wharton_face_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565);
+    lv_obj_clear_flag(ctx->faces.wharton_face_obj, LV_OBJ_FLAG_SCROLLABLE);
 }
 
-static void update_wharton_face(void)
+static void update_wharton_face(clock_ui_context_t *ctx)
 {
     lv_layer_t layer;
     lv_draw_rect_dsc_t dsc;
@@ -893,9 +851,9 @@ static void update_wharton_face(void)
     int digit_x[4];
     int colon_x;
 
-    build_wharton_state();
-    lv_canvas_fill_bg(s_ui.faces.wharton_face_obj, lv_color_black(), LV_OPA_COVER);
-    lv_canvas_init_layer(s_ui.faces.wharton_face_obj, &layer);
+    build_wharton_state(ctx);
+    lv_canvas_fill_bg(ctx->faces.wharton_face_obj, lv_color_black(), LV_OPA_COVER);
+    lv_canvas_init_layer(ctx->faces.wharton_face_obj, &layer);
     lv_draw_rect_dsc_init(&dsc);
     dsc.bg_opa = LV_OPA_COVER;
     dsc.border_width = 0;
@@ -906,7 +864,7 @@ static void update_wharton_face(void)
         float angle = (i * 6.0f - 90.0f) * (M_PI / 180.0f);
         int cx = CENTER + (int)(WH_RING_R * cosf(angle));
         int cy = CENTER + (int)(WH_RING_R * sinf(angle));
-        int radius = (i < s_ui.faces.wharton_second_count) ? WH_DOT_LIT_R : WH_DOT_DIM_R;
+        int radius = (i < ctx->faces.wharton_second_count) ? WH_DOT_LIT_R : WH_DOT_DIM_R;
         lv_area_t area;
 
         area.x1 = cx - radius;
@@ -914,7 +872,7 @@ static void update_wharton_face(void)
         area.x2 = cx + radius;
         area.y2 = cy + radius;
         dsc.radius = radius;
-        dsc.bg_color = lv_color_hex((i < s_ui.faces.wharton_second_count) ? WH_COL_ON : WH_COL_OFF);
+        dsc.bg_color = lv_color_hex((i < ctx->faces.wharton_second_count) ? WH_COL_ON : WH_COL_OFF);
         lv_draw_rect(&layer, &dsc, &area);
     }
 
@@ -941,13 +899,13 @@ static void update_wharton_face(void)
                 area.y1 = base_y + r * WH_DOT_PITCH;
                 area.x2 = area.x1 + WH_DOT_SZ - 1;
                 area.y2 = area.y1 + WH_DOT_SZ - 1;
-                dsc.bg_color = lv_color_hex(s_ui.faces.wharton_digit_dots[d][c][r] ? WH_COL_ON : WH_COL_OFF);
+                dsc.bg_color = lv_color_hex(ctx->faces.wharton_digit_dots[d][c][r] ? WH_COL_ON : WH_COL_OFF);
                 lv_draw_rect(&layer, &dsc, &area);
             }
         }
     }
 
-    dsc.bg_color = lv_color_hex(s_ui.faces.wharton_colon_on ? WH_COL_ON : WH_COL_OFF);
+    dsc.bg_color = lv_color_hex(ctx->faces.wharton_colon_on ? WH_COL_ON : WH_COL_OFF);
     for (int i = 0; i < 2; ++i) {
         lv_area_t area;
         int colon_y = base_y + ((i == 0) ? 2 : 4) * WH_DOT_PITCH;
@@ -958,194 +916,10 @@ static void update_wharton_face(void)
         lv_draw_rect(&layer, &dsc, &area);
     }
 
-    lv_canvas_finish_layer(s_ui.faces.wharton_face_obj, &layer);
+    lv_canvas_finish_layer(ctx->faces.wharton_face_obj, &layer);
 }
 
-static void draw_segment_bar(lv_layer_t *layer, int x1, int y1, int x2, int y2, bool on)
-{
-    lv_draw_line_dsc_t dsc;
-
-    lv_draw_line_dsc_init(&dsc);
-    dsc.round_start = 1;
-    dsc.round_end = 1;
-    dsc.p1.x = x1;
-    dsc.p1.y = y1;
-    dsc.p2.x = x2;
-    dsc.p2.y = y2;
-
-    if (on) {
-        dsc.color = lv_color_hex(SEG_COL_GLOW);
-        dsc.width = SEG_DIGIT_THICK + 18;
-        dsc.opa = LV_OPA_30;
-        lv_draw_line(layer, &dsc);
-
-        dsc.color = lv_color_hex(SEG_COL_ON);
-        dsc.width = SEG_DIGIT_THICK;
-        dsc.opa = LV_OPA_COVER;
-        lv_draw_line(layer, &dsc);
-
-        dsc.color = lv_color_hex(SEG_COL_HIGHLIGHT);
-        dsc.width = SEG_DIGIT_THICK / 3;
-        dsc.opa = LV_OPA_70;
-        lv_draw_line(layer, &dsc);
-    } else {
-        dsc.color = lv_color_hex(SEG_COL_OFF);
-        dsc.width = SEG_DIGIT_THICK;
-        dsc.opa = LV_OPA_80;
-        lv_draw_line(layer, &dsc);
-    }
-}
-
-static void draw_segment_colon_dot(lv_layer_t *layer, int cx, int cy, bool on)
-{
-    lv_draw_rect_dsc_t dsc;
-    lv_area_t area;
-    int glow_r = SEG_COLON_SIZE / 2 + 8;
-    int dot_r = SEG_COLON_SIZE / 2;
-
-    lv_draw_rect_dsc_init(&dsc);
-    dsc.bg_opa = LV_OPA_COVER;
-    dsc.border_width = 0;
-    dsc.shadow_width = 0;
-    dsc.outline_width = 0;
-
-    area.x1 = cx - glow_r;
-    area.y1 = cy - glow_r;
-    area.x2 = cx + glow_r;
-    area.y2 = cy + glow_r;
-    dsc.radius = glow_r;
-    dsc.bg_color = lv_color_hex(on ? SEG_COL_GLOW : SEG_COL_OFF);
-    dsc.bg_opa = on ? LV_OPA_20 : LV_OPA_60;
-    lv_draw_rect(layer, &dsc, &area);
-
-    area.x1 = cx - dot_r;
-    area.y1 = cy - dot_r;
-    area.x2 = cx + dot_r;
-    area.y2 = cy + dot_r;
-    dsc.radius = dot_r;
-    dsc.bg_color = lv_color_hex(on ? SEG_COL_ON : SEG_COL_OFF);
-    dsc.bg_opa = on ? LV_OPA_COVER : LV_OPA_80;
-    lv_draw_rect(layer, &dsc, &area);
-}
-
-static void draw_segment_digit(lv_layer_t *layer, int x, int y, uint8_t mask)
-{
-    int left = x;
-    int right = x + SEG_DIGIT_W;
-    int top = y;
-    int middle = y + SEG_DIGIT_H / 2;
-    int bottom = y + SEG_DIGIT_H;
-    int inner_left = x + SEG_DIGIT_THICK / 2;
-    int inner_right = x + SEG_DIGIT_W - SEG_DIGIT_THICK / 2;
-    int upper_top = y + SEG_DIGIT_THICK / 2 + 6;
-    int upper_bottom = middle - SEG_DIGIT_THICK / 2 - 6;
-    int lower_top = middle + SEG_DIGIT_THICK / 2 + 6;
-    int lower_bottom = bottom - SEG_DIGIT_THICK / 2 - 6;
-
-    draw_segment_bar(layer, inner_left, top, inner_right, top, (mask & 0x01U) != 0);
-    draw_segment_bar(layer, right, upper_top, right, upper_bottom, (mask & 0x02U) != 0);
-    draw_segment_bar(layer, right, lower_top, right, lower_bottom, (mask & 0x04U) != 0);
-    draw_segment_bar(layer, inner_left, bottom, inner_right, bottom, (mask & 0x08U) != 0);
-    draw_segment_bar(layer, left, lower_top, left, lower_bottom, (mask & 0x10U) != 0);
-    draw_segment_bar(layer, left, upper_top, left, upper_bottom, (mask & 0x20U) != 0);
-    draw_segment_bar(layer, inner_left, middle, inner_right, middle, (mask & 0x40U) != 0);
-}
-
-static void create_seven_segment_face(lv_obj_t *parent)
-{
-    lv_obj_set_style_bg_color(parent, lv_color_hex(0x020403), 0);
-    lv_obj_set_style_bg_grad_color(parent, lv_color_hex(0x0B1410), 0);
-    lv_obj_set_style_bg_grad_dir(parent, LV_GRAD_DIR_VER, 0);
-
-    s_ui.faces.segment_panel = lv_obj_create(parent);
-    lv_obj_set_size(s_ui.faces.segment_panel, SEG_PANEL_W, SEG_PANEL_H);
-    lv_obj_set_style_radius(s_ui.faces.segment_panel, 34, 0);
-    lv_obj_set_style_bg_color(s_ui.faces.segment_panel, lv_color_hex(SEG_PANEL_BG), 0);
-    lv_obj_set_style_bg_opa(s_ui.faces.segment_panel, LV_OPA_90, 0);
-    lv_obj_set_style_border_width(s_ui.faces.segment_panel, 2, 0);
-    lv_obj_set_style_border_color(s_ui.faces.segment_panel, lv_color_hex(0x1E6A44), 0);
-    lv_obj_set_style_shadow_width(s_ui.faces.segment_panel, 42, 0);
-    lv_obj_set_style_shadow_spread(s_ui.faces.segment_panel, 0, 0);
-    lv_obj_set_style_shadow_color(s_ui.faces.segment_panel, lv_color_hex(0x1D8D56), 0);
-    lv_obj_set_style_shadow_opa(s_ui.faces.segment_panel, LV_OPA_20, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.segment_panel, 0, 0);
-    lv_obj_set_style_outline_width(s_ui.faces.segment_panel, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.segment_panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(s_ui.faces.segment_panel, LV_ALIGN_CENTER, 0, -28);
-
-    if (s_ui.faces.segment_face_buf == NULL) {
-        s_ui.faces.segment_face_buf = heap_caps_malloc(SEG_CANVAS_W * SEG_CANVAS_H * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
-    }
-
-    s_ui.faces.segment_face_obj = lv_canvas_create(s_ui.faces.segment_panel);
-    lv_canvas_set_buffer(s_ui.faces.segment_face_obj, s_ui.faces.segment_face_buf, SEG_CANVAS_W, SEG_CANVAS_H, LV_COLOR_FORMAT_RGB565);
-    lv_obj_clear_flag(s_ui.faces.segment_face_obj, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_center(s_ui.faces.segment_face_obj);
-
-    s_ui.faces.segment_date_label = lv_label_create(parent);
-    lv_obj_set_style_text_font(s_ui.faces.segment_date_label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(s_ui.faces.segment_date_label, lv_color_hex(0x8FD7AF), 0);
-    lv_obj_set_style_text_letter_space(s_ui.faces.segment_date_label, 6, 0);
-    lv_label_set_text(s_ui.faces.segment_date_label, "--- -- ---");
-    lv_obj_align_to(s_ui.faces.segment_date_label, s_ui.faces.segment_panel, LV_ALIGN_OUT_BOTTOM_MID, 0, 24);
-}
-
-static void update_seven_segment_face(void)
-{
-    struct tm ti = get_local_time_now();
-    lv_layer_t layer;
-    lv_draw_rect_dsc_t frame_dsc;
-    char date_buf[32];
-    int digits[4] = {ti.tm_hour / 10, ti.tm_hour % 10, ti.tm_min / 10, ti.tm_min % 10};
-    int total_w = 4 * SEG_DIGIT_W + 2 * SEG_DIGIT_GAP + SEG_DIGIT_PAIR_GAP + 2 * SEG_COLON_GAP + SEG_COLON_SIZE;
-    int start_x = (SEG_CANVAS_W - total_w) / 2;
-    int y = (SEG_CANVAS_H - SEG_DIGIT_H) / 2;
-    int digit_x[4];
-    int colon_x;
-    lv_area_t frame_area = {
-        .x1 = 10,
-        .y1 = 10,
-        .x2 = SEG_CANVAS_W - 11,
-        .y2 = SEG_CANVAS_H - 11,
-    };
-
-    digit_x[0] = start_x;
-    digit_x[1] = digit_x[0] + SEG_DIGIT_W + SEG_DIGIT_GAP;
-    colon_x = digit_x[1] + SEG_DIGIT_W + SEG_COLON_GAP + SEG_COLON_SIZE / 2;
-    digit_x[2] = digit_x[1] + SEG_DIGIT_W + 2 * SEG_COLON_GAP + SEG_COLON_SIZE + SEG_DIGIT_PAIR_GAP;
-    digit_x[3] = digit_x[2] + SEG_DIGIT_W + SEG_DIGIT_GAP;
-
-    lv_canvas_fill_bg(s_ui.faces.segment_face_obj, lv_color_hex(SEG_CANVAS_BG), LV_OPA_COVER);
-    lv_canvas_init_layer(s_ui.faces.segment_face_obj, &layer);
-
-    lv_draw_rect_dsc_init(&frame_dsc);
-    frame_dsc.bg_opa = LV_OPA_TRANSP;
-    frame_dsc.border_width = 2;
-    frame_dsc.border_opa = LV_OPA_20;
-    frame_dsc.border_color = lv_color_hex(0x24553A);
-    frame_dsc.radius = 28;
-    frame_dsc.shadow_width = 0;
-    frame_dsc.outline_width = 0;
-    lv_draw_rect(&layer, &frame_dsc, &frame_area);
-
-    draw_segment_digit(&layer, digit_x[0], y, s_segment_font[digits[0]]);
-    draw_segment_digit(&layer, digit_x[1], y, s_segment_font[digits[1]]);
-    draw_segment_colon_dot(&layer, colon_x, y + SEG_DIGIT_H / 2 - 34, (ti.tm_sec & 1) == 0);
-    draw_segment_colon_dot(&layer, colon_x, y + SEG_DIGIT_H / 2 + 34, (ti.tm_sec & 1) == 0);
-    draw_segment_digit(&layer, digit_x[2], y, s_segment_font[digits[2]]);
-    draw_segment_digit(&layer, digit_x[3], y, s_segment_font[digits[3]]);
-
-    lv_canvas_finish_layer(s_ui.faces.segment_face_obj, &layer);
-
-    snprintf(date_buf, sizeof(date_buf), "%s %02d %s",
-             s_day_short[ti.tm_wday],
-             ti.tm_mday,
-             s_month_short[ti.tm_mon]);
-    lv_label_set_text(s_ui.faces.segment_date_label, date_buf);
-    lv_obj_align_to(s_ui.faces.segment_date_label, s_ui.faces.segment_panel, LV_ALIGN_OUT_BOTTOM_MID, 0, 24);
-}
-
-void create_sternglas_face(lv_obj_t *parent)
+void create_sternglas_face(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     lv_obj_t *root;
     lv_obj_t *dial_shadow;
@@ -1286,44 +1060,44 @@ void create_sternglas_face(lv_obj_t *parent)
     make_face_layer_passive(root);
     lv_obj_update_layout(root);
 
-    s_ui.faces.sternglas_snapshot_buf = lv_snapshot_create_draw_buf(root, LV_COLOR_FORMAT_RGB565);
-    if (s_ui.faces.sternglas_snapshot_buf != NULL &&
-        lv_snapshot_take_to_draw_buf(root, LV_COLOR_FORMAT_RGB565, s_ui.faces.sternglas_snapshot_buf) == LV_RESULT_OK) {
-        ext_draw = (lv_coord_t)((int32_t)s_ui.faces.sternglas_snapshot_buf->header.w - SCREEN_SIZE) / 2;
+    ctx->faces.sternglas_snapshot_buf = lv_snapshot_create_draw_buf(root, LV_COLOR_FORMAT_RGB565);
+    if (ctx->faces.sternglas_snapshot_buf != NULL &&
+        lv_snapshot_take_to_draw_buf(root, LV_COLOR_FORMAT_RGB565, ctx->faces.sternglas_snapshot_buf) == LV_RESULT_OK) {
+        ext_draw = (lv_coord_t)((int32_t)ctx->faces.sternglas_snapshot_buf->header.w - SCREEN_SIZE) / 2;
         if (ext_draw < 0) {
             ext_draw = 0;
         }
-        s_ui.faces.sternglas_snapshot_img = lv_image_create(parent);
-        lv_obj_set_style_bg_opa(s_ui.faces.sternglas_snapshot_img, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(s_ui.faces.sternglas_snapshot_img, 0, 0);
-        lv_obj_set_style_pad_all(s_ui.faces.sternglas_snapshot_img, 0, 0);
-        lv_obj_clear_flag(s_ui.faces.sternglas_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
-        lv_image_set_src(s_ui.faces.sternglas_snapshot_img, s_ui.faces.sternglas_snapshot_buf);
-        lv_obj_set_pos(s_ui.faces.sternglas_snapshot_img, -ext_draw, -ext_draw);
+        ctx->faces.sternglas_snapshot_img = lv_image_create(parent);
+        lv_obj_set_style_bg_opa(ctx->faces.sternglas_snapshot_img, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(ctx->faces.sternglas_snapshot_img, 0, 0);
+        lv_obj_set_style_pad_all(ctx->faces.sternglas_snapshot_img, 0, 0);
+        lv_obj_clear_flag(ctx->faces.sternglas_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
+        lv_image_set_src(ctx->faces.sternglas_snapshot_img, ctx->faces.sternglas_snapshot_buf);
+        lv_obj_set_pos(ctx->faces.sternglas_snapshot_img, -ext_draw, -ext_draw);
     }
 
     lv_obj_delete(root);
 
-    if (s_ui.faces.sternglas_hands_buf == NULL) {
-        s_ui.faces.sternglas_hands_buf = heap_caps_malloc(STERNGLAS_HANDS_CANVAS_SIZE * STERNGLAS_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
+    if (ctx->faces.sternglas_hands_buf == NULL) {
+        ctx->faces.sternglas_hands_buf = heap_caps_malloc(STERNGLAS_HANDS_CANVAS_SIZE * STERNGLAS_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
                                                           MALLOC_CAP_SPIRAM);
     }
-    s_ui.faces.sternglas_hands_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(s_ui.faces.sternglas_hands_canvas,
-                         s_ui.faces.sternglas_hands_buf,
+    ctx->faces.sternglas_hands_canvas = lv_canvas_create(parent);
+    lv_canvas_set_buffer(ctx->faces.sternglas_hands_canvas,
+                         ctx->faces.sternglas_hands_buf,
                          STERNGLAS_HANDS_CANVAS_SIZE,
                          STERNGLAS_HANDS_CANVAS_SIZE,
                          LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_style_bg_opa(s_ui.faces.sternglas_hands_canvas, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.sternglas_hands_canvas, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.sternglas_hands_canvas, 0, 0);
-    lv_obj_center(s_ui.faces.sternglas_hands_canvas);
-    s_ui.faces.sternglas_composite_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(s_ui.faces.sternglas_composite_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.sternglas_composite_img, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.sternglas_composite_img, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.sternglas_composite_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_ui.faces.sternglas_composite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_opa(ctx->faces.sternglas_hands_canvas, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.sternglas_hands_canvas, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.sternglas_hands_canvas, 0, 0);
+    lv_obj_center(ctx->faces.sternglas_hands_canvas);
+    ctx->faces.sternglas_composite_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(ctx->faces.sternglas_composite_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.sternglas_composite_img, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.sternglas_composite_img, 0, 0);
+    lv_obj_clear_flag(ctx->faces.sternglas_composite_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ctx->faces.sternglas_composite_img, LV_OBJ_FLAG_HIDDEN);
 }
 
 static void sternglas_transform_point(float x,
@@ -1383,7 +1157,7 @@ static void draw_sternglas_hand_polygon(lv_layer_t *layer,
     lv_draw_triangle(layer, &tri_dsc);
 }
 
-static void update_sternglas_face(void)
+static void update_sternglas_face(clock_ui_context_t *ctx)
 {
     struct tm ti = get_local_time_now();
     float hour_angle = ((ti.tm_hour % 12) + (ti.tm_min + ti.tm_sec / 60.0f) / 60.0f) * 30.0f;
@@ -1418,7 +1192,7 @@ static void update_sternglas_face(void)
     lv_point_precise_t hour_pts[5];
     lv_point_precise_t shadow_pts[5];
 
-    if (s_ui.faces.sternglas_hands_canvas == NULL) {
+    if (ctx->faces.sternglas_hands_canvas == NULL) {
         return;
     }
 
@@ -1429,8 +1203,8 @@ static void update_sternglas_face(void)
     translate_precise_points(min_pts, 5, -STERNGLAS_HANDS_CANVAS_OFFSET, -STERNGLAS_HANDS_CANVAS_OFFSET);
     translate_precise_points(hour_pts, 5, -STERNGLAS_HANDS_CANVAS_OFFSET, -STERNGLAS_HANDS_CANVAS_OFFSET);
 
-    lv_canvas_fill_bg(s_ui.faces.sternglas_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
-    lv_canvas_init_layer(s_ui.faces.sternglas_hands_canvas, &layer);
+    lv_canvas_fill_bg(ctx->faces.sternglas_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
+    lv_canvas_init_layer(ctx->faces.sternglas_hands_canvas, &layer);
 
     for (int layer_idx = 0; layer_idx < 3; ++layer_idx) {
         for (int i = 0; i < 5; ++i) {
@@ -1481,11 +1255,11 @@ static void update_sternglas_face(void)
                             .x2 = STERNGLAS_HANDS_CENTER_X + 4, .y2 = STERNGLAS_HANDS_CENTER_Y + 4};
     lv_draw_rect(&layer, &dot_dsc, &inner_area);
 
-    lv_canvas_finish_layer(s_ui.faces.sternglas_hands_canvas, &layer);
-    refresh_face_composite_snapshot(CLOCK_FACE_STERNGLAS,
-                                    s_ui.faces.sternglas_hands_canvas,
-                                    s_ui.faces.sternglas_composite_img,
-                                    &s_ui.faces.sternglas_composite_buf);
+    lv_canvas_finish_layer(ctx->faces.sternglas_hands_canvas, &layer);
+    refresh_face_composite_snapshot(ctx, CLOCK_FACE_STERNGLAS,
+                                    ctx->faces.sternglas_hands_canvas,
+                                    ctx->faces.sternglas_composite_img,
+                                    &ctx->faces.sternglas_composite_buf);
 }
 
 static void avenir_transform_point(float x,
@@ -1541,7 +1315,7 @@ static void draw_face_quad(lv_layer_t *layer,
     lv_draw_triangle(layer, &dsc);
 }
 
-void create_avenir_face(lv_obj_t *parent)
+void create_avenir_face(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     static const int s_numbers[12] = {12, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     lv_obj_t *root;
@@ -1627,47 +1401,47 @@ void create_avenir_face(lv_obj_t *parent)
     make_face_layer_passive(root);
     lv_obj_update_layout(root);
 
-    s_ui.faces.avenir_snapshot_buf = lv_snapshot_create_draw_buf(root, LV_COLOR_FORMAT_RGB565);
-    if (s_ui.faces.avenir_snapshot_buf != NULL &&
-        lv_snapshot_take_to_draw_buf(root, LV_COLOR_FORMAT_RGB565, s_ui.faces.avenir_snapshot_buf) == LV_RESULT_OK) {
-        ext_draw = (lv_coord_t)((int32_t)s_ui.faces.avenir_snapshot_buf->header.w - SCREEN_SIZE) / 2;
+    ctx->faces.avenir_snapshot_buf = lv_snapshot_create_draw_buf(root, LV_COLOR_FORMAT_RGB565);
+    if (ctx->faces.avenir_snapshot_buf != NULL &&
+        lv_snapshot_take_to_draw_buf(root, LV_COLOR_FORMAT_RGB565, ctx->faces.avenir_snapshot_buf) == LV_RESULT_OK) {
+        ext_draw = (lv_coord_t)((int32_t)ctx->faces.avenir_snapshot_buf->header.w - SCREEN_SIZE) / 2;
         if (ext_draw < 0) {
             ext_draw = 0;
         }
-        s_ui.faces.avenir_snapshot_img = lv_image_create(parent);
-        lv_obj_set_style_bg_opa(s_ui.faces.avenir_snapshot_img, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(s_ui.faces.avenir_snapshot_img, 0, 0);
-        lv_obj_set_style_pad_all(s_ui.faces.avenir_snapshot_img, 0, 0);
-        lv_obj_clear_flag(s_ui.faces.avenir_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
-        lv_image_set_src(s_ui.faces.avenir_snapshot_img, s_ui.faces.avenir_snapshot_buf);
-        lv_obj_set_pos(s_ui.faces.avenir_snapshot_img, -ext_draw, -ext_draw);
+        ctx->faces.avenir_snapshot_img = lv_image_create(parent);
+        lv_obj_set_style_bg_opa(ctx->faces.avenir_snapshot_img, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(ctx->faces.avenir_snapshot_img, 0, 0);
+        lv_obj_set_style_pad_all(ctx->faces.avenir_snapshot_img, 0, 0);
+        lv_obj_clear_flag(ctx->faces.avenir_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
+        lv_image_set_src(ctx->faces.avenir_snapshot_img, ctx->faces.avenir_snapshot_buf);
+        lv_obj_set_pos(ctx->faces.avenir_snapshot_img, -ext_draw, -ext_draw);
     }
 
     lv_obj_delete(root);
 
-    if (s_ui.faces.avenir_hands_buf == NULL) {
-        s_ui.faces.avenir_hands_buf = heap_caps_malloc(AVENIR_HANDS_CANVAS_SIZE * AVENIR_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
+    if (ctx->faces.avenir_hands_buf == NULL) {
+        ctx->faces.avenir_hands_buf = heap_caps_malloc(AVENIR_HANDS_CANVAS_SIZE * AVENIR_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
                                                        MALLOC_CAP_SPIRAM);
     }
-    s_ui.faces.avenir_hands_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(s_ui.faces.avenir_hands_canvas,
-                         s_ui.faces.avenir_hands_buf,
+    ctx->faces.avenir_hands_canvas = lv_canvas_create(parent);
+    lv_canvas_set_buffer(ctx->faces.avenir_hands_canvas,
+                         ctx->faces.avenir_hands_buf,
                          AVENIR_HANDS_CANVAS_SIZE,
                          AVENIR_HANDS_CANVAS_SIZE,
                          LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_style_bg_opa(s_ui.faces.avenir_hands_canvas, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.avenir_hands_canvas, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.avenir_hands_canvas, 0, 0);
-    lv_obj_center(s_ui.faces.avenir_hands_canvas);
-    s_ui.faces.avenir_composite_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(s_ui.faces.avenir_composite_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.avenir_composite_img, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.avenir_composite_img, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.avenir_composite_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_ui.faces.avenir_composite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_opa(ctx->faces.avenir_hands_canvas, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.avenir_hands_canvas, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.avenir_hands_canvas, 0, 0);
+    lv_obj_center(ctx->faces.avenir_hands_canvas);
+    ctx->faces.avenir_composite_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(ctx->faces.avenir_composite_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.avenir_composite_img, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.avenir_composite_img, 0, 0);
+    lv_obj_clear_flag(ctx->faces.avenir_composite_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ctx->faces.avenir_composite_img, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void update_avenir_face(void)
+static void update_avenir_face(clock_ui_context_t *ctx)
 {
     struct tm ti = get_local_time_now();
     float hour_angle = (ti.tm_hour % 12) * 30.0f + ti.tm_min * 0.5f;
@@ -1700,7 +1474,7 @@ static void update_avenir_face(void)
     lv_point_precise_t shadow_tri[3];
     lv_point_precise_t second_shadow_pts[2];
 
-    if (s_ui.faces.avenir_hands_canvas == NULL) {
+    if (ctx->faces.avenir_hands_canvas == NULL) {
         return;
     }
 
@@ -1714,8 +1488,8 @@ static void update_avenir_face(void)
     translate_precise_points(minute_pts, 3, -AVENIR_HANDS_CANVAS_OFFSET, -AVENIR_HANDS_CANVAS_OFFSET);
     translate_precise_points(second_pts, 2, -AVENIR_HANDS_CANVAS_OFFSET, -AVENIR_HANDS_CANVAS_OFFSET);
 
-    lv_canvas_fill_bg(s_ui.faces.avenir_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
-    lv_canvas_init_layer(s_ui.faces.avenir_hands_canvas, &layer);
+    lv_canvas_fill_bg(ctx->faces.avenir_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
+    lv_canvas_init_layer(ctx->faces.avenir_hands_canvas, &layer);
 
     for (int layer_idx = 0; layer_idx < 2; ++layer_idx) {
         for (int i = 0; i < 3; ++i) {
@@ -1782,11 +1556,11 @@ static void update_avenir_face(void)
     };
     lv_draw_rect(&layer, &dot_dsc, &pivot_area);
 
-    lv_canvas_finish_layer(s_ui.faces.avenir_hands_canvas, &layer);
-    refresh_face_composite_snapshot(CLOCK_FACE_AVENIR,
-                                    s_ui.faces.avenir_hands_canvas,
-                                    s_ui.faces.avenir_composite_img,
-                                    &s_ui.faces.avenir_composite_buf);
+    lv_canvas_finish_layer(ctx->faces.avenir_hands_canvas, &layer);
+    refresh_face_composite_snapshot(ctx, CLOCK_FACE_AVENIR,
+                                    ctx->faces.avenir_hands_canvas,
+                                    ctx->faces.avenir_composite_img,
+                                    &ctx->faces.avenir_composite_buf);
 }
 
 static void modern_transform_point(float x,
@@ -1804,7 +1578,7 @@ static void modern_transform_point(float x,
     out->y = modern_map_y(ry) + shadow_dy;
 }
 
-void create_modern_silver_face(lv_obj_t *parent)
+void create_modern_silver_face(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     lv_obj_t *root;
     lv_obj_t *outer_ring;
@@ -1877,47 +1651,47 @@ void create_modern_silver_face(lv_obj_t *parent)
     make_face_layer_passive(root);
     lv_obj_update_layout(root);
 
-    s_ui.faces.modern_silver_snapshot_buf = lv_snapshot_create_draw_buf(root, LV_COLOR_FORMAT_RGB565);
-    if (s_ui.faces.modern_silver_snapshot_buf != NULL &&
-        lv_snapshot_take_to_draw_buf(root, LV_COLOR_FORMAT_RGB565, s_ui.faces.modern_silver_snapshot_buf) == LV_RESULT_OK) {
-        ext_draw = (lv_coord_t)((int32_t)s_ui.faces.modern_silver_snapshot_buf->header.w - SCREEN_SIZE) / 2;
+    ctx->faces.modern_silver_snapshot_buf = lv_snapshot_create_draw_buf(root, LV_COLOR_FORMAT_RGB565);
+    if (ctx->faces.modern_silver_snapshot_buf != NULL &&
+        lv_snapshot_take_to_draw_buf(root, LV_COLOR_FORMAT_RGB565, ctx->faces.modern_silver_snapshot_buf) == LV_RESULT_OK) {
+        ext_draw = (lv_coord_t)((int32_t)ctx->faces.modern_silver_snapshot_buf->header.w - SCREEN_SIZE) / 2;
         if (ext_draw < 0) {
             ext_draw = 0;
         }
-        s_ui.faces.modern_silver_snapshot_img = lv_image_create(parent);
-        lv_obj_set_style_bg_opa(s_ui.faces.modern_silver_snapshot_img, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(s_ui.faces.modern_silver_snapshot_img, 0, 0);
-        lv_obj_set_style_pad_all(s_ui.faces.modern_silver_snapshot_img, 0, 0);
-        lv_obj_clear_flag(s_ui.faces.modern_silver_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
-        lv_image_set_src(s_ui.faces.modern_silver_snapshot_img, s_ui.faces.modern_silver_snapshot_buf);
-        lv_obj_set_pos(s_ui.faces.modern_silver_snapshot_img, -ext_draw, -ext_draw);
+        ctx->faces.modern_silver_snapshot_img = lv_image_create(parent);
+        lv_obj_set_style_bg_opa(ctx->faces.modern_silver_snapshot_img, LV_OPA_TRANSP, 0);
+        lv_obj_set_style_border_width(ctx->faces.modern_silver_snapshot_img, 0, 0);
+        lv_obj_set_style_pad_all(ctx->faces.modern_silver_snapshot_img, 0, 0);
+        lv_obj_clear_flag(ctx->faces.modern_silver_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
+        lv_image_set_src(ctx->faces.modern_silver_snapshot_img, ctx->faces.modern_silver_snapshot_buf);
+        lv_obj_set_pos(ctx->faces.modern_silver_snapshot_img, -ext_draw, -ext_draw);
     }
 
     lv_obj_delete(root);
 
-    if (s_ui.faces.modern_silver_hands_buf == NULL) {
-        s_ui.faces.modern_silver_hands_buf = heap_caps_malloc(MODERN_HANDS_CANVAS_SIZE * MODERN_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
+    if (ctx->faces.modern_silver_hands_buf == NULL) {
+        ctx->faces.modern_silver_hands_buf = heap_caps_malloc(MODERN_HANDS_CANVAS_SIZE * MODERN_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
                                                               MALLOC_CAP_SPIRAM);
     }
-    s_ui.faces.modern_silver_hands_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(s_ui.faces.modern_silver_hands_canvas,
-                         s_ui.faces.modern_silver_hands_buf,
+    ctx->faces.modern_silver_hands_canvas = lv_canvas_create(parent);
+    lv_canvas_set_buffer(ctx->faces.modern_silver_hands_canvas,
+                         ctx->faces.modern_silver_hands_buf,
                          MODERN_HANDS_CANVAS_SIZE,
                          MODERN_HANDS_CANVAS_SIZE,
                          LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_style_bg_opa(s_ui.faces.modern_silver_hands_canvas, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.modern_silver_hands_canvas, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.modern_silver_hands_canvas, 0, 0);
-    lv_obj_center(s_ui.faces.modern_silver_hands_canvas);
-    s_ui.faces.modern_silver_composite_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(s_ui.faces.modern_silver_composite_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(s_ui.faces.modern_silver_composite_img, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.modern_silver_composite_img, 0, 0);
-    lv_obj_clear_flag(s_ui.faces.modern_silver_composite_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(s_ui.faces.modern_silver_composite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_bg_opa(ctx->faces.modern_silver_hands_canvas, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.modern_silver_hands_canvas, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.modern_silver_hands_canvas, 0, 0);
+    lv_obj_center(ctx->faces.modern_silver_hands_canvas);
+    ctx->faces.modern_silver_composite_img = lv_image_create(parent);
+    lv_obj_set_style_bg_opa(ctx->faces.modern_silver_composite_img, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.modern_silver_composite_img, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.modern_silver_composite_img, 0, 0);
+    lv_obj_clear_flag(ctx->faces.modern_silver_composite_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ctx->faces.modern_silver_composite_img, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void update_modern_silver_face(void)
+static void update_modern_silver_face(clock_ui_context_t *ctx)
 {
     struct tm ti = get_local_time_now();
     float hour_angle = (ti.tm_hour % 12) * 30.0f + ti.tm_min * 0.5f;
@@ -1952,7 +1726,7 @@ static void update_modern_silver_face(void)
     lv_point_precise_t shadow_quad[4];
     lv_point_precise_t second_shadow_pts[2];
 
-    if (s_ui.faces.modern_silver_hands_canvas == NULL) {
+    if (ctx->faces.modern_silver_hands_canvas == NULL) {
         return;
     }
 
@@ -1966,8 +1740,8 @@ static void update_modern_silver_face(void)
     translate_precise_points(minute_pts, 4, -MODERN_HANDS_CANVAS_OFFSET, -MODERN_HANDS_CANVAS_OFFSET);
     translate_precise_points(second_pts, 2, -MODERN_HANDS_CANVAS_OFFSET, -MODERN_HANDS_CANVAS_OFFSET);
 
-    lv_canvas_fill_bg(s_ui.faces.modern_silver_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
-    lv_canvas_init_layer(s_ui.faces.modern_silver_hands_canvas, &layer);
+    lv_canvas_fill_bg(ctx->faces.modern_silver_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
+    lv_canvas_init_layer(ctx->faces.modern_silver_hands_canvas, &layer);
 
     for (int layer_idx = 0; layer_idx < 2; ++layer_idx) {
         for (int i = 0; i < 4; ++i) {
@@ -2035,107 +1809,9 @@ static void update_modern_silver_face(void)
     };
     lv_draw_rect(&layer, &dot_dsc, &pivot_area);
 
-    lv_canvas_finish_layer(s_ui.faces.modern_silver_hands_canvas, &layer);
-    refresh_face_composite_snapshot(CLOCK_FACE_MODERN_SILVER,
-                                    s_ui.faces.modern_silver_hands_canvas,
-                                    s_ui.faces.modern_silver_composite_img,
-                                    &s_ui.faces.modern_silver_composite_buf);
-}
-
-void create_slava_face(lv_obj_t *parent)
-{
-    lv_obj_t *face = lv_image_create(parent);
-
-    lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
-    lv_image_set_src(face, &slava_face_img);
-    lv_obj_center(face);
-
-    s_ui.faces.slava_line_hour = lv_line_create(parent);
-    lv_obj_set_style_line_width(s_ui.faces.slava_line_hour, 7, 0);
-    lv_obj_set_style_line_color(s_ui.faces.slava_line_hour, lv_color_hex(SLAVA_HAND_COL), 0);
-    lv_obj_set_style_line_rounded(s_ui.faces.slava_line_hour, true, 0);
-
-    s_ui.faces.slava_line_min = lv_line_create(parent);
-    lv_obj_set_style_line_width(s_ui.faces.slava_line_min, 5, 0);
-    lv_obj_set_style_line_color(s_ui.faces.slava_line_min, lv_color_hex(SLAVA_HAND_COL), 0);
-    lv_obj_set_style_line_rounded(s_ui.faces.slava_line_min, true, 0);
-
-    s_ui.faces.slava_line_sec = lv_line_create(parent);
-    lv_obj_set_style_line_width(s_ui.faces.slava_line_sec, 3, 0);
-    lv_obj_set_style_line_color(s_ui.faces.slava_line_sec, lv_color_hex(SLAVA_SEC_COL), 0);
-    lv_obj_set_style_line_rounded(s_ui.faces.slava_line_sec, true, 0);
-
-    s_ui.faces.slava_center_dot = lv_obj_create(parent);
-    lv_obj_set_size(s_ui.faces.slava_center_dot, 16, 16);
-    lv_obj_set_style_radius(s_ui.faces.slava_center_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(s_ui.faces.slava_center_dot, lv_color_hex(SLAVA_HAND_COL), 0);
-    lv_obj_set_style_border_width(s_ui.faces.slava_center_dot, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.slava_center_dot, 0, 0);
-    lv_obj_align(s_ui.faces.slava_center_dot, LV_ALIGN_CENTER, 0, 0);
-}
-
-static void update_slava_face(void)
-{
-    struct tm ti = get_local_time_now();
-    float hour_angle = ((ti.tm_hour % 12) + ti.tm_min / 60.0f) * 30.0f;
-    float min_angle = (ti.tm_min + ti.tm_sec / 60.0f) * 6.0f;
-    float sec_angle = ti.tm_sec * 6.0f;
-
-    hand_endpoint(CENTER, CENTER, SLAVA_HOUR_HAND_LEN, hour_angle, &s_ui.faces.slava_hour_pts[0], &s_ui.faces.slava_hour_pts[1]);
-    hand_endpoint(CENTER, CENTER, SLAVA_MIN_HAND_LEN, min_angle, &s_ui.faces.slava_min_pts[0], &s_ui.faces.slava_min_pts[1]);
-    hand_line_endpoints(CENTER, CENTER, SLAVA_SEC_TAIL_LEN, SLAVA_SEC_HAND_LEN, sec_angle,
-                        &s_ui.faces.slava_sec_pts[0], &s_ui.faces.slava_sec_pts[1]);
-
-    lv_line_set_points(s_ui.faces.slava_line_hour, s_ui.faces.slava_hour_pts, 2);
-    lv_line_set_points(s_ui.faces.slava_line_min, s_ui.faces.slava_min_pts, 2);
-    lv_line_set_points(s_ui.faces.slava_line_sec, s_ui.faces.slava_sec_pts, 2);
-}
-
-void create_slava_dark_face(lv_obj_t *parent)
-{
-    lv_obj_t *face = lv_image_create(parent);
-
-    lv_obj_set_style_bg_color(parent, lv_color_black(), 0);
-    lv_image_set_src(face, &slava_dark_face_img);
-    lv_obj_center(face);
-
-    s_ui.faces.slava_dark_line_hour = lv_line_create(parent);
-    lv_obj_set_style_line_width(s_ui.faces.slava_dark_line_hour, 7, 0);
-    lv_obj_set_style_line_color(s_ui.faces.slava_dark_line_hour, lv_color_hex(SLAVA_DARK_HAND_COL), 0);
-    lv_obj_set_style_line_rounded(s_ui.faces.slava_dark_line_hour, true, 0);
-
-    s_ui.faces.slava_dark_line_min = lv_line_create(parent);
-    lv_obj_set_style_line_width(s_ui.faces.slava_dark_line_min, 5, 0);
-    lv_obj_set_style_line_color(s_ui.faces.slava_dark_line_min, lv_color_hex(SLAVA_DARK_HAND_COL), 0);
-    lv_obj_set_style_line_rounded(s_ui.faces.slava_dark_line_min, true, 0);
-
-    s_ui.faces.slava_dark_line_sec = lv_line_create(parent);
-    lv_obj_set_style_line_width(s_ui.faces.slava_dark_line_sec, 3, 0);
-    lv_obj_set_style_line_color(s_ui.faces.slava_dark_line_sec, lv_color_hex(SLAVA_SEC_COL), 0);
-    lv_obj_set_style_line_rounded(s_ui.faces.slava_dark_line_sec, true, 0);
-
-    s_ui.faces.slava_dark_center_dot = lv_obj_create(parent);
-    lv_obj_set_size(s_ui.faces.slava_dark_center_dot, 16, 16);
-    lv_obj_set_style_radius(s_ui.faces.slava_dark_center_dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(s_ui.faces.slava_dark_center_dot, lv_color_hex(SLAVA_DARK_HAND_COL), 0);
-    lv_obj_set_style_border_width(s_ui.faces.slava_dark_center_dot, 0, 0);
-    lv_obj_set_style_pad_all(s_ui.faces.slava_dark_center_dot, 0, 0);
-    lv_obj_align(s_ui.faces.slava_dark_center_dot, LV_ALIGN_CENTER, 0, 0);
-}
-
-static void update_slava_dark_face(void)
-{
-    struct tm ti = get_local_time_now();
-    float hour_angle = ((ti.tm_hour % 12) + ti.tm_min / 60.0f) * 30.0f;
-    float min_angle = (ti.tm_min + ti.tm_sec / 60.0f) * 6.0f;
-    float sec_angle = ti.tm_sec * 6.0f;
-
-    hand_endpoint(CENTER, CENTER, SLAVA_HOUR_HAND_LEN, hour_angle, &s_ui.faces.slava_dark_hour_pts[0], &s_ui.faces.slava_dark_hour_pts[1]);
-    hand_endpoint(CENTER, CENTER, SLAVA_MIN_HAND_LEN, min_angle, &s_ui.faces.slava_dark_min_pts[0], &s_ui.faces.slava_dark_min_pts[1]);
-    hand_line_endpoints(CENTER, CENTER, SLAVA_SEC_TAIL_LEN, SLAVA_SEC_HAND_LEN, sec_angle,
-                        &s_ui.faces.slava_dark_sec_pts[0], &s_ui.faces.slava_dark_sec_pts[1]);
-
-    lv_line_set_points(s_ui.faces.slava_dark_line_hour, s_ui.faces.slava_dark_hour_pts, 2);
-    lv_line_set_points(s_ui.faces.slava_dark_line_min, s_ui.faces.slava_dark_min_pts, 2);
-    lv_line_set_points(s_ui.faces.slava_dark_line_sec, s_ui.faces.slava_dark_sec_pts, 2);
+    lv_canvas_finish_layer(ctx->faces.modern_silver_hands_canvas, &layer);
+    refresh_face_composite_snapshot(ctx, CLOCK_FACE_MODERN_SILVER,
+                                    ctx->faces.modern_silver_hands_canvas,
+                                    ctx->faces.modern_silver_composite_img,
+                                    &ctx->faces.modern_silver_composite_buf);
 }

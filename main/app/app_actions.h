@@ -14,18 +14,28 @@ typedef enum {
     APP_WIFI_COMMAND_SYNC,
 } app_wifi_command_type_t;
 
+typedef enum {
+    APP_EFFECT_NONE = 0,
+    APP_EFFECT_SETTINGS_CHANGED = 1U << 0,
+    APP_EFFECT_RUNTIME_CHANGED = 1U << 1,
+    APP_EFFECT_UI_REFRESH = 1U << 2,
+    APP_EFFECT_BRIGHTNESS_APPLY = 1U << 3,
+    APP_EFFECT_AUDIO_RECONCILE = 1U << 4,
+    APP_EFFECT_AUDIO_VOLUME = 1U << 5,
+    APP_EFFECT_WIFI_COMMAND = 1U << 6,
+} app_effect_flags_t;
+
 typedef struct {
-    bool settings_changed;
-    bool runtime_changed;
-    bool needs_save;
-    bool needs_ui_refresh;
-    bool needs_brightness_apply;
-    bool needs_audio_update;
-    bool needs_wifi_command;
+    uint32_t effects;
     app_wifi_command_type_t wifi_command;
     char wifi_ssid[33];
     char wifi_password[65];
 } app_action_result_t;
+
+static inline bool app_action_has_effect(const app_action_result_t *result, app_effect_flags_t effect)
+{
+    return result != NULL && (result->effects & (uint32_t)effect) != 0;
+}
 
 void app_action_result_init(app_action_result_t *result);
 app_action_result_t app_action_set_base_brightness(app_state_t *state, uint8_t hw_percent, time_t now);

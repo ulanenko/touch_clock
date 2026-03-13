@@ -137,21 +137,6 @@ static int fake_wifi_sync(void)
     return 0;
 }
 
-static uint32_t fake_wifi_get_scan_generation(void)
-{
-    return 0;
-}
-
-static size_t fake_wifi_get_scan_results(platform_wifi_scan_result_t *results, size_t max_results, uint32_t *generation)
-{
-    (void)results;
-    (void)max_results;
-    if (generation != NULL) {
-        *generation = 0;
-    }
-    return 0;
-}
-
 static int fake_display_set_brightness(uint8_t hw_percent)
 {
     g_env->display_set_calls += 1;
@@ -208,8 +193,6 @@ static const wifi_service_t s_wifi_service = {
     .connect = fake_wifi_connect,
     .forget = fake_wifi_forget,
     .request_sync = fake_wifi_sync,
-    .get_scan_generation = fake_wifi_get_scan_generation,
-    .get_scan_results = fake_wifi_get_scan_results,
 };
 
 static const display_service_t s_display_service = {
@@ -268,6 +251,7 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_TRUE(core.state.settings_dirty);
     EXPECT_EQ_INT(1100, core.state.save_deadline_ms);
     EXPECT_EQ_INT(1, env.display_set_calls);
+    EXPECT_EQ_INT(0, env.audio_set_volume_calls);
     EXPECT_EQ_INT(1, env.ui_refresh_calls);
     EXPECT_EQ_INT(77, env.brightness_value);
 
@@ -290,6 +274,18 @@ static int test_tick_and_save_debounce(void)
     env.monotonic_ms = 0;
     env.wifi_snapshot.time_synced = true;
     env.wifi_snapshot.alarm_ringing = true;
+    env.wifi_snapshot.wifi_scan_generation = 7;
+    env.wifi_snapshot.wifi_scan_count = 2;
+    snprintf(env.wifi_snapshot.wifi_scan_results[0].ssid,
+             sizeof(env.wifi_snapshot.wifi_scan_results[0].ssid),
+             "Office");
+    env.wifi_snapshot.wifi_scan_results[0].rssi = -48;
+    env.wifi_snapshot.wifi_scan_results[0].authmode = 3;
+    snprintf(env.wifi_snapshot.wifi_scan_results[1].ssid,
+             sizeof(env.wifi_snapshot.wifi_scan_results[1].ssid),
+             "Guest");
+    env.wifi_snapshot.wifi_scan_results[1].rssi = -67;
+    env.wifi_snapshot.wifi_scan_results[1].authmode = 0;
     core = make_core(&env);
 
     EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
@@ -304,6 +300,10 @@ static int test_tick_and_save_debounce(void)
     EXPECT_EQ_INT(1, env.audio_start_alarm_calls);
     EXPECT_EQ_INT(0, env.save_calls);
     EXPECT_EQ_INT(env.now, core.state.settings.last_synced_epoch);
+    EXPECT_EQ_INT(7, core.state.runtime.wifi_scan_generation);
+    EXPECT_EQ_INT(2, (int)core.state.runtime.wifi_scan_count);
+    EXPECT_STR_EQ("Office", core.state.runtime.wifi_scan_results[0].ssid);
+    EXPECT_EQ_INT(-48, core.state.runtime.wifi_scan_results[0].rssi);
 
     env.monotonic_ms = 2600;
     app_controller_core_tick(&core);
@@ -341,7 +341,7 @@ static int test_alarm_test_and_cancel_window(void)
     alarm_scheduler_tick(&core.state.runtime, &core.state.settings, now);
     result = app_action_cancel_next_alarm(&core.state, now);
     app_controller_core_arm_cancel_revert_window(&core, 2500);
-    EXPECT_TRUE(result.settings_changed);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
     EXPECT_TRUE(app_controller_core_cancel_revert_window_active(&core));
 
     env.monotonic_ms = 3000;
