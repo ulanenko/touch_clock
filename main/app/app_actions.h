@@ -58,6 +58,7 @@ app_action_result_t app_action_forget_wifi(app_state_t *state);
 app_action_result_t app_action_request_wifi_scan(app_state_t *state);
 app_action_result_t app_action_request_time_sync(app_state_t *state);
 app_action_result_t app_action_set_alarm_volume(app_state_t *state, uint8_t volume, time_t now);
+app_action_result_t app_action_set_ascending_alarm_enabled(app_state_t *state, bool enabled);
 app_action_result_t app_action_set_snooze_minutes(app_state_t *state, uint8_t minutes);
 app_action_result_t app_action_set_alarm_enabled(app_state_t *state, uint8_t index, bool enabled, time_t now);
 app_action_result_t app_action_save_alarm(app_state_t *state, uint8_t index, const alarm_config_t *alarm, time_t now);

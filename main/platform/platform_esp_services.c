@@ -47,6 +47,11 @@ static void esp_audio_set_volume(uint8_t volume)
     alarm_audio_set_volume(volume);
 }
 
+static void esp_audio_set_ascending_enabled(bool enabled)
+{
+    alarm_audio_set_ascending_enabled(enabled);
+}
+
 static int esp_audio_start_alarm(uint8_t volume)
 {
     return alarm_audio_start_alarm(volume);
@@ -126,6 +131,7 @@ static const clock_time_service_t s_clock_time_service = {
 static const audio_service_t s_audio_service = {
     .init = esp_audio_init,
     .set_volume = esp_audio_set_volume,
+    .set_ascending_enabled = esp_audio_set_ascending_enabled,
     .start_alarm = esp_audio_start_alarm,
     .start_test = esp_audio_start_test,
     .stop = esp_audio_stop,

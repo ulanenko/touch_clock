@@ -21,6 +21,7 @@
 #define SETTINGS_KEY_VERSION "ver"
 #define SETTINGS_KEY_BASE_BRIGHTNESS "base_bri"
 #define SETTINGS_KEY_ALARM_VOLUME "alarm_vol"
+#define SETTINGS_KEY_ASCENDING_ALARM "alarm_ramp"
 #define SETTINGS_KEY_SNOOZE "snooze"
 #define SETTINGS_KEY_CURRENT_FACE "face"
 #define SETTINGS_KEY_WIFI_SSID "wifi_ssid"
@@ -62,6 +63,11 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .key = SETTINGS_KEY_ALARM_VOLUME,
         .kind = SETTINGS_FIELD_U8,
         .offset = offsetof(app_settings_t, alarm_volume),
+    },
+    {
+        .key = SETTINGS_KEY_ASCENDING_ALARM,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, ascending_alarm_enabled),
     },
     {
         .key = SETTINGS_KEY_SNOOZE,

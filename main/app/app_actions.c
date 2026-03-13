@@ -296,6 +296,22 @@ app_action_result_t app_action_set_alarm_volume(app_state_t *state, uint8_t volu
     return result;
 }
 
+app_action_result_t app_action_set_ascending_alarm_enabled(app_state_t *state, bool enabled)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    enabled = enabled ? true : false;
+    if (state->settings.ascending_alarm_enabled == enabled) {
+        return result;
+    }
+
+    state->settings.ascending_alarm_enabled = enabled;
+    emit_settings_changed(&result);
+    add_effect(&result, APP_EFFECT_AUDIO_VOLUME);
+    return result;
+}
+
 app_action_result_t app_action_set_snooze_minutes(app_state_t *state, uint8_t minutes)
 {
     app_action_result_t result;

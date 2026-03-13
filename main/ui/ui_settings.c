@@ -325,7 +325,7 @@ void sync_night_controls(clock_ui_context_t *ctx)
         }
     }
 
-    brightness_ui = brightness_hw_to_ui(ctx->settings->night_mode.brightness);
+    brightness_ui = ctx->settings->night_mode.brightness;
     snprintf(brightness_label, sizeof(brightness_label), "%u%%", brightness_ui);
     settings_set_label_text_if_changed(ctx->settings_ui.night_brightness_dd, brightness_label);
     if (ctx->settings_ui.night_brightness_slider != NULL) {
@@ -1178,7 +1178,7 @@ static void night_brightness_slider_event_cb(lv_event_t *event)
     ui_value = lv_slider_get_value(lv_event_get_target(event));
     snprintf(brightness_label, sizeof(brightness_label), "%d%%", ui_value);
     settings_set_label_text_if_changed(ctx->settings_ui.night_brightness_dd, brightness_label);
-    request_set_night_brightness(ctx, brightness_ui_to_hw(ui_value));
+    request_set_night_brightness(ctx, (uint8_t)ui_value);
 }
 
 static void open_night_face_picker(clock_ui_context_t *ctx)

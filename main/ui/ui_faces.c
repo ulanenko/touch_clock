@@ -100,13 +100,14 @@ void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face)
 }
 
 static void refresh_face_composite_snapshot(clock_ui_context_t *ctx, clock_face_id_t face,
+                                            lv_obj_t *snapshot_img,
                                             lv_obj_t *hands_canvas,
                                             lv_obj_t *composite_img,
                                             lv_draw_buf_t **composite_buf)
 {
     lv_obj_t *tile;
 
-    if (hands_canvas == NULL || composite_img == NULL || composite_buf == NULL) {
+    if (snapshot_img == NULL || hands_canvas == NULL || composite_img == NULL || composite_buf == NULL) {
         return;
     }
 
@@ -115,6 +116,7 @@ static void refresh_face_composite_snapshot(clock_ui_context_t *ctx, clock_face_
         return;
     }
 
+    lv_obj_clear_flag(snapshot_img, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(hands_canvas, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(composite_img, LV_OBJ_FLAG_HIDDEN);
 
@@ -131,6 +133,7 @@ static void refresh_face_composite_snapshot(clock_ui_context_t *ctx, clock_face_
 
     lv_image_set_src(composite_img, *composite_buf);
     lv_obj_clear_flag(composite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(snapshot_img, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(hands_canvas, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -1257,6 +1260,7 @@ static void update_sternglas_face(clock_ui_context_t *ctx)
 
     lv_canvas_finish_layer(ctx->faces.sternglas_hands_canvas, &layer);
     refresh_face_composite_snapshot(ctx, CLOCK_FACE_STERNGLAS,
+                                    ctx->faces.sternglas_snapshot_img,
                                     ctx->faces.sternglas_hands_canvas,
                                     ctx->faces.sternglas_composite_img,
                                     &ctx->faces.sternglas_composite_buf);
@@ -1558,6 +1562,7 @@ static void update_avenir_face(clock_ui_context_t *ctx)
 
     lv_canvas_finish_layer(ctx->faces.avenir_hands_canvas, &layer);
     refresh_face_composite_snapshot(ctx, CLOCK_FACE_AVENIR,
+                                    ctx->faces.avenir_snapshot_img,
                                     ctx->faces.avenir_hands_canvas,
                                     ctx->faces.avenir_composite_img,
                                     &ctx->faces.avenir_composite_buf);
@@ -1811,6 +1816,7 @@ static void update_modern_silver_face(clock_ui_context_t *ctx)
 
     lv_canvas_finish_layer(ctx->faces.modern_silver_hands_canvas, &layer);
     refresh_face_composite_snapshot(ctx, CLOCK_FACE_MODERN_SILVER,
+                                    ctx->faces.modern_silver_snapshot_img,
                                     ctx->faces.modern_silver_hands_canvas,
                                     ctx->faces.modern_silver_composite_img,
                                     &ctx->faces.modern_silver_composite_buf);

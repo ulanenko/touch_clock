@@ -16,6 +16,7 @@ typedef struct {
 typedef struct {
     int (*init)(uint8_t volume);
     void (*set_volume)(uint8_t volume);
+    void (*set_ascending_enabled)(bool enabled);
     int (*start_alarm)(uint8_t volume);
     int (*start_test)(uint8_t volume);
     void (*stop)(void);

@@ -154,6 +154,14 @@ static void on_set_alarm_volume(void *user_ctx, uint8_t volume)
     app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
+static void on_set_ascending_alarm_enabled(void *user_ctx, bool enabled)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_ascending_alarm_enabled(&app->core.state, enabled);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
 static void on_set_snooze_minutes(void *user_ctx, uint8_t minutes)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -264,6 +272,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_set_night_schedule = on_set_night_schedule,
         .on_set_night_brightness = on_set_night_brightness,
         .on_set_alarm_volume = on_set_alarm_volume,
+        .on_set_ascending_alarm_enabled = on_set_ascending_alarm_enabled,
         .on_set_snooze_minutes = on_set_snooze_minutes,
         .on_set_alarm_enabled = on_set_alarm_enabled,
         .on_save_alarm = on_save_alarm,
@@ -292,13 +301,17 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
     app_controller_core_init(&s_app.core, &core_config);
 
     bsp_display_start_with_config(&display_cfg_copy);
-    bsp_display_backlight_on();
+    bsp_display_backlight_off();
 
     err = (esp_err_t)app_controller_core_bootstrap(&s_app.core, 1741500000);
     ESP_RETURN_ON_ERROR(err, TAG, "Failed to initialize controller core");
 
     ESP_RETURN_ON_ERROR(bsp_display_lock(1000), TAG, "Failed to lock display");
-    err = clock_ui_init(&s_app.core.state.settings, &s_app.core.state.runtime, &ui_callbacks, &s_app);
+    err = clock_ui_begin_boot(&s_app.core.state.settings, &s_app.core.state.runtime, &ui_callbacks, &s_app);
+    if (err == ESP_OK) {
+        bsp_display_backlight_on();
+        err = clock_ui_finish_boot();
+    }
     if (err == ESP_OK) {
         clock_ui_refresh();
     }
@@ -317,6 +330,8 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         clock_tick_cb(s_app.tick_timer);
         bsp_display_unlock();
     }
+
+    bsp_display_backlight_on();
 
     return ESP_OK;
 }

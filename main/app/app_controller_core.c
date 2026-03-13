@@ -28,21 +28,30 @@ static void mark_settings_dirty(app_controller_core_t *core)
 static void apply_runtime_brightness(app_controller_core_t *core)
 {
     uint8_t target_brightness;
+    uint8_t applied_brightness;
 
     if (core->config.display_service == NULL || core->config.display_service->set_brightness == NULL) {
         return;
     }
 
     target_brightness = core->state.runtime.effective_brightness;
-    if (core->state.applied_brightness == target_brightness) {
+    applied_brightness = target_brightness;
+    if (applied_brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
+        applied_brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    }
+    if (applied_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+        applied_brightness = DISPLAY_BRIGHTNESS_MAX_PERCENT;
+    }
+
+    if (core->state.applied_brightness == applied_brightness) {
         return;
     }
 
-    if (core->config.display_service->set_brightness(target_brightness) != 0) {
+    if (core->config.display_service->set_brightness(applied_brightness) != 0) {
         return;
     }
 
-    core->state.applied_brightness = target_brightness;
+    core->state.applied_brightness = applied_brightness;
 }
 
 static void maybe_save_settings(app_controller_core_t *core, bool force)
@@ -130,14 +139,19 @@ static void reconcile_alarm_audio(app_controller_core_t *core)
     }
 }
 
-static void apply_audio_volume(app_controller_core_t *core)
+static void apply_audio_preferences(app_controller_core_t *core)
 {
     const audio_service_t *audio = core->config.audio_service;
 
-    if (core->state.audio_available &&
-        audio != NULL &&
-        audio->set_volume != NULL) {
+    if (!core->state.audio_available || audio == NULL) {
+        return;
+    }
+
+    if (audio->set_volume != NULL) {
         audio->set_volume(core->state.settings.alarm_volume);
+    }
+    if (audio->set_ascending_enabled != NULL) {
+        audio->set_ascending_enabled(core->state.settings.ascending_alarm_enabled);
     }
 }
 
@@ -189,6 +203,9 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
     if (core->config.audio_service != NULL && core->config.audio_service->init != NULL) {
         if (core->config.audio_service->init(core->state.settings.alarm_volume) == 0) {
             core->state.audio_available = true;
+            if (core->config.audio_service->set_ascending_enabled != NULL) {
+                core->config.audio_service->set_ascending_enabled(core->state.settings.ascending_alarm_enabled);
+            }
         }
     }
 
@@ -216,7 +233,7 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
     }
 
     if (app_action_has_effect(result, APP_EFFECT_AUDIO_VOLUME)) {
-        apply_audio_volume(core);
+        apply_audio_preferences(core);
     }
 
     if (app_action_has_effect(result, APP_EFFECT_AUDIO_RECONCILE)) {

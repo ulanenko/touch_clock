@@ -105,6 +105,44 @@ void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now)
 #define ALARM_CARD_CLOSED_OFFSET (ALARM_CARD_DELETE_REVEAL / 2)
 #define ALARM_CARD_OPEN_SQUEEZE 28
 #define ALARM_CARD_ANIM_MS 180
+#define ALARM_MANAGEMENT_AUTO_CLOSE_MS 20000
+
+static void alarm_management_auto_close_pause(clock_ui_context_t *ctx)
+{
+    if (ctx->alarms.management_auto_close_timer == NULL) {
+        return;
+    }
+
+    lv_timer_pause(ctx->alarms.management_auto_close_timer);
+}
+
+static void alarm_management_auto_close_reset(clock_ui_context_t *ctx)
+{
+    if (ctx->alarms.management_auto_close_timer == NULL) {
+        return;
+    }
+
+    lv_timer_set_period(ctx->alarms.management_auto_close_timer, ALARM_MANAGEMENT_AUTO_CLOSE_MS);
+    lv_timer_resume(ctx->alarms.management_auto_close_timer);
+    lv_timer_reset(ctx->alarms.management_auto_close_timer);
+}
+
+static void alarm_management_auto_close_timer_cb(lv_timer_t *timer)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
+
+    if (ctx == NULL || !ctx->alarms.open || ctx->alarms.editor_open || ctx->alarms.settings_open) {
+        lv_timer_pause(timer);
+        return;
+    }
+
+    if (ctx->alarms.management_scrolling || ctx->alarms.close_dragging || ctx->alarms.list_swipe_dragging) {
+        alarm_management_auto_close_reset(ctx);
+        return;
+    }
+
+    alarm_management_close(ctx);
+}
 
 static void anim_alarm_card_width_cb(void *var, int32_t value)
 {
@@ -383,6 +421,7 @@ bool alarm_controls_need_sync(const clock_ui_context_t *ctx)
         ctx->alarms.cached_next_alarm_epoch != ctx->runtime->next_alarm_epoch ||
         ctx->alarms.cached_next_alarm_index != ctx->runtime->next_alarm_index ||
         ctx->alarms.cached_alarm_volume != ctx->settings->alarm_volume ||
+        ctx->alarms.cached_ascending_alarm_enabled != ctx->settings->ascending_alarm_enabled ||
         ctx->alarms.cached_snooze_minutes != ctx->settings->snooze_minutes ||
         ctx->alarms.cached_skipped_alarm_index != ctx->settings->skipped_alarm_index ||
         ctx->alarms.cached_skipped_alarm_epoch != ctx->settings->skipped_alarm_epoch) {
@@ -446,6 +485,7 @@ static void alarm_list_swipe_event_cb(lv_event_t *event)
 
     ctx = alarm_ctx->ui;
     lv_indev_get_point(indev, &point);
+    alarm_management_auto_close_reset(ctx);
 
     if (code == LV_EVENT_PRESSED) {
         ctx->alarms.list_swipe_dragging = true;
@@ -538,6 +578,12 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
 
     snprintf(volume, sizeof(volume), "%u%%", ctx->settings->alarm_volume);
     alarm_set_label_text_if_changed(ctx->alarms.manage_volume_label, volume);
+    if (ctx->alarms.manage_ascending_sw != NULL) {
+        ctx->suppress_events = true;
+        alarm_set_switch_checked_if_changed(ctx->alarms.manage_ascending_sw,
+                                            ctx->settings->ascending_alarm_enabled);
+        ctx->suppress_events = false;
+    }
     if (ctx->alarms.manage_test_btn != NULL) {
         alarm_set_button_text_if_changed(ctx->alarms.manage_test_btn,
                                          ctx->runtime->alarm_test_active ? "Stop test" : "Preview tone");
@@ -691,6 +737,7 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
     ctx->alarms.cached_next_alarm_epoch = ctx->runtime->next_alarm_epoch;
     ctx->alarms.cached_next_alarm_index = ctx->runtime->next_alarm_index;
     ctx->alarms.cached_alarm_volume = ctx->settings->alarm_volume;
+    ctx->alarms.cached_ascending_alarm_enabled = ctx->settings->ascending_alarm_enabled;
     ctx->alarms.cached_snooze_minutes = ctx->settings->snooze_minutes;
     ctx->alarms.cached_skipped_alarm_index = ctx->settings->skipped_alarm_index;
     ctx->alarms.cached_skipped_alarm_epoch = ctx->settings->skipped_alarm_epoch;
@@ -893,6 +940,7 @@ static void alarm_manage_snooze_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
     for (size_t i = 0; i < sizeof(options); ++i) {
         if (options[i] == ctx->settings->snooze_minutes) {
             current_index = i;
@@ -934,6 +982,7 @@ static void alarm_manage_snooze_decrease_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
     alarm_manage_snooze_step(ctx, -1);
 }
 
@@ -945,6 +994,7 @@ static void alarm_manage_snooze_increase_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
     alarm_manage_snooze_step(ctx, 1);
 }
 
@@ -960,7 +1010,21 @@ static void alarm_manage_volume_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
     request_set_alarm_volume(ctx, (uint8_t)lv_slider_get_value(lv_event_get_target(event)));
+    sync_alarm_controls(ctx);
+}
+
+static void alarm_manage_ascending_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+
+    if (ctx == NULL || ctx->suppress_events) {
+        return;
+    }
+
+    alarm_management_auto_close_reset(ctx);
+    request_set_ascending_alarm_enabled(ctx, lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
     sync_alarm_controls(ctx);
 }
 
@@ -972,6 +1036,7 @@ static void alarm_manage_test_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
     if (ctx->callbacks.on_alarm_test_requested != NULL) {
         ctx->callbacks.on_alarm_test_requested(ctx->user_ctx);
     }
@@ -990,6 +1055,7 @@ static void alarm_settings_entry_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_pause(ctx);
     ctx->alarms.settings_open = true;
     ctx->alarms.close_swipe_consumed = false;
     if (ctx->alarms.management_overlay != NULL) {
@@ -1014,6 +1080,7 @@ static void alarm_list_toggle_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
     request_set_alarm_enabled(ctx, alarm_ctx->alarm_index,
                               lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
     sync_alarm_controls(ctx);
@@ -1029,6 +1096,7 @@ static void alarm_list_delete_event_cb(lv_event_t *event)
     }
 
     ctx = alarm_ctx->ui;
+    alarm_management_auto_close_reset(ctx);
     close_alarm_delete_action(ctx, (int8_t)alarm_ctx->alarm_index);
     request_delete_alarm(ctx, alarm_ctx->alarm_index);
     sync_alarm_controls(ctx);
@@ -1192,6 +1260,7 @@ static void alarm_settings_close(clock_ui_context_t *ctx)
     if (ctx->alarms.open && ctx->alarms.management_overlay != NULL) {
         lv_obj_clear_flag(ctx->alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(ctx->alarms.management_overlay);
+        alarm_management_auto_close_reset(ctx);
     }
 }
 
@@ -1247,6 +1316,10 @@ static void alarm_close_swipe_event_cb(lv_event_t *event)
         return;
     }
 
+    if (ctx->alarms.open && !ctx->alarms.editor_open && !ctx->alarms.settings_open) {
+        alarm_management_auto_close_reset(ctx);
+    }
+
     if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
         ctx->alarms.close_dragging = false;
         ctx->alarms.close_swipe_consumed = false;
@@ -1292,6 +1365,7 @@ static void alarm_custom_create_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_pause(ctx);
     slot = find_alarm_slot_for_new_alarm(ctx);
     if (slot < 0 || slot >= MAX_ALARMS) {
         return;
@@ -1316,6 +1390,7 @@ void alarm_management_open(clock_ui_context_t *ctx)
     sync_alarm_controls(ctx);
     lv_obj_clear_flag(ctx->alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(ctx->alarms.management_overlay);
+    alarm_management_auto_close_reset(ctx);
     refresh_alarm_management_layout(ctx);
 }
 
@@ -1323,6 +1398,7 @@ void alarm_management_close(clock_ui_context_t *ctx)
 {
     close_alarm_delete_action(ctx, ctx->alarms.swipe_open_index);
     alarm_settings_close(ctx);
+    alarm_management_auto_close_pause(ctx);
     ctx->alarms.open = false;
     ctx->alarms.close_swipe_consumed = false;
     lv_obj_add_flag(ctx->alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -1364,6 +1440,8 @@ static void alarm_management_scroll_event_cb(lv_event_t *event)
         return;
     }
 
+    alarm_management_auto_close_reset(ctx);
+
     if (code == LV_EVENT_SCROLL_BEGIN || code == LV_EVENT_SCROLL) {
         ctx->alarms.management_scrolling = true;
         return;
@@ -1383,6 +1461,7 @@ void alarm_editor_close(clock_ui_context_t *ctx)
     if (ctx->alarms.open) {
         lv_obj_clear_flag(ctx->alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
         lv_obj_move_foreground(ctx->alarms.management_overlay);
+        alarm_management_auto_close_reset(ctx);
     } else {
         show_affordances_temporarily(ctx);
     }
@@ -1401,6 +1480,7 @@ void open_alarm_editor(clock_ui_context_t *ctx, uint8_t alarm_index, bool is_new
     localtime_r(&now, &now_tm);
 
     close_alarm_delete_action(ctx, ctx->alarms.swipe_open_index);
+    alarm_management_auto_close_pause(ctx);
     ctx->alarms.editor_index = (int8_t)alarm_index;
     ctx->alarms.editor_is_new = is_new;
     ctx->alarms.editor_open = true;
@@ -1637,6 +1717,10 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
                                   SETTINGS_CLOSE_EDGE_ZONE,
                                   alarm_close_swipe_event_cb,
                                   alarm_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
+    ctx->alarms.management_auto_close_timer = lv_timer_create(alarm_management_auto_close_timer_cb,
+                                                              ALARM_MANAGEMENT_AUTO_CLOSE_MS,
+                                                              ctx);
+    lv_timer_pause(ctx->alarms.management_auto_close_timer);
 }
 
 static lv_obj_t *create_alarm_settings_round_button(lv_obj_t *parent,
@@ -1751,6 +1835,38 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_text_font(ctx->alarms.manage_test_btn, &lv_font_montserrat_24, 0);
     lv_obj_set_style_pad_top(ctx->alarms.manage_test_btn, 0, 0);
     lv_obj_set_style_pad_bottom(ctx->alarms.manage_test_btn, 0, 0);
+
+    card = create_card(content);
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+
+    row = create_row(card);
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_t *text_col = lv_obj_create(row);
+    lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(text_col, 0, 0);
+    lv_obj_set_style_pad_all(text_col, 0, 0);
+    lv_obj_set_style_pad_row(text_col, 6, 0);
+    lv_obj_set_width(text_col, 360);
+    lv_obj_set_layout(text_col, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(text_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    label = lv_label_create(text_col);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_label_set_text(label, "Ascending alarm");
+
+    label = lv_label_create(text_col);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
+    lv_obj_set_style_text_line_space(label, 4, 0);
+    lv_label_set_text(label, "Start at 20% volume and ramp up over 1 minute.");
+
+    ctx->alarms.manage_ascending_sw = lv_switch_create(row);
+    style_alarm_switch(ctx->alarms.manage_ascending_sw);
+    lv_obj_add_event_cb(ctx->alarms.manage_ascending_sw, alarm_manage_ascending_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
 
     ui_surface_create_edge_sensor(ctx->alarms.settings_overlay,
                                   &ctx->alarms.settings_top_sensor,

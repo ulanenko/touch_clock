@@ -44,6 +44,7 @@
 #define SETTINGS_CLOSE_EDGE_ZONE 16
 #define SETTINGS_CLOSE_SWIPE_TRIGGER 26
 #define ALARM_CLOSE_BOTTOM_EDGE_ZONE 24
+#define BOOT_SPINNER_DOT_COUNT 12
 
 #define SETTINGS_PANEL_MARGIN 32
 #define SETTINGS_HEADER_HEIGHT 76
@@ -116,6 +117,14 @@ typedef struct {
 } ui_edge_ctx_t;
 
 typedef struct {
+    lv_obj_t *overlay;
+    lv_obj_t *title;
+    lv_obj_t *subtitle;
+    lv_obj_t *dots[BOOT_SPINNER_DOT_COUNT];
+    uint8_t phase;
+} clock_ui_boot_state_t;
+
+typedef struct {
     bool animating;
     bool dragging;
     bool drag_from_edge;
@@ -131,6 +140,8 @@ typedef struct {
     lv_obj_t *panel;
     lv_obj_t *slider;
     lv_obj_t *value;
+    lv_timer_t *overlay_auto_close_timer;
+    lv_timer_t *auto_close_timer;
     lv_obj_t *edge_sensor;
     lv_obj_t *drag_handle;
     lv_obj_t *pull_hint;
@@ -258,6 +269,7 @@ typedef struct {
     lv_obj_t *management_overlay;
     lv_obj_t *management_content;
     lv_obj_t *management_status;
+    lv_timer_t *management_auto_close_timer;
     lv_obj_t *management_card[MAX_ALARMS + 2];
     lv_obj_t *management_list;
     lv_obj_t *quick_create_row;
@@ -266,6 +278,7 @@ typedef struct {
     lv_obj_t *manage_snooze_btn;
     lv_obj_t *manage_volume_slider;
     lv_obj_t *manage_volume_label;
+    lv_obj_t *manage_ascending_sw;
     lv_obj_t *manage_test_btn;
     lv_obj_t *settings_overlay;
     lv_obj_t *settings_top_sensor;
@@ -304,6 +317,7 @@ typedef struct {
     time_t cached_next_alarm_epoch;
     time_t cached_skipped_alarm_epoch;
     bool banner_feedback_revertible;
+    bool cached_ascending_alarm_enabled;
     char banner_feedback_text[48];
     alarm_ctx_t alarm_ctx[MAX_ALARMS];
     alarm_day_ctx_t alarm_day_ctx[MAX_ALARMS][7];
@@ -416,6 +430,7 @@ typedef struct clock_ui_state_t {
     lv_obj_t *tiles[CLOCK_FACE_COUNT];
     lv_obj_t *page_dots[CLOCK_FACE_COUNT];
     lv_obj_t *settings_button;
+    clock_ui_boot_state_t boot;
     clock_ui_brightness_state_t brightness;
     clock_ui_settings_state_t settings_ui;
     clock_ui_alarm_state_t alarms;

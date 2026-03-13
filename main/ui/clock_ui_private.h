@@ -34,6 +34,7 @@ void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t end_minute);
 void request_set_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent);
 void request_set_alarm_volume(clock_ui_context_t *ctx, uint8_t volume);
+void request_set_ascending_alarm_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_snooze_minutes(clock_ui_context_t *ctx, uint8_t minutes);
 void request_set_alarm_enabled(clock_ui_context_t *ctx, uint8_t alarm_index, bool enabled);
 void request_save_alarm(clock_ui_context_t *ctx, uint8_t alarm_index, const alarm_config_t *alarm);

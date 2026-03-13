@@ -11,14 +11,14 @@ static clock_face_id_t default_night_face(void)
 
 void settings_policy_sanitize(app_settings_t *settings)
 {
-    if (settings->base_brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT ||
-        settings->base_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+    if (settings->base_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
         settings->base_brightness = 50;
     }
 
     if (settings->alarm_volume > 100) {
         settings->alarm_volume = 70;
     }
+    settings->ascending_alarm_enabled = settings->ascending_alarm_enabled ? true : false;
 
     if (settings->snooze_minutes < 1 || settings->snooze_minutes > 60) {
         settings->snooze_minutes = 10;
@@ -38,9 +38,8 @@ void settings_policy_sanitize(app_settings_t *settings)
         settings->night_mode.face = face_catalog_first_enabled();
     }
 
-    if (settings->night_mode.brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT ||
-        settings->night_mode.brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
-        settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    if (settings->night_mode.brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+        settings->night_mode.brightness = 0;
     }
     if (settings->night_mode.start_hour > 23) {
         settings->night_mode.start_hour = 22;
@@ -85,6 +84,7 @@ void settings_policy_set_defaults(app_settings_t *settings)
     memset(settings, 0, sizeof(*settings));
     settings->base_brightness = 50;
     settings->alarm_volume = 70;
+    settings->ascending_alarm_enabled = false;
     settings->snooze_minutes = 10;
     settings->current_face = face_catalog_default_face();
     settings->wifi.timezone_offset_hours = 0;
@@ -93,7 +93,7 @@ void settings_policy_set_defaults(app_settings_t *settings)
     settings->night_mode.start_minute = 0;
     settings->night_mode.end_hour = 7;
     settings->night_mode.end_minute = 0;
-    settings->night_mode.brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    settings->night_mode.brightness = 0;
     settings->night_mode.face = default_night_face();
     settings->skipped_alarm_index = -1;
 

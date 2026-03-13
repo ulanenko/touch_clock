@@ -13,10 +13,12 @@ typedef struct {
     int display_set_calls;
     int audio_init_calls;
     int audio_set_volume_calls;
+    int audio_set_ascending_calls;
     int audio_start_alarm_calls;
     int audio_start_test_calls;
     int audio_stop_calls;
     uint8_t audio_last_volume;
+    bool audio_ascending_enabled;
     bool alarm_active;
     bool test_active;
     int wifi_init_calls;
@@ -64,6 +66,12 @@ static void fake_audio_set_volume(uint8_t volume)
 {
     g_env->audio_set_volume_calls += 1;
     g_env->audio_last_volume = volume;
+}
+
+static void fake_audio_set_ascending_enabled(bool enabled)
+{
+    g_env->audio_set_ascending_calls += 1;
+    g_env->audio_ascending_enabled = enabled;
 }
 
 static int fake_audio_start_alarm(uint8_t volume)
@@ -179,6 +187,7 @@ static const clock_time_service_t s_clock_service = {
 static const audio_service_t s_audio_service = {
     .init = fake_audio_init,
     .set_volume = fake_audio_set_volume,
+    .set_ascending_enabled = fake_audio_set_ascending_enabled,
     .start_alarm = fake_audio_start_alarm,
     .start_test = fake_audio_start_test,
     .stop = fake_audio_stop,
@@ -242,6 +251,8 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, make_utc_time(2026, 3, 12, 7, 0, 0)));
     EXPECT_EQ_INT(1, env.load_calls);
     EXPECT_EQ_INT(1, env.audio_init_calls);
+    EXPECT_EQ_INT(1, env.audio_set_ascending_calls);
+    EXPECT_FALSE(env.audio_ascending_enabled);
     EXPECT_EQ_INT(1, env.wifi_init_calls);
     EXPECT_EQ_INT(2, env.applied_timezone);
     EXPECT_EQ_INT(env.stored_settings.last_synced_epoch, env.set_epoch_value);
@@ -254,6 +265,11 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_EQ_INT(0, env.audio_set_volume_calls);
     EXPECT_EQ_INT(1, env.ui_refresh_calls);
     EXPECT_EQ_INT(77, env.brightness_value);
+
+    result = app_action_set_ascending_alarm_enabled(&core.state, true);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(2, env.audio_set_ascending_calls);
+    EXPECT_TRUE(env.audio_ascending_enabled);
 
     result = app_action_request_wifi_scan(&core.state);
     app_controller_core_apply_action_result(&core, &result, env.now);
@@ -293,6 +309,7 @@ static int test_tick_and_save_debounce(void)
     result = app_action_set_alarm_volume(&core.state, 66, env.now);
     app_controller_core_apply_action_result(&core, &result, env.now);
     EXPECT_EQ_INT(1, env.audio_set_volume_calls);
+    EXPECT_EQ_INT(2, env.audio_set_ascending_calls);
     EXPECT_EQ_INT(0, env.save_calls);
 
     env.monotonic_ms = 1500;

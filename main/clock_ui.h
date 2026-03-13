@@ -25,6 +25,7 @@ typedef struct {
                                   uint8_t end_minute);
     void (*on_set_night_brightness)(void *user_ctx, uint8_t hw_percent);
     void (*on_set_alarm_volume)(void *user_ctx, uint8_t volume);
+    void (*on_set_ascending_alarm_enabled)(void *user_ctx, bool enabled);
     void (*on_set_snooze_minutes)(void *user_ctx, uint8_t minutes);
     void (*on_set_alarm_enabled)(void *user_ctx, uint8_t alarm_index, bool enabled);
     void (*on_save_alarm)(void *user_ctx, uint8_t alarm_index, const alarm_config_t *alarm);
@@ -36,9 +37,10 @@ typedef struct {
     void (*on_next_alarm_cancel_undo_requested)(void *user_ctx);
 } clock_ui_callbacks_t;
 
-esp_err_t clock_ui_init(const app_settings_t *settings,
-                        const app_runtime_state_t *runtime,
-                        const clock_ui_callbacks_t *callbacks,
-                        void *user_ctx);
+esp_err_t clock_ui_begin_boot(const app_settings_t *settings,
+                              const app_runtime_state_t *runtime,
+                              const clock_ui_callbacks_t *callbacks,
+                              void *user_ctx);
+esp_err_t clock_ui_finish_boot(void);
 void clock_ui_tick(time_t now);
 void clock_ui_refresh(void);
