@@ -45,6 +45,12 @@
 #define SETTINGS_CLOSE_SWIPE_TRIGGER 26
 #define ALARM_CLOSE_BOTTOM_EDGE_ZONE 24
 #define BOOT_SPINNER_DOT_COUNT 12
+#define FACE_THEME_SHEET_HEIGHT SCREEN_SIZE
+#define FACE_THEME_SHEET_OPEN_Y 0
+#define FACE_THEME_SHEET_CLOSED_Y (-FACE_THEME_SHEET_HEIGHT)
+#define FACE_THEME_SCRIM_OPA LV_OPA_70
+#define FACE_THEME_SHEET_SHOW_MS 140
+#define FACE_THEME_SHEET_HIDE_MS 110
 
 #define SETTINGS_PANEL_MARGIN 32
 #define SETTINGS_HEADER_HEIGHT 76
@@ -425,12 +431,23 @@ typedef struct {
 typedef struct {
     bool button_visible;
     bool overlay_open;
-    bool close_dragging;
+    bool animating;
+    bool dragging;
+    bool drag_from_face;
+    bool snapshot_visible;
+    bool snapshot_dirty;
+    bool target_open;
     clock_face_id_t picker_face;
     lv_timer_t *button_hide_timer;
-    lv_point_t close_drag_start_point;
+    lv_point_t drag_start_point;
+    int32_t drag_start_y;
     lv_obj_t *button;
     lv_obj_t *overlay;
+    lv_obj_t *panel;
+    lv_obj_t *snapshot_img;
+    lv_draw_buf_t *snapshot_buf;
+    lv_obj_t *drag_handle;
+    lv_obj_t *grabber;
     lv_obj_t *title;
     lv_obj_t *content;
     lv_obj_t *option_card[CLOCK_FACE_THEME_COUNT];

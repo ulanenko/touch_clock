@@ -354,11 +354,16 @@ void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face)
 {
     bool brightness_overlay_visible = ctx->brightness.overlay != NULL &&
                                       !lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+    bool face_theme_overlay_visible = ctx->face_theme.overlay != NULL &&
+                                      !lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
     bool keep_digital_live = face == CLOCK_FACE_DIGITAL &&
                              !ctx->faces.tileview_scrolling &&
                              !ctx->brightness.animating &&
                              !ctx->brightness.dragging &&
                              !brightness_overlay_visible &&
+                             !ctx->face_theme.animating &&
+                             !ctx->face_theme.dragging &&
+                             !face_theme_overlay_visible &&
                              !brightness_panel_is_open(ctx);
 
     if (keep_digital_live) {
