@@ -158,6 +158,21 @@ app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_i
     return result;
 }
 
+app_action_result_t app_action_set_face_theme(app_state_t *state, clock_face_id_t face, uint8_t theme)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    if (!face_catalog_is_valid(face) || state->settings.face_themes[face] == theme) {
+        return result;
+    }
+
+    state->settings.face_themes[face] = theme;
+    settings_policy_sanitize(&state->settings);
+    emit_settings_changed(&result);
+    return result;
+}
+
 app_action_result_t app_action_set_night_face(app_state_t *state, clock_face_id_t face)
 {
     app_action_result_t result;

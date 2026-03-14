@@ -280,6 +280,13 @@ void request_set_current_face(clock_ui_context_t *ctx, clock_face_id_t face)
     }
 }
 
+void request_set_face_theme(clock_ui_context_t *ctx, clock_face_id_t face, uint8_t theme)
+{
+    if (ctx->callbacks.on_set_face_theme != NULL) {
+        ctx->callbacks.on_set_face_theme(ctx->user_ctx, face, theme);
+    }
+}
+
 void request_set_night_face(clock_ui_context_t *ctx, clock_face_id_t face)
 {
     if (ctx->callbacks.on_set_night_face != NULL) {
@@ -383,6 +390,14 @@ void set_root_ui_hidden(clock_ui_context_t *ctx, bool hidden)
             lv_obj_add_flag(ctx->settings_button, LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_clear_flag(ctx->settings_button, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+
+    if (ctx->face_theme.button != NULL) {
+        if (hidden) {
+            lv_obj_add_flag(ctx->face_theme.button, LV_OBJ_FLAG_HIDDEN);
+        } else if (ctx->face_theme.button_visible) {
+            lv_obj_clear_flag(ctx->face_theme.button, LV_OBJ_FLAG_HIDDEN);
         }
     }
 
@@ -642,7 +657,8 @@ void clock_ui_tick(time_t now)
     bool opaque_menu_open = ctx->settings_ui.open ||
                             ctx->alarms.open ||
                             ctx->alarms.editor_open ||
-                            ctx->alarms.settings_open;
+                            ctx->alarms.settings_open ||
+                            ctx->face_theme.overlay_open;
 
     if (tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)) != desired_face) {
         set_active_face(ctx, desired_face, LV_ANIM_OFF);

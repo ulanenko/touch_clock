@@ -257,6 +257,7 @@ static int test_fresh_defaults(void)
     EXPECT_EQ_INT(50, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
     EXPECT_FALSE(settings.ascending_alarm_enabled);
+    EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     return 0;
 }
@@ -275,6 +276,8 @@ static int test_v5_round_trip(void)
     saved.ascending_alarm_enabled = true;
     saved.snooze_minutes = 12;
     saved.current_face = CLOCK_FACE_MATRIX;
+    saved.face_themes[CLOCK_FACE_DIGITAL] = 1;
+    saved.face_themes[CLOCK_FACE_STERNGLAS] = 1;
     snprintf(saved.wifi.ssid, sizeof(saved.wifi.ssid), "Office");
     snprintf(saved.wifi.password, sizeof(saved.wifi.password), "secret");
     saved.wifi.timezone_offset_hours = 3;
@@ -293,6 +296,7 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(find_entry(&store, "alarm_ramp") != NULL);
     EXPECT_TRUE(find_entry(&store, "snooze") != NULL);
     EXPECT_TRUE(find_entry(&store, "face") != NULL);
+    EXPECT_TRUE(find_entry(&store, "face_themes") != NULL);
     EXPECT_TRUE(find_entry(&store, "wifi_ssid") != NULL);
     EXPECT_TRUE(find_entry(&store, "wifi_pass") != NULL);
     EXPECT_TRUE(find_entry(&store, "tz") != NULL);
@@ -305,6 +309,8 @@ static int test_v5_round_trip(void)
     EXPECT_EQ_INT(61, loaded.alarm_volume);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MATRIX, loaded.current_face);
+    EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_DIGITAL]);
+    EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_STERNGLAS]);
     EXPECT_STR_EQ("Office", loaded.wifi.ssid);
     EXPECT_EQ_INT(3, loaded.wifi.timezone_offset_hours);
     EXPECT_TRUE(loaded.night_mode.enabled);
@@ -330,6 +336,7 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
     EXPECT_EQ_INT(0, loaded.base_brightness);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.current_face);
+    EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_EQ_INT(5, loaded.version);
@@ -353,6 +360,7 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(0, loaded.base_brightness);
     EXPECT_EQ_INT(70, loaded.alarm_volume);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
+    EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     return 0;

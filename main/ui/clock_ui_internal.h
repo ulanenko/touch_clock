@@ -113,6 +113,12 @@ typedef struct {
 
 typedef struct {
     struct clock_ui_state_t *ui;
+    clock_face_id_t face;
+    uint8_t theme;
+} face_theme_option_ctx_t;
+
+typedef struct {
+    struct clock_ui_state_t *ui;
     ui_surface_edge_t edge;
 } ui_edge_ctx_t;
 
@@ -382,18 +388,21 @@ typedef struct {
     lv_obj_t *sternglas_center_inner_dot;
     lv_obj_t *sternglas_snapshot_img;
     lv_draw_buf_t *sternglas_snapshot_buf;
+    uint8_t sternglas_snapshot_theme;
     lv_obj_t *sternglas_composite_img;
     lv_draw_buf_t *sternglas_composite_buf;
     lv_obj_t *sternglas_hands_canvas;
     void *sternglas_hands_buf;
     lv_obj_t *avenir_snapshot_img;
     lv_draw_buf_t *avenir_snapshot_buf;
+    uint8_t avenir_snapshot_theme;
     lv_obj_t *avenir_composite_img;
     lv_draw_buf_t *avenir_composite_buf;
     lv_obj_t *avenir_hands_canvas;
     void *avenir_hands_buf;
     lv_obj_t *modern_silver_snapshot_img;
     lv_draw_buf_t *modern_silver_snapshot_buf;
+    uint8_t modern_silver_snapshot_theme;
     lv_obj_t *modern_silver_composite_img;
     lv_draw_buf_t *modern_silver_composite_buf;
     lv_obj_t *modern_silver_hands_canvas;
@@ -412,6 +421,23 @@ typedef struct {
     bool face_swipe_tracking;
     lv_point_t face_swipe_start_point;
 } clock_ui_face_state_t;
+
+typedef struct {
+    bool button_visible;
+    bool overlay_open;
+    bool close_dragging;
+    clock_face_id_t picker_face;
+    lv_timer_t *button_hide_timer;
+    lv_point_t close_drag_start_point;
+    lv_obj_t *button;
+    lv_obj_t *overlay;
+    lv_obj_t *title;
+    lv_obj_t *content;
+    lv_obj_t *option_card[CLOCK_FACE_THEME_COUNT];
+    lv_obj_t *option_title[CLOCK_FACE_THEME_COUNT];
+    lv_obj_t *option_swatches[CLOCK_FACE_THEME_COUNT][3];
+    face_theme_option_ctx_t option_ctx[CLOCK_FACE_THEME_COUNT];
+} clock_ui_face_theme_state_t;
 
 typedef struct clock_ui_state_t {
     const app_settings_t *settings;
@@ -435,6 +461,7 @@ typedef struct clock_ui_state_t {
     clock_ui_settings_state_t settings_ui;
     clock_ui_alarm_state_t alarms;
     clock_ui_face_state_t faces;
+    clock_ui_face_theme_state_t face_theme;
 } clock_ui_state_t;
 
 typedef clock_ui_state_t clock_ui_context_t;

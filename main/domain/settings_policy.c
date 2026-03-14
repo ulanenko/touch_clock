@@ -30,6 +30,11 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (!face_catalog_is_enabled(settings->current_face)) {
         settings->current_face = face_catalog_first_enabled();
     }
+    for (size_t i = 0; i < CLOCK_FACE_COUNT; ++i) {
+        if (settings->face_themes[i] >= CLOCK_FACE_THEME_COUNT) {
+            settings->face_themes[i] = 0;
+        }
+    }
 
     if (!face_catalog_is_valid(settings->night_mode.face)) {
         settings->night_mode.face = default_night_face();

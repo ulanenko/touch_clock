@@ -24,6 +24,7 @@
 #define SETTINGS_KEY_ASCENDING_ALARM "alarm_ramp"
 #define SETTINGS_KEY_SNOOZE "snooze"
 #define SETTINGS_KEY_CURRENT_FACE "face"
+#define SETTINGS_KEY_FACE_THEMES "face_themes"
 #define SETTINGS_KEY_WIFI_SSID "wifi_ssid"
 #define SETTINGS_KEY_WIFI_PASSWORD "wifi_pass"
 #define SETTINGS_KEY_TIMEZONE "tz"
@@ -249,6 +250,18 @@ static esp_err_t load_v5_settings(const app_settings_storage_t *storage, app_set
         alarms_size != sizeof(settings->alarms)) {
         memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
     }
+    {
+        size_t face_themes_size = sizeof(settings->face_themes);
+
+        if (storage->get_blob == NULL ||
+            storage->get_blob(storage->ctx,
+                              SETTINGS_KEY_FACE_THEMES,
+                              settings->face_themes,
+                              &face_themes_size) != ESP_OK ||
+            face_themes_size != sizeof(settings->face_themes)) {
+            memcpy(settings->face_themes, defaults.face_themes, sizeof(settings->face_themes));
+        }
+    }
 
     settings_policy_sanitize(settings);
     settings->version = SETTINGS_VERSION_V5;
@@ -329,6 +342,12 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
     }
     if (err == ESP_OK) {
         err = storage->set_blob(storage->ctx, SETTINGS_KEY_ALARMS, copy.alarms, sizeof(copy.alarms));
+    }
+    if (err == ESP_OK) {
+        err = storage->set_blob(storage->ctx,
+                                SETTINGS_KEY_FACE_THEMES,
+                                copy.face_themes,
+                                sizeof(copy.face_themes));
     }
     if (err == ESP_OK || err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
         err = storage->erase_key(storage->ctx, SETTINGS_KEY_LEGACY_BLOB);

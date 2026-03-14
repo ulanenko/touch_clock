@@ -15,6 +15,7 @@ static int test_defaults(void)
     EXPECT_FALSE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(10, settings.snooze_minutes);
     EXPECT_TRUE(face_catalog_is_enabled(settings.current_face));
+    EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_TRUE(face_catalog_is_enabled(settings.night_mode.face));
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     EXPECT_EQ_INT(0, settings.wifi.timezone_offset_hours);
@@ -30,6 +31,7 @@ static int test_sanitize_invalid_values(void)
     settings.alarm_volume = 255;
     settings.snooze_minutes = 0;
     settings.current_face = CLOCK_FACE_SLAVA_DARK;
+    settings.face_themes[CLOCK_FACE_DIGITAL] = 99;
     settings.night_mode.face = CLOCK_FACE_SLAVA;
     settings.night_mode.brightness = 255;
     settings.night_mode.start_hour = 255;
@@ -49,6 +51,7 @@ static int test_sanitize_invalid_values(void)
     EXPECT_TRUE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(10, settings.snooze_minutes);
     EXPECT_EQ_INT(face_catalog_first_enabled(), settings.current_face);
+    EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(face_catalog_first_enabled(), settings.night_mode.face);
     EXPECT_EQ_INT(0, settings.night_mode.brightness);
     EXPECT_EQ_INT(22, settings.night_mode.start_hour);

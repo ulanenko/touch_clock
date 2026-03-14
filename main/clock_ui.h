@@ -11,6 +11,7 @@ typedef struct {
     void (*on_set_base_brightness)(void *user_ctx, uint8_t hw_percent);
     void (*on_set_runtime_night_brightness)(void *user_ctx, uint8_t hw_percent);
     void (*on_set_current_face)(void *user_ctx, clock_face_id_t face);
+    void (*on_set_face_theme)(void *user_ctx, clock_face_id_t face, uint8_t theme);
     void (*on_set_night_face)(void *user_ctx, clock_face_id_t face);
     void (*on_set_timezone)(void *user_ctx, int8_t utc_offset_hours);
     void (*on_save_wifi_credentials)(void *user_ctx, const char *ssid, const char *password);

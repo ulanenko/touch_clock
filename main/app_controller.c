@@ -60,6 +60,14 @@ static void on_set_current_face(void *user_ctx, clock_face_id_t face)
     app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
+static void on_set_face_theme(void *user_ctx, clock_face_id_t face, uint8_t theme)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_face_theme(&app->core.state, face, theme);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
 static void on_set_night_face(void *user_ctx, clock_face_id_t face)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -262,6 +270,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_set_base_brightness = on_set_base_brightness,
         .on_set_runtime_night_brightness = on_set_runtime_night_brightness,
         .on_set_current_face = on_set_current_face,
+        .on_set_face_theme = on_set_face_theme,
         .on_set_night_face = on_set_night_face,
         .on_set_timezone = on_set_timezone,
         .on_save_wifi_credentials = on_save_wifi_credentials,

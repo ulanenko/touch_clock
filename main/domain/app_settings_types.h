@@ -12,6 +12,7 @@ typedef struct {
     bool ascending_alarm_enabled;
     uint8_t snooze_minutes;
     clock_face_id_t current_face;
+    uint8_t face_themes[CLOCK_FACE_COUNT];
     wifi_settings_t wifi;
     night_mode_config_t night_mode;
     alarm_config_t alarms[MAX_ALARMS];
