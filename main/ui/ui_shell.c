@@ -79,6 +79,50 @@ static void face_theme_set_snapshot_visible(clock_ui_context_t *ctx, bool visibl
     ctx->face_theme.snapshot_visible = visible;
 }
 
+#define FACE_THEME_AUTO_CLOSE_MS 10000
+
+static void face_theme_auto_close_pause(clock_ui_context_t *ctx)
+{
+    if (ctx == NULL || ctx->face_theme.auto_close_timer == NULL) {
+        return;
+    }
+
+    lv_timer_pause(ctx->face_theme.auto_close_timer);
+}
+
+static void face_theme_auto_close_reset(clock_ui_context_t *ctx)
+{
+    if (ctx == NULL ||
+        ctx->face_theme.auto_close_timer == NULL ||
+        ctx->face_theme.overlay == NULL ||
+        lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+
+    lv_timer_set_period(ctx->face_theme.auto_close_timer, FACE_THEME_AUTO_CLOSE_MS);
+    lv_timer_resume(ctx->face_theme.auto_close_timer);
+    lv_timer_reset(ctx->face_theme.auto_close_timer);
+}
+
+static void face_theme_auto_close_timer_cb(lv_timer_t *timer)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
+
+    if (ctx == NULL ||
+        ctx->face_theme.overlay == NULL ||
+        lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN)) {
+        lv_timer_pause(timer);
+        return;
+    }
+
+    if (ctx->face_theme.dragging || ctx->face_theme.animating) {
+        face_theme_auto_close_reset(ctx);
+        return;
+    }
+
+    face_theme_overlay_close(ctx);
+}
+
 static const char *face_theme_name(clock_face_id_t face, uint8_t theme)
 {
     switch (face) {
@@ -208,6 +252,7 @@ static void face_theme_prepare_overlay(clock_ui_context_t *ctx)
     ctx->face_theme.overlay_open = true;
     lv_obj_clear_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(ctx->face_theme.overlay);
+    face_theme_auto_close_reset(ctx);
     sync_active_face_visual_state(ctx);
 }
 
@@ -228,8 +273,10 @@ static void face_theme_sheet_anim_ready_cb(lv_anim_t *anim)
         ctx->face_theme.overlay_open = false;
         lv_obj_add_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
         face_theme_update_visual_state(ctx, FACE_THEME_SHEET_CLOSED_Y);
+        face_theme_auto_close_pause(ctx);
     } else {
         face_theme_update_visual_state(ctx, FACE_THEME_SHEET_OPEN_Y);
+        face_theme_auto_close_reset(ctx);
     }
 
     sync_active_face_visual_state(ctx);
@@ -425,9 +472,11 @@ void face_theme_overlay_close(clock_ui_context_t *ctx)
 
     if (lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN) && !ctx->face_theme.animating) {
         ctx->face_theme.overlay_open = false;
+        face_theme_auto_close_pause(ctx);
         return;
     }
 
+    face_theme_auto_close_pause(ctx);
     face_theme_animate_to(ctx, FACE_THEME_SHEET_CLOSED_Y);
 }
 
@@ -503,6 +552,10 @@ static void face_theme_overlay_event_cb(lv_event_t *event)
     if ((code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING ||
          code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && indev != NULL) {
         lv_indev_get_point(indev, &point);
+    }
+
+    if (code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED) {
+        face_theme_auto_close_reset(ctx);
     }
 
     if (code == LV_EVENT_PRESSED) {
@@ -1027,6 +1080,8 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     }
 
     ctx->face_theme.snapshot_dirty = true;
+    ctx->face_theme.auto_close_timer = lv_timer_create(face_theme_auto_close_timer_cb, FACE_THEME_AUTO_CLOSE_MS, ctx);
+    lv_timer_pause(ctx->face_theme.auto_close_timer);
     face_theme_overlay_close(ctx);
 }
 

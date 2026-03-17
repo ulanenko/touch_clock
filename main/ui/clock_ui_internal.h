@@ -438,6 +438,7 @@ typedef struct {
     bool snapshot_dirty;
     bool target_open;
     clock_face_id_t picker_face;
+    lv_timer_t *auto_close_timer;
     lv_timer_t *button_hide_timer;
     lv_point_t drag_start_point;
     int32_t drag_start_y;
