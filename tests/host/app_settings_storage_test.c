@@ -256,6 +256,7 @@ static int test_fresh_defaults(void)
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &settings));
     EXPECT_EQ_INT(50, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
+    EXPECT_TRUE(settings.ui_click_sound_enabled);
     EXPECT_FALSE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
@@ -270,9 +271,10 @@ static int test_v5_round_trip(void)
     app_settings_t loaded;
 
     settings_policy_set_defaults(&saved);
-    saved.version = 6;
+    saved.version = 7;
     saved.base_brightness = 77;
     saved.alarm_volume = 61;
+    saved.ui_click_sound_enabled = false;
     saved.ascending_alarm_enabled = true;
     saved.snooze_minutes = 12;
     saved.current_face = CLOCK_FACE_MATRIX;
@@ -294,6 +296,7 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(find_entry(&store, "ver") != NULL);
     EXPECT_TRUE(find_entry(&store, "base_bri") != NULL);
     EXPECT_TRUE(find_entry(&store, "alarm_vol") != NULL);
+    EXPECT_TRUE(find_entry(&store, "ui_click") != NULL);
     EXPECT_TRUE(find_entry(&store, "alarm_ramp") != NULL);
     EXPECT_TRUE(find_entry(&store, "snooze") != NULL);
     EXPECT_TRUE(find_entry(&store, "face") != NULL);
@@ -309,6 +312,7 @@ static int test_v5_round_trip(void)
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
     EXPECT_EQ_INT(77, loaded.base_brightness);
     EXPECT_EQ_INT(61, loaded.alarm_volume);
+    EXPECT_FALSE(loaded.ui_click_sound_enabled);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MATRIX, loaded.current_face);
     EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_DIGITAL]);
@@ -343,7 +347,8 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
-    EXPECT_EQ_INT(6, loaded.version);
+    EXPECT_TRUE(loaded.ui_click_sound_enabled);
+    EXPECT_EQ_INT(7, loaded.version);
     return 0;
 }
 
@@ -363,12 +368,13 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
     EXPECT_EQ_INT(0, loaded.base_brightness);
     EXPECT_EQ_INT(70, loaded.alarm_volume);
+    EXPECT_TRUE(loaded.ui_click_sound_enabled);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
     EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
-    EXPECT_EQ_INT(6, loaded.version);
+    EXPECT_EQ_INT(7, loaded.version);
     return 0;
 }
 

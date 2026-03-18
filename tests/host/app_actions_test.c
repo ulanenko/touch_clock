@@ -32,6 +32,11 @@ static int test_face_and_wifi_actions(void)
     EXPECT_EQ_INT(APP_WIFI_COMMAND_CONNECT, result.wifi_command);
     EXPECT_STR_EQ("Office WiFi", state.settings.wifi.ssid);
     EXPECT_STR_EQ("secret", result.wifi_password);
+
+    result = app_action_set_ui_click_sound_enabled(&state, false);
+    EXPECT_FALSE(state.settings.ui_click_sound_enabled);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_UI_REFRESH));
     return 0;
 }
 

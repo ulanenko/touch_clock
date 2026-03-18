@@ -159,6 +159,21 @@ app_action_result_t app_action_set_night_sunrise_brightness_enabled(app_state_t 
     return result;
 }
 
+app_action_result_t app_action_set_ui_click_sound_enabled(app_state_t *state, bool enabled)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    enabled = enabled ? true : false;
+    if (state->settings.ui_click_sound_enabled == enabled) {
+        return result;
+    }
+
+    state->settings.ui_click_sound_enabled = enabled;
+    emit_settings_changed(&result);
+    return result;
+}
+
 app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_id_t face)
 {
     app_action_result_t result;

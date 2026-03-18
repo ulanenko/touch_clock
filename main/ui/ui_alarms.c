@@ -1908,7 +1908,6 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     lv_obj_t *content;
     lv_obj_t *card;
     lv_obj_t *row;
-    lv_obj_t *label;
     lv_obj_t *actions;
     lv_obj_t *save_btn;
     lv_obj_t *panel;
@@ -1982,20 +1981,17 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
 
     card = create_card(content);
     ctx->alarms.editor_time_card = card;
-    label = lv_label_create(card);
-    lv_obj_set_width(label, lv_pct(100));
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(label, "Set time");
-
-    row = create_row(card);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 20, 0);
-    ctx->alarms.editor_hour_roller = create_time_roller(row, ctx->hour_options, 224, alarm_editor_time_event_cb, ctx);
-    ctx->alarms.editor_minute_roller = create_time_roller(row, ctx->minute_options, 224, alarm_editor_time_event_cb, ctx);
-    lv_obj_set_height(ctx->alarms.editor_hour_roller, 212);
-    lv_obj_set_height(ctx->alarms.editor_minute_roller, 212);
+    create_time_picker_section(card,
+                               "Set time",
+                               ctx->hour_options,
+                               ctx->minute_options,
+                               224,
+                               20,
+                               212,
+                               alarm_editor_time_event_cb,
+                               ctx,
+                               &ctx->alarms.editor_hour_roller,
+                               &ctx->alarms.editor_minute_roller);
 
     actions = lv_obj_create(panel);
     lv_obj_set_width(actions, lv_pct(100));

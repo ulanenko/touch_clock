@@ -19,6 +19,9 @@ static void sync_night_face_picker_selection(clock_ui_context_t *ctx);
 static void settings_navigate_back(clock_ui_context_t *ctx);
 static void close_night_face_picker(clock_ui_context_t *ctx);
 static void close_night_schedule_editor(clock_ui_context_t *ctx);
+void sync_wifi_controls(clock_ui_context_t *ctx);
+static void sync_other_controls(clock_ui_context_t *ctx);
+static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked);
 static void settings_render_face_preview(clock_ui_context_t *ctx,
                                          lv_obj_t *canvas,
                                          lv_draw_buf_t **draw_buf,
@@ -52,6 +55,7 @@ static void invalidate_settings_ui_cache(clock_ui_context_t *ctx)
 {
     ctx->settings_ui.wifi_cache_valid = false;
     ctx->settings_ui.night_cache_valid = false;
+    ctx->settings_ui.cached_ui_click_sound_enabled = !ctx->settings->ui_click_sound_enabled;
 }
 
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -113,6 +117,21 @@ static void settings_format_timezone_label(char *buffer, size_t size, int tz)
 static void settings_format_face_label(char *buffer, size_t size, clock_face_id_t face)
 {
     snprintf(buffer, size, "%s", clock_face_name(face));
+}
+
+static void sync_other_controls(clock_ui_context_t *ctx)
+{
+    sync_wifi_controls(ctx);
+
+    if (ctx->settings_ui.other_sound_sw == NULL) {
+        return;
+    }
+
+    ctx->suppress_events = true;
+    settings_set_switch_checked_if_changed(ctx->settings_ui.other_sound_sw,
+                                           ctx->settings->ui_click_sound_enabled);
+    ctx->suppress_events = false;
+    ctx->settings_ui.cached_ui_click_sound_enabled = ctx->settings->ui_click_sound_enabled;
 }
 
 static void settings_format_night_schedule_label(const clock_ui_context_t *ctx, char *buffer, size_t size)
@@ -241,6 +260,36 @@ static void style_night_detail_button(lv_obj_t *button)
     if (button == NULL) {
         return;
     }
+}
+
+static void attach_night_control_passthrough(lv_obj_t *obj, clock_ui_context_t *ctx)
+{
+    if (obj == NULL) {
+        return;
+    }
+
+    lv_obj_add_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(obj, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSED, ctx);
+    lv_obj_add_event_cb(obj, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSING, ctx);
+    lv_obj_add_event_cb(obj, night_control_scroll_passthrough_event_cb, LV_EVENT_RELEASED, ctx);
+    lv_obj_add_event_cb(obj, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESS_LOST, ctx);
+}
+
+static void bind_night_control(lv_obj_t *obj,
+                               clock_ui_context_t *ctx,
+                               lv_event_code_t action_code,
+                               lv_event_cb_t action_cb,
+                               lv_event_code_t feedback_code)
+{
+    if (obj == NULL) {
+        return;
+    }
+
+    attach_night_control_passthrough(obj, ctx);
+    if (action_cb != NULL) {
+        lv_obj_add_event_cb(obj, action_cb, action_code, ctx);
+    }
+    ui_attach_click_feedback(obj, feedback_code);
 }
 
 static void settings_apply_night_card_visual(lv_obj_t *card, bool enabled)
@@ -509,7 +558,7 @@ void sync_wifi_controls(clock_ui_context_t *ctx)
 
 void refresh_settings_controls(clock_ui_context_t *ctx)
 {
-    sync_wifi_controls(ctx);
+    sync_other_controls(ctx);
     sync_night_controls(ctx);
 }
 
@@ -978,7 +1027,7 @@ static void settings_open_other_detail(clock_ui_context_t *ctx)
     if (ctx->settings_ui.night_overlay != NULL) {
         lv_obj_add_flag(ctx->settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
     }
-    sync_wifi_controls(ctx);
+    sync_other_controls(ctx);
     lv_obj_clear_flag(ctx->settings_ui.other_overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(ctx->settings_ui.other_overlay);
 }
@@ -1327,6 +1376,19 @@ static void night_sunrise_enabled_event_cb(lv_event_t *event)
     sync_night_controls(ctx);
 }
 
+static void other_sound_enabled_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+
+    if (ctx->suppress_events) {
+        return;
+    }
+
+    request_set_ui_click_sound_enabled(ctx,
+                                       lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
+    sync_other_controls(ctx);
+}
+
 static void open_night_face_picker(clock_ui_context_t *ctx)
 {
     if (ctx->settings_ui.night_face_picker_overlay == NULL) {
@@ -1466,13 +1528,11 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_label_set_text(label, "Enabled");
     ctx->settings_ui.night_enabled_sw = lv_switch_create(row);
     style_settings_switch(ctx->settings_ui.night_enabled_sw);
-    lv_obj_add_flag(ctx->settings_ui.night_enabled_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(ctx->settings_ui.night_enabled_sw, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_enabled_sw, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_enabled_sw, night_control_scroll_passthrough_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_enabled_sw, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_enabled_sw, night_enabled_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
-    ui_attach_click_feedback(ctx->settings_ui.night_enabled_sw, LV_EVENT_VALUE_CHANGED);
+    bind_night_control(ctx->settings_ui.night_enabled_sw,
+                       ctx,
+                       LV_EVENT_VALUE_CHANGED,
+                       night_enabled_event_cb,
+                       LV_EVENT_VALUE_CHANGED);
 
     ctx->settings_ui.night_status_label = lv_label_create(ctx->settings_ui.night_card);
     lv_obj_set_width(ctx->settings_ui.night_status_label, lv_pct(100));
@@ -1500,13 +1560,11 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_all(ctx->settings_ui.night_schedule_button, 20, 0);
     lv_obj_set_style_shadow_width(ctx->settings_ui.night_schedule_button, 0, 0);
     style_night_detail_button(ctx->settings_ui.night_schedule_button);
-    lv_obj_add_flag(ctx->settings_ui.night_schedule_button, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(ctx->settings_ui.night_schedule_button, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_schedule_button, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_schedule_button, night_control_scroll_passthrough_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_schedule_button, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_schedule_button, night_schedule_button_event_cb, LV_EVENT_CLICKED, ctx);
-    ui_attach_click_feedback(ctx->settings_ui.night_schedule_button, LV_EVENT_CLICKED);
+    bind_night_control(ctx->settings_ui.night_schedule_button,
+                       ctx,
+                       LV_EVENT_CLICKED,
+                       night_schedule_button_event_cb,
+                       LV_EVENT_CLICKED);
 
     ctx->settings_ui.night_schedule_summary = lv_label_create(ctx->settings_ui.night_schedule_button);
     lv_obj_set_width(ctx->settings_ui.night_schedule_summary, lv_pct(100));
@@ -1533,13 +1591,11 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_all(ctx->settings_ui.night_face_button, 18, 0);
     lv_obj_set_style_shadow_width(ctx->settings_ui.night_face_button, 0, 0);
     style_night_detail_button(ctx->settings_ui.night_face_button);
-    lv_obj_add_flag(ctx->settings_ui.night_face_button, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(ctx->settings_ui.night_face_button, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_face_button, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_face_button, night_control_scroll_passthrough_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_face_button, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_face_button, night_face_button_event_cb, LV_EVENT_CLICKED, ctx);
-    ui_attach_click_feedback(ctx->settings_ui.night_face_button, LV_EVENT_CLICKED);
+    bind_night_control(ctx->settings_ui.night_face_button,
+                       ctx,
+                       LV_EVENT_CLICKED,
+                       night_face_button_event_cb,
+                       LV_EVENT_CLICKED);
 
     preview_wrap = lv_obj_create(ctx->settings_ui.night_face_button);
     lv_obj_add_flag(preview_wrap, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -1615,11 +1671,7 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_width(ctx->settings_ui.night_brightness_slider, lv_pct(100));
     style_slider(ctx->settings_ui.night_brightness_slider);
     lv_obj_set_height(ctx->settings_ui.night_brightness_slider, 24);
-    lv_obj_add_flag(ctx->settings_ui.night_brightness_slider, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(ctx->settings_ui.night_brightness_slider, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_brightness_slider, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_brightness_slider, night_control_scroll_passthrough_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_brightness_slider, night_control_scroll_passthrough_event_cb, LV_EVENT_PRESS_LOST, ctx);
+    attach_night_control_passthrough(ctx->settings_ui.night_brightness_slider, ctx);
     lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider, lv_color_hex(0x2D2D2D), LV_PART_MAIN);
     lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider, lv_color_hex(UI_ACCENT_COL), LV_PART_INDICATOR);
     lv_obj_set_style_shadow_width(ctx->settings_ui.night_brightness_slider, 0, LV_PART_KNOB);
@@ -1650,28 +1702,11 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 
     ctx->settings_ui.night_sunrise_sw = lv_switch_create(row);
     style_settings_switch(ctx->settings_ui.night_sunrise_sw);
-    lv_obj_add_flag(ctx->settings_ui.night_sunrise_sw, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(ctx->settings_ui.night_sunrise_sw,
-                        night_control_scroll_passthrough_event_cb,
-                        LV_EVENT_PRESSED,
-                        ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_sunrise_sw,
-                        night_control_scroll_passthrough_event_cb,
-                        LV_EVENT_PRESSING,
-                        ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_sunrise_sw,
-                        night_control_scroll_passthrough_event_cb,
-                        LV_EVENT_RELEASED,
-                        ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_sunrise_sw,
-                        night_control_scroll_passthrough_event_cb,
-                        LV_EVENT_PRESS_LOST,
-                        ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.night_sunrise_sw,
-                        night_sunrise_enabled_event_cb,
-                        LV_EVENT_VALUE_CHANGED,
-                        ctx);
-    ui_attach_click_feedback(ctx->settings_ui.night_sunrise_sw, LV_EVENT_VALUE_CHANGED);
+    bind_night_control(ctx->settings_ui.night_sunrise_sw,
+                       ctx,
+                       LV_EVENT_VALUE_CHANGED,
+                       night_sunrise_enabled_event_cb,
+                       LV_EVENT_VALUE_CHANGED);
 }
 
 static void create_night_face_picker_overlay(clock_ui_context_t *ctx)
@@ -1787,7 +1822,6 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
     lv_obj_t *title;
     lv_obj_t *card;
     lv_obj_t *row;
-    lv_obj_t *label;
 
     ui_surface_create_fullscreen(&surface,
                                  ctx->screen,
@@ -1812,27 +1846,29 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 16, 0);
 
-    label = lv_label_create(card);
-    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
-    lv_label_set_text(label, "Start");
+    create_time_picker_section(card,
+                               "Start",
+                               ctx->hour_options,
+                               ctx->minute_options,
+                               164,
+                               14,
+                               0,
+                               night_hour_minute_event_cb,
+                               ctx,
+                               &ctx->settings_ui.night_start_hour_dd,
+                               &ctx->settings_ui.night_start_min_dd);
 
-    row = create_row(card);
-    lv_obj_set_width(row, LV_SIZE_CONTENT);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 14, 0);
-    ctx->settings_ui.night_start_hour_dd = create_time_roller(row, ctx->hour_options, 164, night_hour_minute_event_cb, ctx);
-    ctx->settings_ui.night_start_min_dd = create_time_roller(row, ctx->minute_options, 164, night_hour_minute_event_cb, ctx);
-
-    label = lv_label_create(card);
-    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
-    lv_label_set_text(label, "End");
-
-    row = create_row(card);
-    lv_obj_set_width(row, LV_SIZE_CONTENT);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 14, 0);
-    ctx->settings_ui.night_end_hour_dd = create_time_roller(row, ctx->hour_options, 164, night_hour_minute_event_cb, ctx);
-    ctx->settings_ui.night_end_min_dd = create_time_roller(row, ctx->minute_options, 164, night_hour_minute_event_cb, ctx);
+    create_time_picker_section(card,
+                               "End",
+                               ctx->hour_options,
+                               ctx->minute_options,
+                               164,
+                               14,
+                               0,
+                               night_hour_minute_event_cb,
+                               ctx,
+                               &ctx->settings_ui.night_end_hour_dd,
+                               &ctx->settings_ui.night_end_min_dd);
 
     row = create_row(card);
     center_row(row);
@@ -1983,6 +2019,8 @@ static void create_wifi_overlay(clock_ui_context_t *ctx)
 static void create_other_overlay(clock_ui_context_t *ctx)
 {
     ui_surface_t surface;
+    lv_obj_t *card;
+    lv_obj_t *row;
     lv_obj_t *title;
 
     ui_surface_create_fullscreen(&surface,
@@ -2004,6 +2042,25 @@ static void create_other_overlay(clock_ui_context_t *ctx)
     lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
 
     create_timezone_card(ctx, surface.content);
+
+    card = create_card(surface.content);
+    ctx->settings_ui.other_sound_card = card;
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 14, 0);
+    row = create_labeled_trailing_control_row(card,
+                                              "Touch sound",
+                                              "Button and control clicks",
+                                              360,
+                                              NULL);
+
+    ctx->settings_ui.other_sound_sw = lv_switch_create(row);
+    style_settings_switch(ctx->settings_ui.other_sound_sw);
+    lv_obj_add_event_cb(ctx->settings_ui.other_sound_sw,
+                        other_sound_enabled_event_cb,
+                        LV_EVENT_VALUE_CHANGED,
+                        ctx);
+    ui_attach_click_feedback(ctx->settings_ui.other_sound_sw, LV_EVENT_VALUE_CHANGED);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
                                   &ctx->settings_ui.other_top_sensor,

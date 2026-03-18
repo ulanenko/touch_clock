@@ -5,67 +5,8 @@
 void ui_play_click_feedback(void);
 
 typedef struct {
-    lv_obj_t *roller;
     uint32_t selected;
 } ui_roller_feedback_state_t;
-
-#define UI_ROLLER_FEEDBACK_SLOTS 8
-
-static ui_roller_feedback_state_t g_ui_roller_feedback_states[UI_ROLLER_FEEDBACK_SLOTS];
-
-static ui_roller_feedback_state_t *ui_roller_feedback_state_for(lv_obj_t *roller, bool create)
-{
-    ui_roller_feedback_state_t *empty = NULL;
-
-    for (size_t i = 0; i < UI_ROLLER_FEEDBACK_SLOTS; ++i) {
-        if (g_ui_roller_feedback_states[i].roller == roller) {
-            return &g_ui_roller_feedback_states[i];
-        }
-        if (empty == NULL && g_ui_roller_feedback_states[i].roller == NULL) {
-            empty = &g_ui_roller_feedback_states[i];
-        }
-    }
-
-    if (!create) {
-        return NULL;
-    }
-
-    if (empty != NULL) {
-        empty->roller = roller;
-        empty->selected = 0;
-        return empty;
-    }
-
-    g_ui_roller_feedback_states[0].roller = roller;
-    g_ui_roller_feedback_states[0].selected = 0;
-    return &g_ui_roller_feedback_states[0];
-}
-
-static uint32_t ui_roller_feedback_selected(lv_obj_t *roller)
-{
-    ui_roller_feedback_state_t *state = ui_roller_feedback_state_for(roller, false);
-
-    return state != NULL ? state->selected : lv_roller_get_selected(roller);
-}
-
-static void ui_roller_feedback_set_selected(lv_obj_t *roller, uint32_t selected)
-{
-    ui_roller_feedback_state_t *state = ui_roller_feedback_state_for(roller, true);
-
-    if (state != NULL) {
-        state->selected = selected;
-    }
-}
-
-static void ui_roller_feedback_clear(lv_obj_t *roller)
-{
-    ui_roller_feedback_state_t *state = ui_roller_feedback_state_for(roller, false);
-
-    if (state != NULL) {
-        state->roller = NULL;
-        state->selected = 0;
-    }
-}
 
 static void ui_click_feedback_event_cb(lv_event_t *event)
 {
@@ -121,19 +62,20 @@ static void ui_roller_click_feedback_event_cb(lv_event_t *event)
 {
     lv_event_code_t code = lv_event_get_code(event);
     lv_obj_t *roller = lv_event_get_current_target(event);
+    ui_roller_feedback_state_t *state = lv_event_get_user_data(event);
     uint32_t selected;
 
-    if (roller == NULL) {
+    if (roller == NULL || state == NULL) {
         return;
     }
 
     if (code == LV_EVENT_DELETE) {
-        ui_roller_feedback_clear(roller);
+        lv_free(state);
         return;
     }
 
     if (code == LV_EVENT_PRESSED) {
-        ui_roller_feedback_set_selected(roller, ui_roller_feedback_live_selected(roller));
+        state->selected = ui_roller_feedback_live_selected(roller);
         return;
     }
 
@@ -145,11 +87,11 @@ static void ui_roller_click_feedback_event_cb(lv_event_t *event)
         return;
     }
 
-    if (ui_roller_feedback_selected(roller) == selected) {
+    if (state->selected == selected) {
         return;
     }
 
-    ui_roller_feedback_set_selected(roller, selected);
+    state->selected = selected;
     ui_play_click_feedback();
 }
 
@@ -364,6 +306,7 @@ lv_obj_t *create_time_roller(lv_obj_t *parent,
                              void *user_data)
 {
     lv_obj_t *roller = lv_roller_create(parent);
+    ui_roller_feedback_state_t *feedback_state = lv_malloc(sizeof(*feedback_state));
 
     lv_roller_set_options(roller, options, LV_ROLLER_MODE_NORMAL);
     lv_obj_set_width(roller, width);
@@ -391,17 +334,64 @@ lv_obj_t *create_time_roller(lv_obj_t *parent,
     lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DISABLED);
     lv_obj_set_style_bg_color(roller, lv_color_hex(0xD8DDE3), LV_PART_SELECTED | LV_STATE_DISABLED);
     lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_DISABLED);
-    ui_roller_feedback_set_selected(roller, lv_roller_get_selected(roller));
+    if (feedback_state != NULL) {
+        feedback_state->selected = lv_roller_get_selected(roller);
+    }
 
     if (cb != NULL) {
         lv_obj_add_event_cb(roller, cb, LV_EVENT_VALUE_CHANGED, user_data);
     }
-    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_PRESSING, NULL);
-    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
-    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_DELETE, NULL);
+    if (feedback_state != NULL) {
+        lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_PRESSED, feedback_state);
+        lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_PRESSING, feedback_state);
+        lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_VALUE_CHANGED, feedback_state);
+        lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_DELETE, feedback_state);
+    }
 
     return roller;
+}
+
+void create_time_picker_section(lv_obj_t *parent,
+                                const char *title,
+                                const char *left_options,
+                                const char *right_options,
+                                lv_coord_t roller_width,
+                                lv_coord_t column_gap,
+                                lv_coord_t roller_height,
+                                lv_event_cb_t cb,
+                                void *user_data,
+                                lv_obj_t **left_roller_out,
+                                lv_obj_t **right_roller_out)
+{
+    lv_obj_t *label = lv_label_create(parent);
+    lv_obj_t *row = create_row(parent);
+    lv_obj_t *left_roller;
+    lv_obj_t *right_roller;
+
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(label, title != NULL ? title : "");
+
+    lv_obj_set_width(row, lv_pct(100));
+    center_row(row);
+    lv_obj_set_style_pad_column(row, column_gap, 0);
+
+    left_roller = create_time_roller(row, left_options, roller_width, cb, user_data);
+    right_roller = create_time_roller(row, right_options, roller_width, cb, user_data);
+
+    if (roller_height > 0) {
+        lv_obj_set_height(left_roller, roller_height);
+        lv_obj_set_height(right_roller, roller_height);
+    }
+
+    if (left_roller_out != NULL) {
+        *left_roller_out = left_roller;
+    }
+    if (right_roller_out != NULL) {
+        *right_roller_out = right_roller;
+    }
 }
 
 lv_obj_t *create_step_selector(lv_obj_t *parent,

@@ -12,6 +12,7 @@ static int test_defaults(void)
 
     EXPECT_EQ_INT(50, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
+    EXPECT_TRUE(settings.ui_click_sound_enabled);
     EXPECT_FALSE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(10, settings.snooze_minutes);
     EXPECT_TRUE(face_catalog_is_enabled(settings.current_face));
@@ -49,6 +50,7 @@ static int test_sanitize_invalid_values(void)
 
     EXPECT_EQ_INT(0, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
+    EXPECT_TRUE(settings.ui_click_sound_enabled);
     EXPECT_TRUE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(10, settings.snooze_minutes);
     EXPECT_EQ_INT(face_catalog_first_enabled(), settings.current_face);

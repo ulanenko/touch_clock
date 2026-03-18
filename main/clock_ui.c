@@ -315,6 +315,13 @@ void request_ui_click_feedback(clock_ui_context_t *ctx)
     }
 }
 
+void request_set_ui_click_sound_enabled(clock_ui_context_t *ctx, bool enabled)
+{
+    if (ctx->callbacks.on_set_ui_click_sound_enabled != NULL) {
+        ctx->callbacks.on_set_ui_click_sound_enabled(ctx->user_ctx, enabled);
+    }
+}
+
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled)
 {
     if (ctx->callbacks.on_set_night_mode_enabled != NULL) {

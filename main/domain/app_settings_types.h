@@ -9,6 +9,7 @@ typedef struct {
     uint32_t version;
     uint8_t base_brightness;
     uint8_t alarm_volume;
+    bool ui_click_sound_enabled;
     bool ascending_alarm_enabled;
     uint8_t snooze_minutes;
     clock_face_id_t current_face;
