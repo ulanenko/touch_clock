@@ -79,6 +79,7 @@ void settings_policy_sanitize(app_settings_t *settings)
         if (settings->alarms[i].days_mask == 0) {
             settings->alarms[i].days_mask = 0x7F;
         }
+        settings->alarms[i].math_unlock_enabled = settings->alarms[i].math_unlock_enabled ? true : false;
     }
 
     if (settings->skipped_alarm_index < -1 || settings->skipped_alarm_index >= MAX_ALARMS) {
@@ -112,6 +113,7 @@ void settings_policy_set_defaults(app_settings_t *settings)
         settings->alarms[i].hour = 7;
         settings->alarms[i].minute = 0;
         settings->alarms[i].days_mask = 0x7F;
-        settings->alarms[i].repeat_mode = ALARM_REPEAT_WEEKLY;
+        settings->alarms[i].repeat_mode = ALARM_REPEAT_ONCE;
+        settings->alarms[i].math_unlock_enabled = false;
     }
 }

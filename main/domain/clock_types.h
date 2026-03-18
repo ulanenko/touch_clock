@@ -36,6 +36,7 @@ typedef struct {
     uint8_t minute;
     uint8_t days_mask;
     uint8_t repeat_mode;
+    bool math_unlock_enabled;
 } alarm_config_t;
 
 typedef struct {

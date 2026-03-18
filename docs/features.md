@@ -10,7 +10,7 @@ V night mode if disabled  settings should be greyed/disabled
 
 Annoying alarm feature:
 Basic math
-3+8, 14−6, maybe simple multiplication on higher difficulty.
+3+8, 14−6, few others.
 Classic. Effective because it forces actual cognition.
 
 

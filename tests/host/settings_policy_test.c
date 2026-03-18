@@ -21,6 +21,9 @@ static int test_defaults(void)
     EXPECT_TRUE(settings.night_mode.sunrise_brightness_enabled);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     EXPECT_EQ_INT(0, settings.wifi.timezone_offset_hours);
+    EXPECT_EQ_INT(ALARM_REPEAT_ONCE, settings.alarms[0].repeat_mode);
+    EXPECT_EQ_INT(0x7F, settings.alarms[0].days_mask);
+    EXPECT_FALSE(settings.alarms[0].math_unlock_enabled);
     return 0;
 }
 
@@ -43,6 +46,7 @@ static int test_sanitize_invalid_values(void)
     settings.alarms[0].minute = 99;
     settings.alarms[0].repeat_mode = 99;
     settings.alarms[0].days_mask = 0;
+    settings.alarms[0].math_unlock_enabled = true;
     settings.skipped_alarm_index = 99;
     settings.skipped_alarm_epoch = 12345;
 
@@ -65,6 +69,7 @@ static int test_sanitize_invalid_values(void)
     EXPECT_EQ_INT(0, settings.alarms[0].minute);
     EXPECT_EQ_INT(ALARM_REPEAT_WEEKLY, settings.alarms[0].repeat_mode);
     EXPECT_EQ_INT(0x7F, settings.alarms[0].days_mask);
+    EXPECT_TRUE(settings.alarms[0].math_unlock_enabled);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     EXPECT_EQ_INT(0, settings.skipped_alarm_epoch);
     return 0;

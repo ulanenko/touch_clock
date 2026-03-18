@@ -410,7 +410,8 @@ app_action_result_t app_action_delete_alarm(app_state_t *state, uint8_t index, t
         .hour = 7,
         .minute = 0,
         .days_mask = 0x7F,
-        .repeat_mode = ALARM_REPEAT_WEEKLY,
+        .repeat_mode = ALARM_REPEAT_ONCE,
+        .math_unlock_enabled = false,
     };
 
     return app_action_save_alarm(state, index, &empty_alarm, now);

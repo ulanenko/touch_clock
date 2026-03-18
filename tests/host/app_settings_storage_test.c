@@ -33,6 +33,14 @@ typedef struct {
     int commit_calls;
 } fake_store_t;
 
+typedef struct {
+    bool enabled;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t days_mask;
+    uint8_t repeat_mode;
+} legacy_alarm_config_t;
+
 static store_entry_t *find_entry(fake_store_t *store, const char *key)
 {
     for (size_t i = 0; i < (sizeof(store->entries) / sizeof(store->entries[0])); ++i) {
@@ -260,6 +268,7 @@ static int test_fresh_defaults(void)
     EXPECT_FALSE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
+    EXPECT_FALSE(settings.alarms[0].math_unlock_enabled);
     return 0;
 }
 
@@ -271,7 +280,7 @@ static int test_v5_round_trip(void)
     app_settings_t loaded;
 
     settings_policy_set_defaults(&saved);
-    saved.version = 7;
+    saved.version = 8;
     saved.base_brightness = 77;
     saved.alarm_volume = 61;
     saved.ui_click_sound_enabled = false;
@@ -289,6 +298,10 @@ static int test_v5_round_trip(void)
     saved.night_mode.brightness = 25;
     saved.night_mode.face = CLOCK_FACE_MODERN_SILVER;
     saved.night_mode.sunrise_brightness_enabled = false;
+    saved.alarms[0].enabled = true;
+    saved.alarms[0].hour = 6;
+    saved.alarms[0].minute = 45;
+    saved.alarms[0].math_unlock_enabled = true;
     saved.last_synced_epoch = make_utc_time(2026, 3, 12, 7, 0, 0);
 
     EXPECT_EQ_INT(ESP_OK, app_settings_save_to_storage(&storage, &saved));
@@ -322,6 +335,7 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(loaded.night_mode.enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MODERN_SILVER, loaded.night_mode.face);
     EXPECT_FALSE(loaded.night_mode.sunrise_brightness_enabled);
+    EXPECT_TRUE(loaded.alarms[0].math_unlock_enabled);
     return 0;
 }
 
@@ -348,7 +362,8 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
-    EXPECT_EQ_INT(7, loaded.version);
+    EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
+    EXPECT_EQ_INT(8, loaded.version);
     return 0;
 }
 
@@ -374,7 +389,32 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
-    EXPECT_EQ_INT(7, loaded.version);
+    EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
+    EXPECT_EQ_INT(8, loaded.version);
+    return 0;
+}
+
+static int test_v7_alarm_blob_migration(void)
+{
+    fake_store_t store = {0};
+    app_settings_storage_t storage = make_storage(&store);
+    legacy_alarm_config_t legacy_alarms[MAX_ALARMS] = {0};
+    app_settings_t loaded;
+
+    legacy_alarms[0].enabled = true;
+    legacy_alarms[0].hour = 7;
+    legacy_alarms[0].minute = 30;
+    legacy_alarms[0].days_mask = 0x7F;
+    legacy_alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+
+    EXPECT_EQ_INT(ESP_OK, store_set_u32(&store, "ver", 7));
+    EXPECT_EQ_INT(ESP_OK, store_set_blob(&store, "alarms", legacy_alarms, sizeof(legacy_alarms)));
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
+    EXPECT_TRUE(loaded.alarms[0].enabled);
+    EXPECT_EQ_INT(7, loaded.alarms[0].hour);
+    EXPECT_EQ_INT(30, loaded.alarms[0].minute);
+    EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
+    EXPECT_EQ_INT(8, loaded.version);
     return 0;
 }
 
@@ -399,5 +439,10 @@ int main(void)
         return status;
     }
 
-    return test_partial_v5_and_invalid_values();
+    status = test_partial_v5_and_invalid_values();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_v7_alarm_blob_migration();
 }

@@ -1,9 +1,21 @@
 #include "ui/clock_ui_private.h"
 
+#include <stdlib.h>
+
 static void alarm_set_label_text_if_changed(lv_obj_t *label, const char *text);
 static void alarm_set_button_text_if_changed(lv_obj_t *button, const char *text);
 static void style_alarm_switch(lv_obj_t *sw);
 static ui_edge_ctx_t *alarm_edge_ctx(clock_ui_context_t *ctx, ui_surface_edge_t edge);
+static bool active_alarm_requires_math(const clock_ui_context_t *ctx);
+static void alarm_overlay_set_math_visible(clock_ui_context_t *ctx, bool visible);
+static void alarm_overlay_generate_math_problem(clock_ui_context_t *ctx);
+static void alarm_overlay_reset_math_input(clock_ui_context_t *ctx);
+static lv_obj_t *create_alarm_math_keypad_button(lv_obj_t *parent,
+                                                 const char *text,
+                                                 lv_event_cb_t cb,
+                                                 void *user_data);
+
+#define ALARM_MATH_MAX_INPUT_LEN 2U
 
 void sync_alarm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face)
 {
@@ -80,6 +92,8 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now)
 
 void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now)
 {
+    bool requires_math;
+
     LV_UNUSED(now);
 
     if (ctx->alarms.overlay == NULL) {
@@ -87,14 +101,29 @@ void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now)
     }
 
     if (!ctx->runtime->alarm_ringing) {
+        alarm_overlay_set_math_visible(ctx, false);
         lv_obj_add_flag(ctx->alarms.overlay, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
+    requires_math = active_alarm_requires_math(ctx);
+
     char snooze_text[32];
     snprintf(snooze_text, sizeof(snooze_text), "Snooze %u min", ctx->settings->snooze_minutes);
     set_action_button_text(ctx->alarms.snooze_btn, snooze_text);
+    if (ctx->alarms.overlay_math_snooze_btn != NULL) {
+        set_action_button_text(ctx->alarms.overlay_math_snooze_btn, snooze_text);
+    }
     set_action_button_text(ctx->alarms.stop_btn, "Off");
+    if (ctx->alarms.overlay_label != NULL) {
+        lv_obj_add_flag(ctx->alarms.overlay_label, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (ctx->alarms.overlay_subtitle != NULL) {
+        lv_obj_add_flag(ctx->alarms.overlay_subtitle, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (!requires_math) {
+        alarm_overlay_set_math_visible(ctx, false);
+    }
     lv_obj_clear_flag(ctx->alarms.overlay, LV_OBJ_FLAG_HIDDEN);
     lv_obj_move_foreground(ctx->alarms.overlay);
 }
@@ -106,6 +135,29 @@ void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now)
 #define ALARM_CARD_OPEN_SQUEEZE 28
 #define ALARM_CARD_ANIM_MS 180
 #define ALARM_MANAGEMENT_AUTO_CLOSE_MS 20000
+
+static const alarm_config_t *active_alarm_config(const clock_ui_context_t *ctx)
+{
+    int8_t alarm_index;
+
+    if (ctx == NULL || ctx->runtime == NULL || ctx->settings == NULL) {
+        return NULL;
+    }
+
+    alarm_index = ctx->runtime->active_alarm_index;
+    if (alarm_index < 0 || alarm_index >= MAX_ALARMS) {
+        return NULL;
+    }
+
+    return &ctx->settings->alarms[alarm_index];
+}
+
+static bool active_alarm_requires_math(const clock_ui_context_t *ctx)
+{
+    const alarm_config_t *alarm = active_alarm_config(ctx);
+
+    return alarm != NULL && alarm->math_unlock_enabled;
+}
 
 static void alarm_management_auto_close_pause(clock_ui_context_t *ctx)
 {
@@ -420,6 +472,7 @@ bool alarm_controls_need_sync(const clock_ui_context_t *ctx)
         ctx->alarms.cached_snooze_deadline != ctx->runtime->snooze_deadline ||
         ctx->alarms.cached_next_alarm_epoch != ctx->runtime->next_alarm_epoch ||
         ctx->alarms.cached_next_alarm_index != ctx->runtime->next_alarm_index ||
+        ctx->alarms.cached_active_alarm_index != ctx->runtime->active_alarm_index ||
         ctx->alarms.cached_alarm_volume != ctx->settings->alarm_volume ||
         ctx->alarms.cached_ascending_alarm_enabled != ctx->settings->ascending_alarm_enabled ||
         ctx->alarms.cached_snooze_minutes != ctx->settings->snooze_minutes ||
@@ -462,6 +515,133 @@ static void alarm_set_roller_selected_if_changed(lv_obj_t *roller, uint16_t sele
     }
 }
 
+static void alarm_overlay_update_math_answer(clock_ui_context_t *ctx)
+{
+    const char *text = "";
+
+    if (ctx == NULL || ctx->alarms.overlay_math_answer == NULL) {
+        return;
+    }
+
+    if (ctx->alarms.overlay_math_answer_len > 0) {
+        text = ctx->alarms.overlay_math_answer_text;
+    }
+
+    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_answer, text);
+}
+
+static void alarm_overlay_reset_math_input(clock_ui_context_t *ctx)
+{
+    if (ctx == NULL) {
+        return;
+    }
+
+    ctx->alarms.overlay_math_answer_text[0] = '\0';
+    ctx->alarms.overlay_math_answer_len = 0;
+    alarm_overlay_update_math_answer(ctx);
+    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_error, "");
+}
+
+static void alarm_overlay_set_math_visible(clock_ui_context_t *ctx, bool visible)
+{
+    if (ctx == NULL) {
+        return;
+    }
+
+    ctx->alarms.overlay_math_visible = visible;
+    if (ctx->alarms.overlay_actions != NULL) {
+        if (visible) {
+            lv_obj_add_flag(ctx->alarms.overlay_actions, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(ctx->alarms.overlay_actions, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (ctx->alarms.overlay_math_card != NULL) {
+        if (visible) {
+            lv_obj_clear_flag(ctx->alarms.overlay_math_card, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(ctx->alarms.overlay_math_card, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    if (!visible) {
+        alarm_overlay_reset_math_input(ctx);
+    }
+}
+
+static void alarm_overlay_generate_math_problem(clock_ui_context_t *ctx)
+{
+    uint32_t seed;
+
+    if (ctx == NULL) {
+        return;
+    }
+
+    seed = lv_tick_get() + (uint32_t)time(NULL);
+    if ((seed & 1U) == 0U) {
+        ctx->alarms.overlay_math_operand_a = (uint8_t)(3U + (seed % 8U));
+        ctx->alarms.overlay_math_operand_b = (uint8_t)(2U + ((seed / 7U) % 9U));
+        ctx->alarms.overlay_math_expected_answer =
+            (uint8_t)(ctx->alarms.overlay_math_operand_a + ctx->alarms.overlay_math_operand_b);
+        snprintf(ctx->alarms.overlay_math_problem_text,
+                 sizeof(ctx->alarms.overlay_math_problem_text),
+                 "%u + %u =",
+                 ctx->alarms.overlay_math_operand_a,
+                 ctx->alarms.overlay_math_operand_b);
+    } else {
+        ctx->alarms.overlay_math_operand_b = (uint8_t)(2U + (seed % 7U));
+        ctx->alarms.overlay_math_expected_answer = (uint8_t)(4U + ((seed / 5U) % 12U));
+        ctx->alarms.overlay_math_operand_a =
+            (uint8_t)(ctx->alarms.overlay_math_expected_answer + ctx->alarms.overlay_math_operand_b);
+        snprintf(ctx->alarms.overlay_math_problem_text,
+                 sizeof(ctx->alarms.overlay_math_problem_text),
+                 "%u - %u =",
+                 ctx->alarms.overlay_math_operand_a,
+                 ctx->alarms.overlay_math_operand_b);
+    }
+
+    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_problem, ctx->alarms.overlay_math_problem_text);
+    alarm_overlay_reset_math_input(ctx);
+}
+
+static void alarm_overlay_submit_math_answer(clock_ui_context_t *ctx)
+{
+    unsigned long answer;
+
+    if (ctx == NULL || ctx->alarms.overlay_math_answer_len == 0) {
+        return;
+    }
+
+    answer = strtoul(ctx->alarms.overlay_math_answer_text, NULL, 10);
+    if (answer == ctx->alarms.overlay_math_expected_answer) {
+        if (ctx->callbacks.on_alarm_stop_requested != NULL) {
+            ctx->callbacks.on_alarm_stop_requested(ctx->user_ctx);
+        }
+        return;
+    }
+
+    alarm_overlay_reset_math_input(ctx);
+    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_error, "Wrong answer. Try again.");
+}
+
+static void alarm_overlay_append_math_digit(clock_ui_context_t *ctx, uint8_t digit)
+{
+    uint8_t expected_len;
+
+    if (ctx == NULL || ctx->alarms.overlay_math_answer_len >= ALARM_MATH_MAX_INPUT_LEN || digit > 9U) {
+        return;
+    }
+
+    ctx->alarms.overlay_math_answer_text[ctx->alarms.overlay_math_answer_len++] = (char)('0' + digit);
+    ctx->alarms.overlay_math_answer_text[ctx->alarms.overlay_math_answer_len] = '\0';
+    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_error, "");
+    alarm_overlay_update_math_answer(ctx);
+
+    expected_len = (ctx->alarms.overlay_math_expected_answer >= 10U) ? 2U : 1U;
+    if (ctx->alarms.overlay_math_answer_len >= expected_len) {
+        alarm_overlay_submit_math_answer(ctx);
+    }
+}
+
 static void format_alarm_editor_summary(char *buffer, size_t size, const alarm_config_t *alarm)
 {
     if (buffer == NULL || size == 0 || alarm == NULL) {
@@ -483,7 +663,7 @@ static bool alarm_slot_is_empty(const alarm_config_t *alarm)
     return !alarm->enabled &&
            alarm->hour == 7 &&
            alarm->minute == 0 &&
-           alarm->repeat_mode == ALARM_REPEAT_WEEKLY &&
+           alarm->repeat_mode == ALARM_REPEAT_ONCE &&
            alarm->days_mask == 0x7F;
 }
 
@@ -742,6 +922,12 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
                 }
             }
         }
+        if (ctx->alarms.editor_math_sw != NULL) {
+            ctx->suppress_events = true;
+            alarm_set_switch_checked_if_changed(ctx->alarms.editor_math_sw,
+                                                ctx->alarms.editor_draft.math_unlock_enabled);
+            ctx->suppress_events = false;
+        }
     }
 
     memcpy(ctx->alarms.cached_alarms, ctx->settings->alarms, sizeof(ctx->alarms.cached_alarms));
@@ -751,6 +937,7 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
     ctx->alarms.cached_snooze_deadline = ctx->runtime->snooze_deadline;
     ctx->alarms.cached_next_alarm_epoch = ctx->runtime->next_alarm_epoch;
     ctx->alarms.cached_next_alarm_index = ctx->runtime->next_alarm_index;
+    ctx->alarms.cached_active_alarm_index = ctx->runtime->active_alarm_index;
     ctx->alarms.cached_alarm_volume = ctx->settings->alarm_volume;
     ctx->alarms.cached_ascending_alarm_enabled = ctx->settings->ascending_alarm_enabled;
     ctx->alarms.cached_snooze_minutes = ctx->settings->snooze_minutes;
@@ -780,9 +967,46 @@ static void alarm_stop_event_cb(lv_event_t *event)
         return;
     }
 
+    if (active_alarm_requires_math(ctx)) {
+        alarm_overlay_generate_math_problem(ctx);
+        alarm_overlay_set_math_visible(ctx, true);
+        sync_alarm_overlay(ctx, 0);
+        return;
+    }
+
     if (ctx->callbacks.on_alarm_stop_requested != NULL) {
         ctx->callbacks.on_alarm_stop_requested(ctx->user_ctx);
     }
+}
+
+static void alarm_math_digit_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    lv_obj_t *target = lv_event_get_target(event);
+
+    if (ctx == NULL) {
+        return;
+    }
+
+    for (uint8_t digit = 0; digit <= 9; ++digit) {
+        if (ctx->alarms.overlay_math_keypad[digit] == target) {
+            alarm_overlay_append_math_digit(ctx, digit);
+            return;
+        }
+    }
+}
+
+static void alarm_editor_math_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+
+    if (ctx == NULL || ctx->suppress_events) {
+        return;
+    }
+
+    ctx->alarms.editor_draft.math_unlock_enabled =
+        lv_obj_has_state(ctx->alarms.editor_math_sw, LV_STATE_CHECKED);
+    sync_alarm_controls(ctx);
 }
 
 static void alarm_banner_event_cb(lv_event_t *event)
@@ -850,7 +1074,15 @@ void create_alarm_banner(clock_ui_context_t *ctx)
 
 void create_alarm_overlay(clock_ui_context_t *ctx)
 {
+    static const uint8_t keypad_layout[4][3] = {
+        {1, 2, 3},
+        {4, 5, 6},
+        {7, 8, 9},
+        {255, 0, 254},
+    };
     lv_obj_t *actions;
+    lv_obj_t *math_card;
+    lv_obj_t *row;
     lv_obj_t *label;
 
     ctx->alarms.overlay = lv_obj_create(ctx->screen);
@@ -864,10 +1096,22 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     lv_obj_clear_flag(ctx->alarms.overlay, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(ctx->alarms.overlay, LV_OBJ_FLAG_HIDDEN);
 
-    ctx->alarms.overlay_label = NULL;
-    ctx->alarms.overlay_subtitle = NULL;
+    ctx->alarms.overlay_label = lv_label_create(ctx->alarms.overlay);
+    lv_obj_set_style_text_font(ctx->alarms.overlay_label, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(ctx->alarms.overlay_label, lv_color_white(), 0);
+    lv_obj_align(ctx->alarms.overlay_label, LV_ALIGN_TOP_MID, 0, 74);
+    lv_label_set_text(ctx->alarms.overlay_label, "Alarm");
+
+    ctx->alarms.overlay_subtitle = lv_label_create(ctx->alarms.overlay);
+    lv_obj_set_width(ctx->alarms.overlay_subtitle, 520);
+    lv_obj_set_style_text_font(ctx->alarms.overlay_subtitle, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(ctx->alarms.overlay_subtitle, lv_color_hex(0xB9BDC2), 0);
+    lv_obj_set_style_text_align(ctx->alarms.overlay_subtitle, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(ctx->alarms.overlay_subtitle, LV_ALIGN_TOP_MID, 0, 132);
+    lv_label_set_text(ctx->alarms.overlay_subtitle, "Snooze it or turn it off");
 
     actions = create_row(ctx->alarms.overlay);
+    ctx->alarms.overlay_actions = actions;
     lv_obj_set_style_pad_column(actions, 0, 0);
     lv_obj_set_style_pad_row(actions, 18, 0);
     lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_COLUMN);
@@ -911,6 +1155,75 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
         lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
         lv_obj_center(label);
     }
+
+    math_card = create_card(ctx->alarms.overlay);
+    ctx->alarms.overlay_math_card = math_card;
+    lv_obj_set_size(math_card, 560, LV_SIZE_CONTENT);
+    lv_obj_set_style_pad_all(math_card, 26, 0);
+    lv_obj_set_style_pad_row(math_card, 10, 0);
+    lv_obj_align(math_card, LV_ALIGN_CENTER, 0, 24);
+    lv_obj_add_flag(math_card, LV_OBJ_FLAG_HIDDEN);
+
+    row = create_row(math_card);
+    center_row(row);
+    lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(row, 14, 0);
+
+    ctx->alarms.overlay_math_problem = lv_label_create(row);
+    lv_obj_set_style_text_font(ctx->alarms.overlay_math_problem, &montserrat_math_72, 0);
+    lv_obj_set_style_text_color(ctx->alarms.overlay_math_problem, lv_color_white(), 0);
+    lv_obj_set_style_text_align(ctx->alarms.overlay_math_problem, LV_TEXT_ALIGN_LEFT, 0);
+    lv_label_set_text(ctx->alarms.overlay_math_problem, "8 + 6 =");
+
+    label = lv_label_create(row);
+    ctx->alarms.overlay_math_answer = label;
+    lv_obj_set_style_min_width(label, 94, 0);
+    lv_obj_set_style_text_font(label, &montserrat_math_72, 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xD8DDE3), 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
+    lv_label_set_text(label, "");
+
+    ctx->alarms.overlay_math_error = lv_label_create(math_card);
+    lv_obj_set_width(ctx->alarms.overlay_math_error, lv_pct(100));
+    lv_obj_set_style_text_font(ctx->alarms.overlay_math_error, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(ctx->alarms.overlay_math_error, lv_color_hex(0xE28D84), 0);
+    lv_obj_set_style_text_align(ctx->alarms.overlay_math_error, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(ctx->alarms.overlay_math_error, "");
+
+    for (uint8_t layout_row = 0; layout_row < 4; ++layout_row) {
+        row = create_row(math_card);
+        center_row(row);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_style_pad_column(row, 8, 0);
+        for (uint8_t col = 0; col < 3; ++col) {
+            uint8_t token = keypad_layout[layout_row][col];
+
+            if (token <= 9U) {
+                char text[2] = {(char)('0' + token), '\0'};
+
+                ctx->alarms.overlay_math_keypad[token] =
+                    create_alarm_math_keypad_button(row, text, alarm_math_digit_event_cb, ctx);
+            } else {
+                lv_obj_t *spacer = lv_obj_create(row);
+
+                lv_obj_set_size(spacer, 108, 108);
+                lv_obj_set_style_bg_opa(spacer, LV_OPA_TRANSP, 0);
+                lv_obj_set_style_border_width(spacer, 0, 0);
+                lv_obj_clear_flag(spacer, LV_OBJ_FLAG_SCROLLABLE);
+            }
+        }
+    }
+
+    row = create_row(math_card);
+    center_row(row);
+    ctx->alarms.overlay_math_snooze_btn =
+        create_action_button(row, "Snooze 10 min", alarm_snooze_event_cb, ctx);
+    lv_obj_set_size(ctx->alarms.overlay_math_snooze_btn, 320, 64);
+    lv_obj_set_style_radius(ctx->alarms.overlay_math_snooze_btn, 22, 0);
+    lv_obj_set_style_bg_color(ctx->alarms.overlay_math_snooze_btn, lv_color_hex(0x3E4552), 0);
+    lv_obj_set_style_bg_color(ctx->alarms.overlay_math_snooze_btn, lv_color_hex(0x505865), LV_STATE_PRESSED);
+
+    alarm_overlay_reset_math_input(ctx);
 }
 
 static lv_obj_t *create_filter_chip(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void *user_data)
@@ -938,6 +1251,25 @@ static lv_obj_t *create_filter_chip(lv_obj_t *parent, const char *text, lv_event
     }
     ui_attach_click_feedback(button, LV_EVENT_CLICKED);
 
+    return button;
+}
+
+static lv_obj_t *create_alarm_math_keypad_button(lv_obj_t *parent,
+                                                 const char *text,
+                                                 lv_event_cb_t cb,
+                                                 void *user_data)
+{
+    lv_obj_t *button = create_action_button(parent, text, cb, user_data);
+
+    lv_obj_set_size(button, 108, 108);
+    lv_obj_set_style_radius(button, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x232323), 0);
+    lv_obj_set_style_bg_color(button, lv_color_hex(0x343434), LV_STATE_PRESSED);
+    lv_obj_set_style_pad_all(button, 0, 0);
+    lv_obj_set_style_shadow_width(button, 0, 0);
+    if (lv_obj_get_child(button, 0) != NULL) {
+        lv_obj_set_style_text_font(lv_obj_get_child(button, 0), &lv_font_montserrat_48, 0);
+    }
     return button;
 }
 
@@ -1515,8 +1847,9 @@ void open_alarm_editor(clock_ui_context_t *ctx, uint8_t alarm_index, bool is_new
 
         ctx->alarms.editor_draft = ctx->settings->alarms[alarm_index];
         ctx->alarms.editor_draft.enabled = true;
-        ctx->alarms.editor_draft.repeat_mode = ALARM_REPEAT_WEEKLY;
+        ctx->alarms.editor_draft.repeat_mode = ALARM_REPEAT_ONCE;
         ctx->alarms.editor_draft.days_mask = 0x7F;
+        ctx->alarms.editor_draft.math_unlock_enabled = false;
         if (minute >= 60) {
             minute -= 60;
             now_tm.tm_hour = (now_tm.tm_hour + 1) % 24;
@@ -1992,6 +2325,18 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
                                ctx,
                                &ctx->alarms.editor_hour_roller,
                                &ctx->alarms.editor_minute_roller);
+
+    card = create_card(content);
+    ctx->alarms.editor_math_card = card;
+    row = create_labeled_trailing_control_row(card,
+                                              "Math to turn off",
+                                              "Solve a quick sum before the alarm stops",
+                                              360,
+                                              NULL);
+    ctx->alarms.editor_math_sw = lv_switch_create(row);
+    style_alarm_switch(ctx->alarms.editor_math_sw);
+    lv_obj_add_event_cb(ctx->alarms.editor_math_sw, alarm_editor_math_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    ui_attach_click_feedback(ctx->alarms.editor_math_sw, LV_EVENT_VALUE_CHANGED);
 
     actions = lv_obj_create(panel);
     lv_obj_set_width(actions, lv_pct(100));

@@ -52,9 +52,13 @@ static int test_alarm_enable_delete_and_invalid_save(void)
     EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY));
     EXPECT_EQ_INT(0, state.runtime.next_alarm_index);
 
+    state.settings.alarms[0].math_unlock_enabled = true;
     result = app_action_delete_alarm(&state, 0, now);
     EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
     EXPECT_FALSE(state.settings.alarms[0].enabled);
+    EXPECT_EQ_INT(ALARM_REPEAT_ONCE, state.settings.alarms[0].repeat_mode);
+    EXPECT_EQ_INT(0x7F, state.settings.alarms[0].days_mask);
+    EXPECT_FALSE(state.settings.alarms[0].math_unlock_enabled);
 
     result = app_action_save_alarm(&state, MAX_ALARMS, &state.settings.alarms[0], now);
     EXPECT_FALSE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));

@@ -21,3 +21,4 @@ extern const lv_font_t helvetica_neue_5;
 extern const lv_font_t helvetica_neue_10;
 extern const lv_font_t helvetica_neue_6;
 extern const lv_font_t montserrat_digits_56;
+extern const lv_font_t montserrat_math_72;

@@ -19,6 +19,7 @@
 #define SETTINGS_VERSION_V5 5U
 #define SETTINGS_VERSION_V6 6U
 #define SETTINGS_VERSION_V7 7U
+#define SETTINGS_VERSION_V8 8U
 #define SETTINGS_KEY_LEGACY_BLOB "settings"
 #define SETTINGS_KEY_VERSION "ver"
 #define SETTINGS_KEY_BASE_BRIGHTNESS "base_bri"
@@ -57,6 +58,14 @@ typedef struct {
     size_t offset;
     size_t size;
 } settings_field_descriptor_t;
+
+typedef struct {
+    bool enabled;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t days_mask;
+    uint8_t repeat_mode;
+} legacy_alarm_config_t;
 
 static const settings_field_descriptor_t s_settings_fields[] = {
     {
@@ -251,6 +260,10 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
 {
     size_t alarms_size = sizeof(settings->alarms);
     app_settings_t defaults;
+    uint8_t alarm_buffer[(sizeof(alarm_config_t) * MAX_ALARMS) >
+                                 (sizeof(legacy_alarm_config_t) * MAX_ALARMS)
+                             ? (sizeof(alarm_config_t) * MAX_ALARMS)
+                             : (sizeof(legacy_alarm_config_t) * MAX_ALARMS)];
 
     set_defaults(settings);
     defaults = *settings;
@@ -260,8 +273,23 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
     }
 
     if (storage->get_blob == NULL ||
-        storage->get_blob(storage->ctx, SETTINGS_KEY_ALARMS, settings->alarms, &alarms_size) != ESP_OK ||
-        alarms_size != sizeof(settings->alarms)) {
+        storage->get_blob(storage->ctx, SETTINGS_KEY_ALARMS, alarm_buffer, &alarms_size) != ESP_OK) {
+        memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
+    } else if (alarms_size == sizeof(settings->alarms)) {
+        memcpy(settings->alarms, alarm_buffer, sizeof(settings->alarms));
+    } else if (alarms_size == sizeof(legacy_alarm_config_t) * MAX_ALARMS) {
+        const legacy_alarm_config_t *legacy_alarms = (const legacy_alarm_config_t *)alarm_buffer;
+
+        memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
+        for (size_t i = 0; i < MAX_ALARMS; ++i) {
+            settings->alarms[i].enabled = legacy_alarms[i].enabled;
+            settings->alarms[i].hour = legacy_alarms[i].hour;
+            settings->alarms[i].minute = legacy_alarms[i].minute;
+            settings->alarms[i].days_mask = legacy_alarms[i].days_mask;
+            settings->alarms[i].repeat_mode = legacy_alarms[i].repeat_mode;
+            settings->alarms[i].math_unlock_enabled = false;
+        }
+    } else {
         memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
     }
     {
@@ -278,7 +306,7 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
     }
 
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V7;
+    settings->version = SETTINGS_VERSION_V8;
     return ESP_OK;
 }
 
@@ -310,7 +338,7 @@ static esp_err_t load_legacy_v4_settings(const app_settings_storage_t *storage, 
     settings->night_mode.sunrise_brightness_enabled = true;
     settings->ui_click_sound_enabled = true;
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V7;
+    settings->version = SETTINGS_VERSION_V8;
     return ESP_OK;
 }
 
@@ -328,7 +356,8 @@ esp_err_t app_settings_load_from_storage(const app_settings_storage_t *storage, 
     if (err == ESP_OK) {
         if (version != SETTINGS_VERSION_V5 &&
             version != SETTINGS_VERSION_V6 &&
-            version != SETTINGS_VERSION_V7) {
+            version != SETTINGS_VERSION_V7 &&
+            version != SETTINGS_VERSION_V8) {
             return ESP_ERR_INVALID_VERSION;
         }
         return load_structured_settings(storage, settings);
@@ -350,9 +379,9 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
     }
 
     settings_policy_sanitize(&copy);
-    copy.version = SETTINGS_VERSION_V7;
+    copy.version = SETTINGS_VERSION_V8;
 
-    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V7);
+    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V8);
     for (size_t i = 0;
          err == ESP_OK && i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]);
          ++i) {
