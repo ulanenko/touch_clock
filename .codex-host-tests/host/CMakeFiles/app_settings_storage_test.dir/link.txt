@@ -1,0 +1,1 @@
+/usr/bin/cc -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/app_settings_storage_test.dir/app_settings_storage_test.c.o -o app_settings_storage_test  libtouch_clock_host_core.a

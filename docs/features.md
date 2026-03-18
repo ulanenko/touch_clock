@@ -10,6 +10,8 @@ Basic math
 3+8, 14−6, maybe simple multiplication on higher difficulty.
 Classic. Effective because it forces actual cognition.
 
+night mode if disabled  settings should be greyed/disabled 
+
 Language support (English, Polish, Russian, Ukrainian, Dutch, German, French, Italian)
 
 

@@ -106,6 +106,11 @@ static uint8_t compute_alarm_volume(uint8_t target_volume, uint64_t elapsed_samp
                      (((uint32_t)(target_volume - start_volume) * elapsed_ms) / ALARM_AUDIO_RAMP_DURATION_MS));
 }
 
+static bool mode_uses_ascending_ramp(alarm_audio_mode_t mode)
+{
+    return mode == ALARM_AUDIO_MODE_ALARM || mode == ALARM_AUDIO_MODE_TEST;
+}
+
 static void handle_command(const alarm_audio_cmd_t *cmd,
                            alarm_audio_mode_t *mode,
                            size_t *sample_index,
@@ -127,7 +132,7 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
         *sample_index = 0;
         *elapsed_samples = 0;
         *mode = ALARM_AUDIO_MODE_TEST;
-        *applied_volume = *volume;
+        *applied_volume = compute_alarm_volume(*volume, *elapsed_samples);
         apply_volume(*applied_volume);
         break;
     case ALARM_AUDIO_CMD_STOP:
@@ -138,7 +143,7 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
         break;
     case ALARM_AUDIO_CMD_SET_VOLUME:
         *volume = clamp_volume(cmd->volume);
-        if (*mode == ALARM_AUDIO_MODE_ALARM) {
+        if (mode_uses_ascending_ramp(*mode)) {
             *applied_volume = compute_alarm_volume(*volume, *elapsed_samples);
         } else {
             *applied_volume = *volume;
@@ -182,14 +187,6 @@ static void alarm_audio_task(void *arg)
         }
 
         if (sample_index >= (size_t)ALARM_PCM_SAMPLES) {
-            if (mode == ALARM_AUDIO_MODE_TEST) {
-                mode = ALARM_AUDIO_MODE_IDLE;
-                sample_index = 0;
-                elapsed_samples = 0;
-                s_alarm_audio.mode = mode;
-                write_silence();
-                continue;
-            }
             sample_index = 0;
         }
 
@@ -208,7 +205,7 @@ static void alarm_audio_task(void *arg)
         }
 
         sample_index += chunk_samples;
-        if (mode == ALARM_AUDIO_MODE_ALARM) {
+        if (mode_uses_ascending_ramp(mode)) {
             uint8_t next_volume;
 
             elapsed_samples += chunk_samples;

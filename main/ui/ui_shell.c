@@ -635,6 +635,21 @@ static void face_theme_button_event_cb(lv_event_t *event)
     face_theme_animate_to(ctx, FACE_THEME_SHEET_OPEN_Y);
 }
 
+static void create_face_theme_pull_hint(clock_ui_context_t *ctx)
+{
+    ctx->face_theme.pull_hint = lv_obj_create(ctx->screen);
+    lv_obj_set_size(ctx->face_theme.pull_hint, 88, 6);
+    lv_obj_set_style_radius(ctx->face_theme.pull_hint, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(ctx->face_theme.pull_hint, 0, 0);
+    lv_obj_set_style_bg_color(ctx->face_theme.pull_hint, lv_color_hex(0x808080), 0);
+    lv_obj_set_style_bg_opa(ctx->face_theme.pull_hint, LV_OPA_50, 0);
+    lv_obj_set_style_opa(ctx->face_theme.pull_hint, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_shadow_width(ctx->face_theme.pull_hint, 0, 0);
+    lv_obj_remove_flag(ctx->face_theme.pull_hint, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ctx->face_theme.pull_hint, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_align(ctx->face_theme.pull_hint, LV_ALIGN_TOP_MID, 0, 16);
+}
+
 static void open_face_theme_overlay_for_active_face(clock_ui_context_t *ctx)
 {
     if (ctx == NULL || ctx->face_theme.overlay == NULL || ctx->tileview == NULL) {
@@ -782,6 +797,11 @@ static void face_swipe_event_cb(lv_event_t *event)
         } else {
             face_theme_animate_to(ctx, FACE_THEME_SHEET_CLOSED_Y);
         }
+        return;
+    }
+
+    if (LV_ABS(dx) < 24 && LV_ABS(dy) < 24) {
+        show_affordances_temporarily(ctx);
         return;
     }
 
@@ -1010,10 +1030,10 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_shadow_width(ctx->face_theme.grabber, 0, 0);
     lv_obj_remove_flag(ctx->face_theme.grabber, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(ctx->face_theme.grabber, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_align(ctx->face_theme.grabber, LV_ALIGN_TOP_MID, 0, 18);
+    lv_obj_align(ctx->face_theme.grabber, LV_ALIGN_BOTTOM_MID, 0, -18);
     ctx->face_theme.drag_handle = lv_obj_create(surface.panel);
     lv_obj_set_size(ctx->face_theme.drag_handle, lv_pct(100), 72);
-    lv_obj_align(ctx->face_theme.drag_handle, LV_ALIGN_TOP_MID, 0, 0);
+    lv_obj_align(ctx->face_theme.drag_handle, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_opa(ctx->face_theme.drag_handle, LV_OPA_TRANSP, 0);
     lv_obj_set_style_border_width(ctx->face_theme.drag_handle, 0, 0);
     lv_obj_set_style_radius(ctx->face_theme.drag_handle, 0, 0);
@@ -1127,6 +1147,7 @@ void build_root_ui(clock_ui_context_t *ctx)
 
     create_face_swipe_layer(ctx);
     create_dots(ctx);
+    create_face_theme_pull_hint(ctx);
     create_brightness_pull_hint(ctx);
     create_brightness_edge_sensor(ctx);
     create_brightness_overlay(ctx);
@@ -1139,6 +1160,7 @@ void build_root_ui(clock_ui_context_t *ctx)
     create_alarm_overlay(ctx);
     create_settings_overlay(ctx);
     create_face_theme_overlay(ctx);
+    lv_obj_move_foreground(ctx->face_theme.pull_hint);
     lv_obj_move_foreground(ctx->brightness.pull_hint);
     lv_obj_move_foreground(ctx->brightness.edge_sensor);
     set_active_face(ctx, ctx->settings->current_face, LV_ANIM_OFF);

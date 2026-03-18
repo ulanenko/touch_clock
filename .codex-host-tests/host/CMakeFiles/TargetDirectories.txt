@@ -1,0 +1,11 @@
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/touch_clock_host_core.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/face_catalog_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/settings_policy_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/brightness_policy_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/alarm_scheduler_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/app_actions_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/app_controller_core_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/app_settings_storage_test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/test.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/edit_cache.dir
+/Users/borysulanenko/PycharmProjects/touch_clock/.codex-host-tests/host/CMakeFiles/rebuild_cache.dir

@@ -1,0 +1,1 @@
+/usr/bin/cc -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/face_catalog_test.dir/face_catalog_test.c.o -o face_catalog_test  libtouch_clock_host_core.a

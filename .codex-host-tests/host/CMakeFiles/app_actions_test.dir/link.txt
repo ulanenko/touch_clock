@@ -1,0 +1,1 @@
+/usr/bin/cc -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/app_actions_test.dir/app_actions_test.c.o -o app_actions_test  libtouch_clock_host_core.a

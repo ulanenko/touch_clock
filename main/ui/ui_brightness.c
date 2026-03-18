@@ -70,6 +70,7 @@ static void set_affordances_visible(clock_ui_context_t *ctx, bool visible)
     }
 
     animate_affordance(ctx->brightness.pull_hint, visible);
+    animate_affordance(ctx->face_theme.pull_hint, visible);
 }
 
 void affordance_hide_timer_cb(lv_timer_t *timer)

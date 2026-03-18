@@ -306,9 +306,10 @@ typedef struct {
     lv_obj_t *list_badge_label[MAX_ALARMS];
     lv_obj_t *list_toggle[MAX_ALARMS];
     lv_obj_t *editor_overlay;
+    lv_obj_t *editor_repeat_card;
+    lv_obj_t *editor_time_card;
     lv_obj_t *editor_time_label;
     lv_obj_t *editor_summary_label;
-    lv_obj_t *editor_enabled_sw;
     lv_obj_t *editor_hour_roller;
     lv_obj_t *editor_minute_roller;
     lv_obj_t *editor_repeat_btn[4];
@@ -449,6 +450,7 @@ typedef struct {
     lv_draw_buf_t *snapshot_buf;
     lv_obj_t *drag_handle;
     lv_obj_t *grabber;
+    lv_obj_t *pull_hint;
     lv_obj_t *title;
     lv_obj_t *content;
     lv_obj_t *option_card[CLOCK_FACE_THEME_COUNT];

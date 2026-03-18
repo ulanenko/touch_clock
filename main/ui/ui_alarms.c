@@ -462,6 +462,22 @@ static void alarm_set_roller_selected_if_changed(lv_obj_t *roller, uint16_t sele
     }
 }
 
+static void format_alarm_editor_summary(char *buffer, size_t size, const alarm_config_t *alarm)
+{
+    if (buffer == NULL || size == 0 || alarm == NULL) {
+        return;
+    }
+
+    format_alarm_repeat_summary(buffer, size, alarm);
+    if (!alarm->enabled) {
+        size_t len = strlen(buffer);
+
+        if (len < size) {
+            snprintf(buffer + len, size - len, "  Off");
+        }
+    }
+}
+
 static bool alarm_slot_is_empty(const alarm_config_t *alarm)
 {
     return !alarm->enabled &&
@@ -586,7 +602,7 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
     }
     if (ctx->alarms.manage_test_btn != NULL) {
         alarm_set_button_text_if_changed(ctx->alarms.manage_test_btn,
-                                         ctx->runtime->alarm_test_active ? "Stop test" : "Preview tone");
+                                         ctx->runtime->alarm_test_active ? "Stop test" : "Test sound");
     }
     if (ctx->alarms.management_settings_summary != NULL) {
         char wake_summary[64];
@@ -602,7 +618,7 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
         if (ctx->runtime->alarm_ringing) {
             snprintf(status, sizeof(status), "Alarm is ringing now");
         } else if (ctx->runtime->alarm_test_active) {
-            snprintf(status, sizeof(status), "Previewing alarm sound");
+            snprintf(status, sizeof(status), "Testing alarm sound");
         } else if (ctx->runtime->snooze_active) {
             struct tm snooze_tm;
             char time_text[24];
@@ -694,7 +710,6 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
         ctx->suppress_events = true;
         alarm_set_roller_selected_if_changed(ctx->alarms.editor_hour_roller, ctx->alarms.editor_draft.hour);
         alarm_set_roller_selected_if_changed(ctx->alarms.editor_minute_roller, ctx->alarms.editor_draft.minute);
-        alarm_set_switch_checked_if_changed(ctx->alarms.editor_enabled_sw, ctx->alarms.editor_draft.enabled);
         ctx->suppress_events = false;
         for (int i = 0; i < 4; ++i) {
             alarm_set_checkable_state_if_changed(ctx->alarms.editor_repeat_btn[i], preset == i);
@@ -708,7 +723,7 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
         format_alarm_time(editor_time, sizeof(editor_time),
                           ctx->alarms.editor_draft.hour,
                           ctx->alarms.editor_draft.minute);
-        format_alarm_repeat_summary(summary, sizeof(summary), &ctx->alarms.editor_draft);
+        format_alarm_editor_summary(summary, sizeof(summary), &ctx->alarms.editor_draft);
 
         alarm_set_label_text_if_changed(ctx->alarms.editor_time_label, editor_time);
         alarm_set_label_text_if_changed(ctx->alarms.editor_summary_label, summary);
@@ -1124,20 +1139,25 @@ static void alarm_editor_time_event_cb(lv_event_t *event)
     sync_alarm_controls(ctx);
 }
 
-static void alarm_editor_enabled_event_cb(lv_event_t *event)
+static void alarm_editor_scroll_to_section_event_cb(lv_event_t *event)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    lv_obj_t *target = lv_event_get_target(event);
+    lv_obj_t *section = NULL;
 
     if (ctx == NULL) {
         return;
     }
 
-    if (ctx->suppress_events) {
-        return;
+    if (target == ctx->alarms.editor_summary_label) {
+        section = ctx->alarms.editor_repeat_card;
+    } else if (target == ctx->alarms.editor_time_label) {
+        section = ctx->alarms.editor_time_card;
     }
 
-    ctx->alarms.editor_draft.enabled = lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED);
-    sync_alarm_controls(ctx);
+    if (section != NULL) {
+        lv_obj_scroll_to_view_recursive(section, LV_ANIM_ON);
+    }
 }
 
 static void alarm_editor_repeat_event_cb(lv_event_t *event)
@@ -1827,7 +1847,7 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
 
     row = create_row(card);
     center_row(row);
-    ctx->alarms.manage_test_btn = create_action_button(row, "Preview tone", alarm_manage_test_event_cb, ctx);
+    ctx->alarms.manage_test_btn = create_action_button(row, "Test sound", alarm_manage_test_event_cb, ctx);
     lv_obj_set_size(ctx->alarms.manage_test_btn, 340, 74);
     lv_obj_set_style_radius(ctx->alarms.manage_test_btn, 26, 0);
     lv_obj_set_style_bg_color(ctx->alarms.manage_test_btn, lv_color_hex(0x2D2D2D), 0);
@@ -1862,7 +1882,7 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
     lv_obj_set_style_text_line_space(label, 4, 0);
-    lv_label_set_text(label, "Start at 20% volume and ramp up over 1 minute.");
+    lv_label_set_text(label, "Ramp up");
 
     ctx->alarms.manage_ascending_sw = lv_switch_create(row);
     style_alarm_switch(ctx->alarms.manage_ascending_sw);
@@ -1932,39 +1952,26 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_text_color(ctx->alarms.editor_time_label, lv_color_white(), 0);
     lv_obj_set_style_text_align(ctx->alarms.editor_time_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(ctx->alarms.editor_time_label, "07:00");
+    lv_obj_add_flag(ctx->alarms.editor_time_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(ctx->alarms.editor_time_label,
+                        alarm_editor_scroll_to_section_event_cb,
+                        LV_EVENT_CLICKED,
+                        ctx);
     ctx->alarms.editor_summary_label = lv_label_create(card);
     lv_obj_set_width(ctx->alarms.editor_summary_label, lv_pct(100));
     lv_obj_set_style_text_color(ctx->alarms.editor_summary_label, lv_color_hex(0xB7B7B7), 0);
     lv_obj_set_style_text_font(ctx->alarms.editor_summary_label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_align(ctx->alarms.editor_summary_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(ctx->alarms.editor_summary_label, "Every day");
-
-    row = create_row(card);
-    center_row(row);
-    label = lv_label_create(row);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, "Enabled");
-    ctx->alarms.editor_enabled_sw = lv_switch_create(row);
-    style_alarm_switch(ctx->alarms.editor_enabled_sw);
-    lv_obj_add_event_cb(ctx->alarms.editor_enabled_sw, alarm_editor_enabled_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_flag(ctx->alarms.editor_summary_label, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(ctx->alarms.editor_summary_label,
+                        alarm_editor_scroll_to_section_event_cb,
+                        LV_EVENT_CLICKED,
+                        ctx);
 
     card = create_card(content);
-    label = lv_label_create(card);
-    lv_obj_set_width(label, lv_pct(100));
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(label, "Set time");
-
-    row = create_row(card);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 20, 0);
-    ctx->alarms.editor_hour_roller = create_time_roller(row, ctx->hour_options, 224, alarm_editor_time_event_cb, ctx);
-    ctx->alarms.editor_minute_roller = create_time_roller(row, ctx->minute_options, 224, alarm_editor_time_event_cb, ctx);
-
-    card = create_card(content);
-    create_section_title(card, "Repeat", NULL);
+    ctx->alarms.editor_repeat_card = card;
+    create_section_title(card, "Repeat schedule", "Choose how often it rings");
     row = create_row(card);
     center_row(row);
     for (int i = 0; i < 4; ++i) {
@@ -1987,6 +1994,23 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
                                                             alarm_editor_day_event_cb,
                                                             &ctx->alarms.alarm_day_ctx[0][day]);
     }
+
+    card = create_card(content);
+    ctx->alarms.editor_time_card = card;
+    label = lv_label_create(card);
+    lv_obj_set_width(label, lv_pct(100));
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_text(label, "Set time");
+
+    row = create_row(card);
+    center_row(row);
+    lv_obj_set_style_pad_column(row, 20, 0);
+    ctx->alarms.editor_hour_roller = create_time_roller(row, ctx->hour_options, 224, alarm_editor_time_event_cb, ctx);
+    ctx->alarms.editor_minute_roller = create_time_roller(row, ctx->minute_options, 224, alarm_editor_time_event_cb, ctx);
+    lv_obj_set_height(ctx->alarms.editor_hour_roller, 212);
+    lv_obj_set_height(ctx->alarms.editor_minute_roller, 212);
 
     actions = lv_obj_create(panel);
     lv_obj_set_width(actions, lv_pct(100));
