@@ -8,7 +8,7 @@
 #include "domain/brightness_policy.h"
 #include "domain/settings_policy.h"
 
-#define APP_SETTINGS_VERSION_V5 5U
+#define APP_SETTINGS_VERSION_V6 6U
 
 static int64_t monotonic_ms(const app_controller_core_t *core)
 {
@@ -77,7 +77,7 @@ static void maybe_save_settings(app_controller_core_t *core, bool force)
 static void set_default_settings(app_settings_t *settings)
 {
     settings_policy_set_defaults(settings);
-    settings->version = APP_SETTINGS_VERSION_V5;
+    settings->version = APP_SETTINGS_VERSION_V6;
 }
 
 static void execute_wifi_command(app_controller_core_t *core, const app_action_result_t *result)

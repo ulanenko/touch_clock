@@ -40,6 +40,7 @@ typedef struct {
 
 typedef struct {
     bool enabled;
+    bool sunrise_brightness_enabled;
     uint8_t start_hour;
     uint8_t start_minute;
     uint8_t end_hour;

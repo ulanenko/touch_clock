@@ -19,6 +19,7 @@ typedef struct {
     void (*set_ascending_enabled)(bool enabled);
     int (*start_alarm)(uint8_t volume);
     int (*start_test)(uint8_t volume);
+    int (*play_ui_click)(uint8_t volume);
     void (*stop)(void);
     bool (*is_alarm_active)(void);
     bool (*is_test_active)(void);

@@ -46,6 +46,8 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (settings->night_mode.brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
         settings->night_mode.brightness = 0;
     }
+    settings->night_mode.sunrise_brightness_enabled =
+        settings->night_mode.sunrise_brightness_enabled ? true : false;
     if (settings->night_mode.start_hour > 23) {
         settings->night_mode.start_hour = 22;
     }
@@ -94,6 +96,7 @@ void settings_policy_set_defaults(app_settings_t *settings)
     settings->current_face = face_catalog_default_face();
     settings->wifi.timezone_offset_hours = 0;
     settings->night_mode.enabled = false;
+    settings->night_mode.sunrise_brightness_enabled = true;
     settings->night_mode.start_hour = 22;
     settings->night_mode.start_minute = 0;
     settings->night_mode.end_hour = 7;

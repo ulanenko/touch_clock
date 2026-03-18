@@ -963,6 +963,7 @@ static void create_settings_button(clock_ui_context_t *ctx)
     lv_obj_set_style_bg_opa(ctx->settings_button, LV_OPA_70, 0);
     lv_obj_set_style_border_width(ctx->settings_button, 0, 0);
     lv_obj_add_event_cb(ctx->settings_button, shell_settings_button_event_cb, LV_EVENT_CLICKED, ctx);
+    ui_attach_click_feedback(ctx->settings_button, LV_EVENT_CLICKED);
 
     label = lv_label_create(ctx->settings_button);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
@@ -983,6 +984,7 @@ void create_face_theme_button(clock_ui_context_t *ctx)
     lv_obj_set_style_bg_opa(ctx->face_theme.button, LV_OPA_70, 0);
     lv_obj_set_style_border_width(ctx->face_theme.button, 0, 0);
     lv_obj_add_event_cb(ctx->face_theme.button, face_theme_button_event_cb, LV_EVENT_CLICKED, ctx);
+    ui_attach_click_feedback(ctx->face_theme.button, LV_EVENT_CLICKED);
 
     label = lv_label_create(ctx->face_theme.button);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
@@ -1074,6 +1076,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
         lv_obj_set_style_bg_color(card, lv_color_hex(0x22272B), LV_STATE_PRESSED);
         lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
         lv_obj_add_event_cb(card, face_theme_option_event_cb, LV_EVENT_CLICKED, &ctx->face_theme.option_ctx[theme]);
+        ui_attach_click_feedback(card, LV_EVENT_CLICKED);
 
         ctx->face_theme.option_title[theme] = lv_label_create(card);
         lv_obj_set_style_text_font(ctx->face_theme.option_title[theme], &lv_font_montserrat_24, 0);

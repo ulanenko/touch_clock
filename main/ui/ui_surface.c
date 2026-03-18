@@ -1,5 +1,7 @@
 #include "ui/ui_surface.h"
 
+#include "ui/ui_controls.h"
+
 void ui_surface_create_fullscreen(ui_surface_t *surface,
                                   lv_obj_t *parent,
                                   lv_color_t overlay_bg,
@@ -66,6 +68,7 @@ void ui_surface_create_fullscreen(ui_surface_t *surface,
     if (close_cb != NULL) {
         lv_obj_add_event_cb(surface->close_btn, close_cb, LV_EVENT_CLICKED, user_data);
     }
+    ui_attach_click_feedback(surface->close_btn, LV_EVENT_CLICKED);
     close_label = lv_label_create(surface->close_btn);
     lv_label_set_text(close_label, LV_SYMBOL_CLOSE);
     lv_obj_center(close_label);

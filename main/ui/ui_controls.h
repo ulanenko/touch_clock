@@ -5,6 +5,12 @@
 void create_section_title(lv_obj_t *parent, const char *title, const char *subtitle);
 lv_obj_t *create_card(lv_obj_t *parent);
 lv_obj_t *create_row(lv_obj_t *parent);
+void ui_attach_click_feedback(lv_obj_t *obj, lv_event_code_t code);
+lv_obj_t *create_labeled_trailing_control_row(lv_obj_t *parent,
+                                              const char *title,
+                                              const char *subtitle,
+                                              lv_coord_t text_width,
+                                              lv_obj_t **text_col_out);
 lv_obj_t *create_action_button(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void *user_data);
 lv_obj_t *create_big_action_button(lv_obj_t *parent,
                                    const char *text,

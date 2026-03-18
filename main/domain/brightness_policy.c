@@ -1,5 +1,8 @@
 #include "domain/brightness_policy.h"
 
+#define SUNRISE_WINDOW_SECONDS 1800
+#define NIGHT_SUNRISE_MIN_TARGET 50
+
 static int clamp_brightness(int brightness)
 {
     if (brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
@@ -32,6 +35,74 @@ static uint8_t get_night_mode_brightness(const app_runtime_state_t *runtime,
     return settings->night_mode.brightness;
 }
 
+static int64_t sunrise_progress_seconds(const app_runtime_state_t *runtime, time_t now)
+{
+    int64_t seconds_left;
+    int64_t progress;
+
+    if (runtime->next_alarm_epoch <= now) {
+        return 0;
+    }
+
+    seconds_left = (int64_t)(runtime->next_alarm_epoch - now);
+    progress = SUNRISE_WINDOW_SECONDS - seconds_left;
+    if (progress < 0) {
+        progress = 0;
+    }
+    if (progress > SUNRISE_WINDOW_SECONDS) {
+        progress = SUNRISE_WINDOW_SECONDS;
+    }
+
+    return progress;
+}
+
+static uint8_t get_default_sunrise_target(const app_runtime_state_t *runtime,
+                                          const app_settings_t *settings,
+                                          time_t now)
+{
+    int64_t progress = sunrise_progress_seconds(runtime, now);
+    int minimum = settings->night_mode.enabled
+                      ? get_night_mode_brightness(runtime, settings)
+                      : DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    int span;
+
+    if (minimum < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
+        minimum = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    }
+    if (minimum > settings->base_brightness) {
+        minimum = settings->base_brightness;
+    }
+
+    span = (int)settings->base_brightness - minimum;
+    return (uint8_t)(minimum + ((progress * span) / SUNRISE_WINDOW_SECONDS));
+}
+
+static uint8_t get_night_sunrise_target(const app_runtime_state_t *runtime,
+                                        const app_settings_t *settings,
+                                        time_t now)
+{
+    int64_t progress = sunrise_progress_seconds(runtime, now);
+    int night_brightness = (int)get_night_mode_brightness(runtime, settings);
+    int elapsed_minutes = (int)(progress / 60);
+    int floor_target = night_brightness;
+    int target = night_brightness + elapsed_minutes;
+
+    if (night_brightness < NIGHT_SUNRISE_MIN_TARGET) {
+        floor_target = night_brightness +
+                       (int)((progress * (NIGHT_SUNRISE_MIN_TARGET - night_brightness)) /
+                             SUNRISE_WINDOW_SECONDS);
+    }
+
+    if (target < floor_target) {
+        target = floor_target;
+    }
+    if (target > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+        target = DISPLAY_BRIGHTNESS_MAX_PERCENT;
+    }
+
+    return (uint8_t)target;
+}
+
 uint8_t brightness_policy_get_target(const app_runtime_state_t *runtime,
                                      const app_settings_t *settings,
                                      time_t now)
@@ -41,28 +112,14 @@ uint8_t brightness_policy_get_target(const app_runtime_state_t *runtime,
     }
 
     if (runtime->sunrise_active && runtime->next_alarm_epoch > now) {
-        int64_t seconds_left = (int64_t)(runtime->next_alarm_epoch - now);
-        int64_t progress = 1800 - seconds_left;
-        int minimum = settings->night_mode.enabled
-                          ? get_night_mode_brightness(runtime, settings)
-                          : DISPLAY_BRIGHTNESS_MIN_PERCENT;
-        int span;
-
-        if (minimum < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
-            minimum = DISPLAY_BRIGHTNESS_MIN_PERCENT;
-        }
-        if (minimum > settings->base_brightness) {
-            minimum = settings->base_brightness;
-        }
-        if (progress < 0) {
-            progress = 0;
-        }
-        if (progress > 1800) {
-            progress = 1800;
+        if (runtime->in_night_mode) {
+            if (!settings->night_mode.sunrise_brightness_enabled) {
+                return get_night_mode_brightness(runtime, settings);
+            }
+            return get_night_sunrise_target(runtime, settings, now);
         }
 
-        span = (int)settings->base_brightness - minimum;
-        return (uint8_t)(minimum + ((progress * span) / 1800));
+        return get_default_sunrise_target(runtime, settings, now);
     }
 
     if (runtime->in_night_mode) {

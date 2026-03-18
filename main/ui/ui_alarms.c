@@ -936,6 +936,7 @@ static lv_obj_t *create_filter_chip(lv_obj_t *parent, const char *text, lv_event
     if (cb != NULL) {
         lv_obj_add_event_cb(button, cb, LV_EVENT_CLICKED, user_data);
     }
+    ui_attach_click_feedback(button, LV_EVENT_CLICKED);
 
     return button;
 }
@@ -1626,6 +1627,7 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
         lv_obj_add_event_cb(delete_btn, stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
         lv_obj_add_event_cb(delete_btn, stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
         lv_obj_add_event_cb(delete_btn, alarm_list_delete_event_cb, LV_EVENT_CLICKED, &ctx->alarms.alarm_ctx[i]);
+        ui_attach_click_feedback(delete_btn, LV_EVENT_CLICKED);
         label = lv_label_create(delete_btn);
         lv_obj_set_style_text_color(label, lv_color_white(), 0);
         lv_obj_set_style_text_font(label, &lv_font_montserrat_36, 0);
@@ -1644,6 +1646,7 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
         lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_RELEASED, &ctx->alarms.alarm_ctx[i]);
         lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_PRESS_LOST, &ctx->alarms.alarm_ctx[i]);
         lv_obj_add_event_cb(alarm_content, alarm_list_swipe_event_cb, LV_EVENT_CLICKED, &ctx->alarms.alarm_ctx[i]);
+        ui_attach_click_feedback(alarm_content, LV_EVENT_CLICKED);
 
         top_row = create_row(alarm_content);
         lv_obj_add_flag(top_row, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -1664,6 +1667,7 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
         lv_obj_add_event_cb(ctx->alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
         lv_obj_add_event_cb(ctx->alarms.list_toggle[i], stop_event_bubble_cb, LV_EVENT_CLICKED, NULL);
         lv_obj_add_event_cb(ctx->alarms.list_toggle[i], alarm_list_toggle_event_cb, LV_EVENT_VALUE_CHANGED, &ctx->alarms.alarm_ctx[i]);
+        ui_attach_click_feedback(ctx->alarms.list_toggle[i], LV_EVENT_VALUE_CHANGED);
 
         meta_row = create_row(alarm_content);
         lv_obj_add_flag(meta_row, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -1762,6 +1766,7 @@ static lv_obj_t *create_alarm_settings_round_button(lv_obj_t *parent,
     if (cb != NULL) {
         lv_obj_add_event_cb(button, cb, LV_EVENT_CLICKED, user_data);
     }
+    ui_attach_click_feedback(button, LV_EVENT_CLICKED);
 
     lv_obj_set_style_text_font(label, &lv_font_montserrat_36, 0);
     lv_label_set_text(label, text);
@@ -1844,6 +1849,7 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_shadow_color(ctx->alarms.manage_volume_slider, lv_color_hex(UI_ACCENT_COL), LV_PART_KNOB);
     lv_obj_set_style_shadow_opa(ctx->alarms.manage_volume_slider, LV_OPA_20, LV_PART_KNOB);
     lv_obj_add_event_cb(ctx->alarms.manage_volume_slider, alarm_manage_volume_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    ui_attach_click_feedback(ctx->alarms.manage_volume_slider, LV_EVENT_VALUE_CHANGED);
 
     row = create_row(card);
     center_row(row);
@@ -1860,33 +1866,12 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
 
-    row = create_row(card);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    lv_obj_t *text_col = lv_obj_create(row);
-    lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(text_col, 0, 0);
-    lv_obj_set_style_pad_all(text_col, 0, 0);
-    lv_obj_set_style_pad_row(text_col, 6, 0);
-    lv_obj_set_width(text_col, 360);
-    lv_obj_set_layout(text_col, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(text_col, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
-
-    label = lv_label_create(text_col);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, "Ascending alarm");
-
-    label = lv_label_create(text_col);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
-    lv_obj_set_style_text_line_space(label, 4, 0);
-    lv_label_set_text(label, "Ramp up");
+    row = create_labeled_trailing_control_row(card, "Ascending alarm", "Ramp up", 360, NULL);
 
     ctx->alarms.manage_ascending_sw = lv_switch_create(row);
     style_alarm_switch(ctx->alarms.manage_ascending_sw);
     lv_obj_add_event_cb(ctx->alarms.manage_ascending_sw, alarm_manage_ascending_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    ui_attach_click_feedback(ctx->alarms.manage_ascending_sw, LV_EVENT_VALUE_CHANGED);
 
     ui_surface_create_edge_sensor(ctx->alarms.settings_overlay,
                                   &ctx->alarms.settings_top_sensor,

@@ -90,6 +90,12 @@ static int fake_audio_start_test(uint8_t volume)
     return 0;
 }
 
+static int fake_audio_play_ui_click(uint8_t volume)
+{
+    g_env->audio_last_volume = volume;
+    return 0;
+}
+
 static void fake_audio_stop(void)
 {
     g_env->audio_stop_calls += 1;
@@ -190,6 +196,7 @@ static const audio_service_t s_audio_service = {
     .set_ascending_enabled = fake_audio_set_ascending_enabled,
     .start_alarm = fake_audio_start_alarm,
     .start_test = fake_audio_start_test,
+    .play_ui_click = fake_audio_play_ui_click,
     .stop = fake_audio_stop,
     .is_alarm_active = fake_audio_is_alarm_active,
     .is_test_active = fake_audio_is_test_active,

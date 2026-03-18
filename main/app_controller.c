@@ -117,6 +117,32 @@ static void on_wifi_sync_requested(void *user_ctx)
     app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
+static uint8_t ui_click_volume(const app_controller_t *app)
+{
+    uint8_t scaled = (uint8_t)(((uint32_t)app->core.state.settings.alarm_volume * 35U + 50U) / 100U);
+
+    if (scaled < 16U) {
+        return 16U;
+    }
+    if (scaled > 28U) {
+        return 28U;
+    }
+
+    return scaled;
+}
+
+static void on_ui_click_feedback(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    const audio_service_t *audio = app->core.config.audio_service;
+
+    if (audio == NULL || audio->play_ui_click == NULL || !app->core.state.audio_available) {
+        return;
+    }
+
+    (void)audio->play_ui_click(ui_click_volume(app));
+}
+
 static void on_set_night_mode_enabled(void *user_ctx, bool enabled)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -149,6 +175,16 @@ static void on_set_night_brightness(void *user_ctx, uint8_t hw_percent)
     app_controller_t *app = (app_controller_t *)user_ctx;
     time_t now = app->core.config.clock_service->now();
     app_action_result_t result = app_action_set_night_brightness(&app->core.state, hw_percent, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_night_sunrise_brightness_enabled(void *user_ctx, bool enabled)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result =
+        app_action_set_night_sunrise_brightness_enabled(&app->core.state, enabled, now);
 
     app_controller_core_apply_action_result(&app->core, &result, now);
 }
@@ -277,9 +313,11 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_wifi_scan_requested = on_wifi_scan_requested,
         .on_wifi_forget_requested = on_wifi_forget_requested,
         .on_wifi_sync_requested = on_wifi_sync_requested,
+        .on_ui_click_feedback = on_ui_click_feedback,
         .on_set_night_mode_enabled = on_set_night_mode_enabled,
         .on_set_night_schedule = on_set_night_schedule,
         .on_set_night_brightness = on_set_night_brightness,
+        .on_set_night_sunrise_brightness_enabled = on_set_night_sunrise_brightness_enabled,
         .on_set_alarm_volume = on_set_alarm_volume,
         .on_set_ascending_alarm_enabled = on_set_ascending_alarm_enabled,
         .on_set_snooze_minutes = on_set_snooze_minutes,

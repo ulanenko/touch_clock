@@ -18,6 +18,7 @@ typedef struct {
     void (*on_wifi_scan_requested)(void *user_ctx);
     void (*on_wifi_forget_requested)(void *user_ctx);
     void (*on_wifi_sync_requested)(void *user_ctx);
+    void (*on_ui_click_feedback)(void *user_ctx);
     void (*on_set_night_mode_enabled)(void *user_ctx, bool enabled);
     void (*on_set_night_schedule)(void *user_ctx,
                                   uint8_t start_hour,
@@ -25,6 +26,7 @@ typedef struct {
                                   uint8_t end_hour,
                                   uint8_t end_minute);
     void (*on_set_night_brightness)(void *user_ctx, uint8_t hw_percent);
+    void (*on_set_night_sunrise_brightness_enabled)(void *user_ctx, bool enabled);
     void (*on_set_alarm_volume)(void *user_ctx, uint8_t volume);
     void (*on_set_ascending_alarm_enabled)(void *user_ctx, bool enabled);
     void (*on_set_snooze_minutes)(void *user_ctx, uint8_t minutes);

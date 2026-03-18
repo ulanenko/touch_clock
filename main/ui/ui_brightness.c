@@ -799,6 +799,7 @@ void create_brightness_panel(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(ctx->brightness.slider, brightness_panel_activity_event_cb, LV_EVENT_PRESSING, ctx);
     lv_obj_add_event_cb(ctx->brightness.slider, brightness_panel_activity_event_cb, LV_EVENT_RELEASED, ctx);
     lv_obj_add_event_cb(ctx->brightness.slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    ui_attach_click_feedback(ctx->brightness.slider, LV_EVENT_VALUE_CHANGED);
 
     ctx->brightness.value = lv_label_create(panel);
     lv_obj_set_style_text_font(ctx->brightness.value, &lv_font_montserrat_36, 0);

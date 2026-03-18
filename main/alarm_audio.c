@@ -1,5 +1,6 @@
 #include "alarm_audio.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "assets/alarm_pcm.h"
@@ -17,10 +18,16 @@
 #define ALARM_AUDIO_TASK_STACK 4096
 #define ALARM_AUDIO_RAMP_START_VOLUME 20U
 #define ALARM_AUDIO_RAMP_DURATION_MS 60000U
+#define UI_CLICK_DURATION_MS 28U
+#define UI_CLICK_ATTACK_SAMPLES 24U
+#define UI_CLICK_PRIMARY_HZ 1800.0f
+#define UI_CLICK_SECONDARY_HZ 2850.0f
+#define UI_CLICK_AMPLITUDE 11000.0f
 
 typedef enum {
     ALARM_AUDIO_CMD_PLAY_ALARM = 0,
     ALARM_AUDIO_CMD_PLAY_TEST,
+    ALARM_AUDIO_CMD_PLAY_CLICK,
     ALARM_AUDIO_CMD_STOP,
     ALARM_AUDIO_CMD_SET_VOLUME,
 } alarm_audio_cmd_type_t;
@@ -29,6 +36,7 @@ typedef enum {
     ALARM_AUDIO_MODE_IDLE = 0,
     ALARM_AUDIO_MODE_ALARM,
     ALARM_AUDIO_MODE_TEST,
+    ALARM_AUDIO_MODE_CLICK,
 } alarm_audio_mode_t;
 
 typedef struct {
@@ -106,6 +114,34 @@ static uint8_t compute_alarm_volume(uint8_t target_volume, uint64_t elapsed_samp
                      (((uint32_t)(target_volume - start_volume) * elapsed_ms) / ALARM_AUDIO_RAMP_DURATION_MS));
 }
 
+static size_t ui_click_total_samples(void)
+{
+    return (size_t)((ALARM_SAMPLE_RATE_HZ * UI_CLICK_DURATION_MS) / 1000U);
+}
+
+static size_t fill_ui_click_chunk(int16_t *chunk, size_t sample_index)
+{
+    size_t total_samples = ui_click_total_samples();
+    size_t remaining = total_samples - sample_index;
+    size_t chunk_samples = (remaining > ALARM_AUDIO_CHUNK_SAMPLES) ? ALARM_AUDIO_CHUNK_SAMPLES : remaining;
+
+    for (size_t i = 0; i < chunk_samples; ++i) {
+        size_t absolute_index = sample_index + i;
+        float t = (float)absolute_index / (float)ALARM_SAMPLE_RATE_HZ;
+        float attack = (absolute_index < UI_CLICK_ATTACK_SAMPLES)
+                           ? ((float)absolute_index / (float)UI_CLICK_ATTACK_SAMPLES)
+                           : 1.0f;
+        float decay = 1.0f - ((float)absolute_index / (float)total_samples);
+        float tone = (sinf(2.0f * (float)M_PI * UI_CLICK_PRIMARY_HZ * t) * 0.76f) +
+                     (sinf(2.0f * (float)M_PI * UI_CLICK_SECONDARY_HZ * t + 0.35f) * 0.24f);
+
+        decay *= decay;
+        chunk[i] = (int16_t)lroundf(tone * attack * decay * UI_CLICK_AMPLITUDE);
+    }
+
+    return chunk_samples;
+}
+
 static bool mode_uses_ascending_ramp(alarm_audio_mode_t mode)
 {
     return mode == ALARM_AUDIO_MODE_ALARM || mode == ALARM_AUDIO_MODE_TEST;
@@ -133,6 +169,17 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
         *elapsed_samples = 0;
         *mode = ALARM_AUDIO_MODE_TEST;
         *applied_volume = compute_alarm_volume(*volume, *elapsed_samples);
+        apply_volume(*applied_volume);
+        break;
+    case ALARM_AUDIO_CMD_PLAY_CLICK:
+        if (*mode == ALARM_AUDIO_MODE_ALARM || *mode == ALARM_AUDIO_MODE_TEST) {
+            break;
+        }
+        *volume = clamp_volume(cmd->volume);
+        *sample_index = 0;
+        *elapsed_samples = 0;
+        *mode = ALARM_AUDIO_MODE_CLICK;
+        *applied_volume = *volume;
         apply_volume(*applied_volume);
         break;
     case ALARM_AUDIO_CMD_STOP:
@@ -186,14 +233,31 @@ static void alarm_audio_task(void *arg)
             continue;
         }
 
-        if (sample_index >= (size_t)ALARM_PCM_SAMPLES) {
-            sample_index = 0;
+        size_t chunk_samples = 0;
+
+        if (mode == ALARM_AUDIO_MODE_CLICK) {
+            if (sample_index >= ui_click_total_samples()) {
+                mode = ALARM_AUDIO_MODE_IDLE;
+                sample_index = 0;
+                elapsed_samples = 0;
+                s_alarm_audio.mode = mode;
+                write_silence();
+                continue;
+            }
+
+            chunk_samples = fill_ui_click_chunk(chunk, sample_index);
+        } else {
+            size_t remaining;
+
+            if (sample_index >= (size_t)ALARM_PCM_SAMPLES) {
+                sample_index = 0;
+            }
+
+            remaining = (size_t)ALARM_PCM_SAMPLES - sample_index;
+            chunk_samples = (remaining > ALARM_AUDIO_CHUNK_SAMPLES) ? ALARM_AUDIO_CHUNK_SAMPLES : remaining;
+            memcpy(chunk, &alarm_pcm_data[sample_index], chunk_samples * sizeof(int16_t));
         }
 
-        size_t remaining = (size_t)ALARM_PCM_SAMPLES - sample_index;
-        size_t chunk_samples = (remaining > ALARM_AUDIO_CHUNK_SAMPLES) ? ALARM_AUDIO_CHUNK_SAMPLES : remaining;
-
-        memcpy(chunk, &alarm_pcm_data[sample_index], chunk_samples * sizeof(int16_t));
         if (esp_codec_dev_write(s_alarm_audio.speaker, chunk, chunk_samples * sizeof(int16_t)) != ESP_CODEC_DEV_OK) {
             ESP_LOGW(TAG, "Alarm audio write failed");
             mode = ALARM_AUDIO_MODE_IDLE;
@@ -205,6 +269,14 @@ static void alarm_audio_task(void *arg)
         }
 
         sample_index += chunk_samples;
+        if (mode == ALARM_AUDIO_MODE_CLICK && sample_index >= ui_click_total_samples()) {
+            mode = ALARM_AUDIO_MODE_IDLE;
+            sample_index = 0;
+            elapsed_samples = 0;
+            s_alarm_audio.mode = mode;
+            write_silence();
+            continue;
+        }
         if (mode_uses_ascending_ramp(mode)) {
             uint8_t next_volume;
 
@@ -235,6 +307,11 @@ static esp_err_t enqueue_command(alarm_audio_cmd_type_t type, uint8_t volume)
         s_alarm_audio.mode = ALARM_AUDIO_MODE_ALARM;
     } else if (type == ALARM_AUDIO_CMD_PLAY_TEST) {
         s_alarm_audio.mode = ALARM_AUDIO_MODE_TEST;
+    } else if (type == ALARM_AUDIO_CMD_PLAY_CLICK) {
+        if (previous_mode == ALARM_AUDIO_MODE_ALARM || previous_mode == ALARM_AUDIO_MODE_TEST) {
+            return ESP_OK;
+        }
+        s_alarm_audio.mode = ALARM_AUDIO_MODE_CLICK;
     } else if (type == ALARM_AUDIO_CMD_STOP) {
         s_alarm_audio.mode = ALARM_AUDIO_MODE_IDLE;
     } else if (type == ALARM_AUDIO_CMD_SET_VOLUME) {
@@ -348,6 +425,11 @@ esp_err_t alarm_audio_start_alarm(uint8_t volume)
 esp_err_t alarm_audio_start_test(uint8_t volume)
 {
     return enqueue_command(ALARM_AUDIO_CMD_PLAY_TEST, volume);
+}
+
+esp_err_t alarm_audio_play_ui_click(uint8_t volume)
+{
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_CLICK, volume);
 }
 
 void alarm_audio_stop(void)

@@ -175,6 +175,7 @@ typedef struct {
     bool wifi_cache_valid;
     bool night_cache_valid;
     bool cached_night_enabled;
+    bool cached_night_sunrise_brightness_enabled;
     bool cached_in_night_mode;
     int8_t cached_timezone_offset_hours;
     uint8_t cached_night_start_hour;
@@ -232,12 +233,14 @@ typedef struct {
     lv_obj_t *wifi_network_list;
     lv_obj_t *wifi_timezone_dd;
     lv_obj_t *night_enabled_sw;
+    lv_obj_t *night_schedule_card;
     lv_obj_t *night_schedule_button;
     lv_obj_t *night_schedule_summary;
     lv_obj_t *night_start_hour_dd;
     lv_obj_t *night_start_min_dd;
     lv_obj_t *night_end_hour_dd;
     lv_obj_t *night_end_min_dd;
+    lv_obj_t *night_face_card;
     lv_obj_t *night_face_button;
     lv_obj_t *night_face_preview_shell;
     lv_obj_t *night_face_preview;
@@ -252,8 +255,11 @@ typedef struct {
     lv_obj_t *night_face_picker_preview[CLOCK_FACE_COUNT];
     lv_draw_buf_t *night_face_picker_preview_buf[CLOCK_FACE_COUNT];
     lv_obj_t *night_face_picker_label[CLOCK_FACE_COUNT];
+    lv_obj_t *night_brightness_card;
     lv_obj_t *night_brightness_slider;
     lv_obj_t *night_brightness_dd;
+    lv_obj_t *night_sunrise_card;
+    lv_obj_t *night_sunrise_sw;
     lv_obj_t *night_status_label;
     network_ctx_t network_ctx[CLOCK_WIFI_SCAN_RESULT_MAX];
     face_ctx_t face_ctx[CLOCK_FACE_COUNT];

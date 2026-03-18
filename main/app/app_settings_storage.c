@@ -17,6 +17,7 @@
 
 #define SETTINGS_VERSION_V4 4U
 #define SETTINGS_VERSION_V5 5U
+#define SETTINGS_VERSION_V6 6U
 #define SETTINGS_KEY_LEGACY_BLOB "settings"
 #define SETTINGS_KEY_VERSION "ver"
 #define SETTINGS_KEY_BASE_BRIGHTNESS "base_bri"
@@ -35,6 +36,7 @@
 #define SETTINGS_KEY_NIGHT_END_MINUTE "n_em"
 #define SETTINGS_KEY_NIGHT_BRIGHTNESS "n_bri"
 #define SETTINGS_KEY_NIGHT_FACE "n_face"
+#define SETTINGS_KEY_NIGHT_SUNRISE "n_sun"
 #define SETTINGS_KEY_ALARMS "alarms"
 #define SETTINGS_KEY_LAST_SYNCED "last_sync"
 #define SETTINGS_KEY_SKIPPED_EPOCH "skip_epoch"
@@ -133,6 +135,11 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .offset = offsetof(app_settings_t, night_mode.face),
     },
     {
+        .key = SETTINGS_KEY_NIGHT_SUNRISE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.sunrise_brightness_enabled),
+    },
+    {
         .key = SETTINGS_KEY_LAST_SYNCED,
         .kind = SETTINGS_FIELD_I64,
         .offset = offsetof(app_settings_t, last_synced_epoch),
@@ -152,7 +159,7 @@ static const settings_field_descriptor_t s_settings_fields[] = {
 static void set_defaults(app_settings_t *settings)
 {
     settings_policy_set_defaults(settings);
-    settings->version = SETTINGS_VERSION_V5;
+    settings->version = SETTINGS_VERSION_V6;
 }
 
 static void *field_ptr(void *base, size_t offset)
@@ -233,7 +240,7 @@ static esp_err_t save_field(const app_settings_storage_t *storage,
     return ESP_FAIL;
 }
 
-static esp_err_t load_v5_settings(const app_settings_storage_t *storage, app_settings_t *settings)
+static esp_err_t load_structured_settings(const app_settings_storage_t *storage, app_settings_t *settings)
 {
     size_t alarms_size = sizeof(settings->alarms);
     app_settings_t defaults;
@@ -264,7 +271,7 @@ static esp_err_t load_v5_settings(const app_settings_storage_t *storage, app_set
     }
 
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V5;
+    settings->version = SETTINGS_VERSION_V6;
     return ESP_OK;
 }
 
@@ -293,8 +300,9 @@ static esp_err_t load_legacy_v4_settings(const app_settings_storage_t *storage, 
     }
 
     *settings = loaded;
+    settings->night_mode.sunrise_brightness_enabled = true;
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V5;
+    settings->version = SETTINGS_VERSION_V6;
     return ESP_OK;
 }
 
@@ -310,10 +318,10 @@ esp_err_t app_settings_load_from_storage(const app_settings_storage_t *storage, 
 
     err = storage->get_u32(storage->ctx, SETTINGS_KEY_VERSION, &version);
     if (err == ESP_OK) {
-        if (version != SETTINGS_VERSION_V5) {
+        if (version != SETTINGS_VERSION_V5 && version != SETTINGS_VERSION_V6) {
             return ESP_ERR_INVALID_VERSION;
         }
-        return load_v5_settings(storage, settings);
+        return load_structured_settings(storage, settings);
     }
     if (err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
         return load_legacy_v4_settings(storage, settings);
@@ -332,9 +340,9 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
     }
 
     settings_policy_sanitize(&copy);
-    copy.version = SETTINGS_VERSION_V5;
+    copy.version = SETTINGS_VERSION_V6;
 
-    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V5);
+    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V6);
     for (size_t i = 0;
          err == ESP_OK && i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]);
          ++i) {

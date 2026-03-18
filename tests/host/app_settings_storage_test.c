@@ -270,7 +270,7 @@ static int test_v5_round_trip(void)
     app_settings_t loaded;
 
     settings_policy_set_defaults(&saved);
-    saved.version = 5;
+    saved.version = 6;
     saved.base_brightness = 77;
     saved.alarm_volume = 61;
     saved.ascending_alarm_enabled = true;
@@ -286,6 +286,7 @@ static int test_v5_round_trip(void)
     saved.night_mode.end_hour = 6;
     saved.night_mode.brightness = 25;
     saved.night_mode.face = CLOCK_FACE_MODERN_SILVER;
+    saved.night_mode.sunrise_brightness_enabled = false;
     saved.last_synced_epoch = make_utc_time(2026, 3, 12, 7, 0, 0);
 
     EXPECT_EQ_INT(ESP_OK, app_settings_save_to_storage(&storage, &saved));
@@ -302,6 +303,7 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(find_entry(&store, "tz") != NULL);
     EXPECT_TRUE(find_entry(&store, "n_en") != NULL);
     EXPECT_TRUE(find_entry(&store, "n_face") != NULL);
+    EXPECT_TRUE(find_entry(&store, "n_sun") != NULL);
     EXPECT_TRUE(find_entry(&store, "alarms") != NULL);
     EXPECT_TRUE(find_entry(&store, "last_sync") != NULL);
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
@@ -315,6 +317,7 @@ static int test_v5_round_trip(void)
     EXPECT_EQ_INT(3, loaded.wifi.timezone_offset_hours);
     EXPECT_TRUE(loaded.night_mode.enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MODERN_SILVER, loaded.night_mode.face);
+    EXPECT_FALSE(loaded.night_mode.sunrise_brightness_enabled);
     return 0;
 }
 
@@ -339,7 +342,8 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
-    EXPECT_EQ_INT(5, loaded.version);
+    EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
+    EXPECT_EQ_INT(6, loaded.version);
     return 0;
 }
 
@@ -363,6 +367,8 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
+    EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
+    EXPECT_EQ_INT(6, loaded.version);
     return 0;
 }
 

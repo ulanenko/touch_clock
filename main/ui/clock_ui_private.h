@@ -27,6 +27,7 @@ void request_set_face_theme(clock_ui_context_t *ctx, clock_face_id_t face, uint8
 void request_set_night_face(clock_ui_context_t *ctx, clock_face_id_t face);
 void request_set_timezone(clock_ui_context_t *ctx, int8_t utc_offset_hours);
 void request_save_wifi_credentials(clock_ui_context_t *ctx, const char *ssid, const char *password);
+void request_ui_click_feedback(clock_ui_context_t *ctx);
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t start_hour,
@@ -34,6 +35,7 @@ void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t end_hour,
                                 uint8_t end_minute);
 void request_set_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent);
+void request_set_night_sunrise_brightness_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_alarm_volume(clock_ui_context_t *ctx, uint8_t volume);
 void request_set_ascending_alarm_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_snooze_minutes(clock_ui_context_t *ctx, uint8_t minutes);
@@ -94,6 +96,7 @@ void create_wharton_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_sternglas_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_avenir_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_modern_silver_face(clock_ui_context_t *ctx, lv_obj_t *parent);
+void ui_play_click_feedback(void);
 
 clock_face_id_t sanitize_enabled_face(clock_face_id_t face);
 struct tm get_local_time_now(void);

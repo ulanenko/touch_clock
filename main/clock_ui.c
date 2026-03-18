@@ -308,6 +308,13 @@ void request_save_wifi_credentials(clock_ui_context_t *ctx, const char *ssid, co
     }
 }
 
+void request_ui_click_feedback(clock_ui_context_t *ctx)
+{
+    if (ctx->callbacks.on_ui_click_feedback != NULL) {
+        ctx->callbacks.on_ui_click_feedback(ctx->user_ctx);
+    }
+}
+
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled)
 {
     if (ctx->callbacks.on_set_night_mode_enabled != NULL) {
@@ -330,6 +337,13 @@ void request_set_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent)
 {
     if (ctx->callbacks.on_set_night_brightness != NULL) {
         ctx->callbacks.on_set_night_brightness(ctx->user_ctx, hw_percent);
+    }
+}
+
+void request_set_night_sunrise_brightness_enabled(clock_ui_context_t *ctx, bool enabled)
+{
+    if (ctx->callbacks.on_set_night_sunrise_brightness_enabled != NULL) {
+        ctx->callbacks.on_set_night_sunrise_brightness_enabled(ctx->user_ctx, enabled);
     }
 }
 
@@ -373,6 +387,19 @@ void request_delete_alarm(clock_ui_context_t *ctx, uint8_t alarm_index)
     if (ctx->callbacks.on_delete_alarm != NULL) {
         ctx->callbacks.on_delete_alarm(ctx->user_ctx, alarm_index);
     }
+}
+
+void ui_play_click_feedback(void)
+{
+    static uint32_t s_last_click_tick = 0;
+    uint32_t now = lv_tick_get();
+
+    if ((now - s_last_click_tick) < 35U) {
+        return;
+    }
+
+    s_last_click_tick = now;
+    request_ui_click_feedback(&s_ctx);
 }
 
 void set_root_ui_hidden(clock_ui_context_t *ctx, bool hidden)

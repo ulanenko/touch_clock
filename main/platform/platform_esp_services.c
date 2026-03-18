@@ -62,6 +62,11 @@ static int esp_audio_start_test(uint8_t volume)
     return alarm_audio_start_test(volume);
 }
 
+static int esp_audio_play_ui_click(uint8_t volume)
+{
+    return alarm_audio_play_ui_click(volume);
+}
+
 static void esp_audio_stop(void)
 {
     alarm_audio_stop();
@@ -134,6 +139,7 @@ static const audio_service_t s_audio_service = {
     .set_ascending_enabled = esp_audio_set_ascending_enabled,
     .start_alarm = esp_audio_start_alarm,
     .start_test = esp_audio_start_test,
+    .play_ui_click = esp_audio_play_ui_click,
     .stop = esp_audio_stop,
     .is_alarm_active = esp_audio_is_alarm_active,
     .is_test_active = esp_audio_is_test_active,

@@ -43,6 +43,7 @@ app_action_result_t app_action_set_runtime_night_brightness_override(app_state_t
                                                                      uint8_t hw_percent,
                                                                      time_t now);
 app_action_result_t app_action_set_night_brightness(app_state_t *state, uint8_t hw_percent, time_t now);
+app_action_result_t app_action_set_night_sunrise_brightness_enabled(app_state_t *state, bool enabled, time_t now);
 app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_id_t face);
 app_action_result_t app_action_set_face_theme(app_state_t *state, clock_face_id_t face, uint8_t theme);
 app_action_result_t app_action_set_night_face(app_state_t *state, clock_face_id_t face);

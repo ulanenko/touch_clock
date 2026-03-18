@@ -17,6 +17,7 @@ static int test_defaults(void)
     EXPECT_TRUE(face_catalog_is_enabled(settings.current_face));
     EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_TRUE(face_catalog_is_enabled(settings.night_mode.face));
+    EXPECT_TRUE(settings.night_mode.sunrise_brightness_enabled);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     EXPECT_EQ_INT(0, settings.wifi.timezone_offset_hours);
     return 0;
@@ -54,6 +55,7 @@ static int test_sanitize_invalid_values(void)
     EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(face_catalog_first_enabled(), settings.night_mode.face);
     EXPECT_EQ_INT(0, settings.night_mode.brightness);
+    EXPECT_TRUE(settings.night_mode.sunrise_brightness_enabled);
     EXPECT_EQ_INT(22, settings.night_mode.start_hour);
     EXPECT_EQ_INT(7, settings.night_mode.end_hour);
     EXPECT_EQ_INT(0, settings.wifi.timezone_offset_hours);

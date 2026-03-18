@@ -48,6 +48,31 @@ static int test_sunrise_and_alarm_override(void)
     return 0;
 }
 
+static int test_night_sunrise_ramp_toggle(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime = {0};
+    time_t now = make_utc_time(2026, 3, 12, 6, 0, 0);
+
+    settings_policy_set_defaults(&settings);
+    settings.base_brightness = 80;
+    settings.night_mode.enabled = true;
+    settings.night_mode.brightness = 25;
+    settings.night_mode.sunrise_brightness_enabled = false;
+
+    runtime.in_night_mode = true;
+    runtime.sunrise_active = true;
+    runtime.next_alarm_epoch = now + 900;
+    EXPECT_EQ_INT(25, brightness_policy_get_target(&runtime, &settings, now));
+
+    settings.night_mode.sunrise_brightness_enabled = true;
+    EXPECT_EQ_INT(40, brightness_policy_get_target(&runtime, &settings, now));
+
+    runtime.next_alarm_epoch = now + 60;
+    EXPECT_EQ_INT(54, brightness_policy_get_target(&runtime, &settings, now));
+    return 0;
+}
+
 static int test_slider_mapping(void)
 {
     int round_trip;
@@ -73,6 +98,11 @@ int main(void)
     }
 
     status = test_sunrise_and_alarm_override();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_night_sunrise_ramp_toggle();
     if (status != 0) {
         return status;
     }

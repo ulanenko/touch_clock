@@ -1,15 +1,179 @@
 #include "ui/ui_controls.h"
 
+#include <stdint.h>
+
+void ui_play_click_feedback(void);
+
+typedef struct {
+    lv_obj_t *roller;
+    uint32_t selected;
+} ui_roller_feedback_state_t;
+
+#define UI_ROLLER_FEEDBACK_SLOTS 8
+
+static ui_roller_feedback_state_t g_ui_roller_feedback_states[UI_ROLLER_FEEDBACK_SLOTS];
+
+static ui_roller_feedback_state_t *ui_roller_feedback_state_for(lv_obj_t *roller, bool create)
+{
+    ui_roller_feedback_state_t *empty = NULL;
+
+    for (size_t i = 0; i < UI_ROLLER_FEEDBACK_SLOTS; ++i) {
+        if (g_ui_roller_feedback_states[i].roller == roller) {
+            return &g_ui_roller_feedback_states[i];
+        }
+        if (empty == NULL && g_ui_roller_feedback_states[i].roller == NULL) {
+            empty = &g_ui_roller_feedback_states[i];
+        }
+    }
+
+    if (!create) {
+        return NULL;
+    }
+
+    if (empty != NULL) {
+        empty->roller = roller;
+        empty->selected = 0;
+        return empty;
+    }
+
+    g_ui_roller_feedback_states[0].roller = roller;
+    g_ui_roller_feedback_states[0].selected = 0;
+    return &g_ui_roller_feedback_states[0];
+}
+
+static uint32_t ui_roller_feedback_selected(lv_obj_t *roller)
+{
+    ui_roller_feedback_state_t *state = ui_roller_feedback_state_for(roller, false);
+
+    return state != NULL ? state->selected : lv_roller_get_selected(roller);
+}
+
+static void ui_roller_feedback_set_selected(lv_obj_t *roller, uint32_t selected)
+{
+    ui_roller_feedback_state_t *state = ui_roller_feedback_state_for(roller, true);
+
+    if (state != NULL) {
+        state->selected = selected;
+    }
+}
+
+static void ui_roller_feedback_clear(lv_obj_t *roller)
+{
+    ui_roller_feedback_state_t *state = ui_roller_feedback_state_for(roller, false);
+
+    if (state != NULL) {
+        state->roller = NULL;
+        state->selected = 0;
+    }
+}
+
+static void ui_click_feedback_event_cb(lv_event_t *event)
+{
+    LV_UNUSED(event);
+    ui_play_click_feedback();
+}
+
+static uint32_t ui_roller_feedback_live_selected(lv_obj_t *roller)
+{
+    lv_obj_t *label = lv_obj_get_child(roller, 0);
+    const lv_font_t *font;
+    int32_t line_space;
+    int32_t font_h;
+    int32_t line_h;
+    int32_t offset;
+    int32_t id;
+    uint32_t option_count;
+
+    if (label == NULL) {
+        return lv_roller_get_selected(roller);
+    }
+
+    font = lv_obj_get_style_text_font(roller, LV_PART_MAIN);
+    font_h = font != NULL ? lv_font_get_line_height(font) : 0;
+    line_space = lv_obj_get_style_text_line_space(roller, LV_PART_MAIN);
+    line_h = font_h + line_space;
+    if (line_h <= 0) {
+        return lv_roller_get_selected(roller);
+    }
+
+    offset = lv_obj_get_content_height(roller) / 2 - font_h / 2 - lv_obj_get_y(label);
+    if (offset >= 0) {
+        id = (offset + line_h / 2) / line_h;
+    } else {
+        id = (offset - line_h / 2) / line_h;
+    }
+
+    option_count = lv_roller_get_option_count(roller);
+    if (option_count == 0) {
+        return 0;
+    }
+
+    if (id < 0) {
+        id = 0;
+    } else if ((uint32_t)id >= option_count) {
+        id = (int32_t)option_count - 1;
+    }
+
+    return (uint32_t)id;
+}
+
+static void ui_roller_click_feedback_event_cb(lv_event_t *event)
+{
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_obj_t *roller = lv_event_get_current_target(event);
+    uint32_t selected;
+
+    if (roller == NULL) {
+        return;
+    }
+
+    if (code == LV_EVENT_DELETE) {
+        ui_roller_feedback_clear(roller);
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSED) {
+        ui_roller_feedback_set_selected(roller, ui_roller_feedback_live_selected(roller));
+        return;
+    }
+
+    if (code == LV_EVENT_PRESSING) {
+        selected = ui_roller_feedback_live_selected(roller);
+    } else if (code == LV_EVENT_VALUE_CHANGED) {
+        selected = lv_roller_get_selected(roller);
+    } else {
+        return;
+    }
+
+    if (ui_roller_feedback_selected(roller) == selected) {
+        return;
+    }
+
+    ui_roller_feedback_set_selected(roller, selected);
+    ui_play_click_feedback();
+}
+
+void ui_attach_click_feedback(lv_obj_t *obj, lv_event_code_t code)
+{
+    if (obj == NULL) {
+        return;
+    }
+
+    lv_obj_add_event_cb(obj, ui_click_feedback_event_cb, code, NULL);
+}
+
 void create_section_title(lv_obj_t *parent, const char *title, const char *subtitle)
 {
     lv_obj_t *heading = lv_label_create(parent);
     lv_obj_set_style_text_font(heading, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(heading, lv_color_white(), 0);
+    lv_obj_set_style_text_color(heading, lv_color_hex(0x7A7A7A), LV_STATE_DISABLED);
     lv_label_set_text(heading, title);
 
     if (subtitle != NULL) {
         lv_obj_t *desc = lv_label_create(parent);
         lv_obj_set_style_text_color(desc, lv_color_hex(0xA8A8A8), 0);
+        lv_obj_set_style_text_color(desc, lv_color_hex(0x686868), LV_STATE_DISABLED);
         lv_label_set_text(desc, subtitle);
     }
 }
@@ -56,6 +220,49 @@ lv_obj_t *create_row(lv_obj_t *parent)
     return row;
 }
 
+lv_obj_t *create_labeled_trailing_control_row(lv_obj_t *parent,
+                                              const char *title,
+                                              const char *subtitle,
+                                              lv_coord_t text_width,
+                                              lv_obj_t **text_col_out)
+{
+    lv_obj_t *row = create_row(parent);
+    lv_obj_t *text_col = lv_obj_create(row);
+    lv_obj_t *label;
+
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+
+    lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(text_col, 0, 0);
+    lv_obj_set_style_pad_all(text_col, 0, 0);
+    lv_obj_set_style_pad_row(text_col, 6, 0);
+    lv_obj_set_width(text_col, text_width);
+    lv_obj_set_layout(text_col, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(text_col, LV_FLEX_FLOW_COLUMN);
+    lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
+
+    label = lv_label_create(text_col);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(0x7A7A7A), LV_STATE_DISABLED);
+    lv_label_set_text(label, title != NULL ? title : "");
+
+    if (subtitle != NULL) {
+        label = lv_label_create(text_col);
+        lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
+        lv_obj_set_style_text_color(label, lv_color_hex(0x686868), LV_STATE_DISABLED);
+        lv_obj_set_style_text_line_space(label, 4, 0);
+        lv_label_set_text(label, subtitle);
+    }
+
+    if (text_col_out != NULL) {
+        *text_col_out = text_col;
+    }
+
+    return row;
+}
+
 lv_obj_t *create_action_button(lv_obj_t *parent, const char *text, lv_event_cb_t cb, void *user_data)
 {
     lv_obj_t *button = lv_button_create(parent);
@@ -79,6 +286,7 @@ lv_obj_t *create_action_button(lv_obj_t *parent, const char *text, lv_event_cb_t
     if (cb != NULL) {
         lv_obj_add_event_cb(button, cb, LV_EVENT_CLICKED, user_data);
     }
+    ui_attach_click_feedback(button, LV_EVENT_CLICKED);
 
     return button;
 }
@@ -113,6 +321,7 @@ lv_obj_t *create_big_action_button(lv_obj_t *parent,
     if (cb != NULL) {
         lv_obj_add_event_cb(button, cb, LV_EVENT_CLICKED, user_data);
     }
+    ui_attach_click_feedback(button, LV_EVENT_CLICKED);
 
     return button;
 }
@@ -143,6 +352,7 @@ lv_obj_t *create_icon_circle_button(lv_obj_t *parent,
     if (cb != NULL) {
         lv_obj_add_event_cb(button, cb, LV_EVENT_CLICKED, user_data);
     }
+    ui_attach_click_feedback(button, LV_EVENT_CLICKED);
 
     return button;
 }
@@ -181,10 +391,15 @@ lv_obj_t *create_time_roller(lv_obj_t *parent,
     lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DISABLED);
     lv_obj_set_style_bg_color(roller, lv_color_hex(0xD8DDE3), LV_PART_SELECTED | LV_STATE_DISABLED);
     lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_SELECTED | LV_STATE_DISABLED);
+    ui_roller_feedback_set_selected(roller, lv_roller_get_selected(roller));
 
     if (cb != NULL) {
         lv_obj_add_event_cb(roller, cb, LV_EVENT_VALUE_CHANGED, user_data);
     }
+    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_PRESSED, NULL);
+    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_PRESSING, NULL);
+    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_VALUE_CHANGED, NULL);
+    lv_obj_add_event_cb(roller, ui_roller_click_feedback_event_cb, LV_EVENT_DELETE, NULL);
 
     return roller;
 }
