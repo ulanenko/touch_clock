@@ -450,7 +450,13 @@ typedef struct {
     int wharton_second_count;
     void *wharton_face_buf;
     lv_obj_t *wharton_face_obj;
+    lv_obj_t *face_reveal_render;
+    lv_obj_t *face_reveal_shell;
+    lv_obj_t *face_reveal_img;
+    lv_draw_buf_t *face_reveal_buf;
     lv_obj_t *face_swipe_layer;
+    clock_face_id_t face_reveal_target;
+    bool face_reveal_animating;
     bool face_swipe_tracking;
     lv_point_t face_swipe_start_point;
 } clock_ui_face_state_t;

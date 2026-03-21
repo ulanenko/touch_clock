@@ -2,6 +2,10 @@
 
 #include "domain/face_catalog.h"
 
+#define FACE_REVEAL_START_SIZE 48
+#define FACE_REVEAL_END_SIZE 1040
+#define FACE_REVEAL_MS 220
+
 static uint8_t face_theme_value(const clock_ui_context_t *ctx, clock_face_id_t face)
 {
     if (ctx == NULL || ctx->settings == NULL || !clock_face_is_valid(face)) {
@@ -12,6 +16,112 @@ static uint8_t face_theme_value(const clock_ui_context_t *ctx, clock_face_id_t f
 }
 
 static int32_t face_theme_current_y(const clock_ui_context_t *ctx);
+static void face_reveal_anim_cb(void *var, int32_t value);
+static void face_reveal_anim_ready_cb(lv_anim_t *anim);
+static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face);
+static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face);
+
+static void face_reveal_anim_cb(void *var, int32_t value)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)var;
+
+    if (ctx == NULL || ctx->faces.face_reveal_shell == NULL) {
+        return;
+    }
+
+    lv_obj_set_size(ctx->faces.face_reveal_shell, value, value);
+    lv_obj_set_style_radius(ctx->faces.face_reveal_shell, LV_RADIUS_CIRCLE, 0);
+    lv_obj_center(ctx->faces.face_reveal_shell);
+}
+
+static void face_reveal_anim_ready_cb(lv_anim_t *anim)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
+
+    if (ctx == NULL || ctx->faces.face_reveal_shell == NULL) {
+        return;
+    }
+
+    ctx->faces.face_reveal_animating = false;
+    lv_obj_add_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN);
+    set_active_face(ctx, ctx->faces.face_reveal_target, LV_ANIM_OFF);
+}
+
+static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    const void *src;
+
+    if (ctx == NULL ||
+        ctx->faces.face_reveal_render == NULL ||
+        ctx->faces.face_reveal_shell == NULL ||
+        ctx->faces.face_reveal_img == NULL) {
+        return false;
+    }
+
+    src = ui_face_preview_source(ctx, face);
+    if (src == NULL) {
+        return false;
+    }
+
+    lv_obj_set_size(ctx->faces.face_reveal_render, SCREEN_SIZE, SCREEN_SIZE);
+    lv_image_set_src(ctx->faces.face_reveal_render, src);
+    lv_image_set_inner_align(ctx->faces.face_reveal_render, LV_IMAGE_ALIGN_COVER);
+    lv_obj_update_layout(ctx->faces.face_reveal_render);
+
+    if (ctx->faces.face_reveal_buf == NULL ||
+        lv_snapshot_reshape_draw_buf(ctx->faces.face_reveal_render, ctx->faces.face_reveal_buf) != LV_RESULT_OK) {
+        if (ctx->faces.face_reveal_buf != NULL) {
+            lv_draw_buf_destroy(ctx->faces.face_reveal_buf);
+        }
+        ctx->faces.face_reveal_buf =
+            lv_snapshot_create_draw_buf(ctx->faces.face_reveal_render, LV_COLOR_FORMAT_RGB565);
+        if (ctx->faces.face_reveal_buf == NULL) {
+            return false;
+        }
+    }
+
+    if (lv_snapshot_take_to_draw_buf(ctx->faces.face_reveal_render,
+                                     LV_COLOR_FORMAT_RGB565,
+                                     ctx->faces.face_reveal_buf) != LV_RESULT_OK) {
+        return false;
+    }
+
+    ctx->faces.face_reveal_target = face;
+    lv_image_set_src(ctx->faces.face_reveal_img, ctx->faces.face_reveal_buf);
+    lv_obj_align(ctx->faces.face_reveal_img, LV_ALIGN_CENTER, 0, 0);
+    return true;
+}
+
+static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    lv_anim_t anim;
+
+    if (ctx == NULL || ctx->faces.face_reveal_animating) {
+        return false;
+    }
+
+    face = sanitize_enabled_face(face);
+    if (!face_reveal_prepare(ctx, face)) {
+        return false;
+    }
+
+    ctx->faces.face_reveal_animating = true;
+    lv_anim_delete(ctx, face_reveal_anim_cb);
+    lv_obj_move_foreground(ctx->faces.face_reveal_shell);
+    lv_obj_clear_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN);
+    face_reveal_anim_cb(ctx, FACE_REVEAL_START_SIZE);
+
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, ctx);
+    lv_anim_set_user_data(&anim, ctx);
+    lv_anim_set_exec_cb(&anim, face_reveal_anim_cb);
+    lv_anim_set_values(&anim, FACE_REVEAL_START_SIZE, FACE_REVEAL_END_SIZE);
+    lv_anim_set_time(&anim, FACE_REVEAL_MS);
+    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
+    lv_anim_set_ready_cb(&anim, face_reveal_anim_ready_cb);
+    lv_anim_start(&anim);
+    return true;
+}
 
 static void sync_active_face_visual_state(clock_ui_context_t *ctx)
 {
@@ -820,7 +930,9 @@ static void face_swipe_event_cb(lv_event_t *event)
         return;
     }
 
-    set_active_face(ctx, target_face, LV_ANIM_OFF);
+    if (!face_reveal_start(ctx, target_face)) {
+        set_active_face(ctx, target_face, LV_ANIM_OFF);
+    }
     show_affordances_temporarily(ctx);
 
     if (ctx->runtime->in_night_mode) {
@@ -830,6 +942,31 @@ static void face_swipe_event_cb(lv_event_t *event)
     } else if (ctx->settings->current_face != target_face) {
         request_set_current_face(ctx, target_face);
     }
+}
+
+static void create_face_reveal_layer(clock_ui_context_t *ctx)
+{
+    ctx->faces.face_reveal_render = lv_image_create(ctx->screen);
+    lv_obj_set_pos(ctx->faces.face_reveal_render, -2000, -2000);
+    lv_obj_clear_flag(ctx->faces.face_reveal_render, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(ctx->faces.face_reveal_render, LV_OBJ_FLAG_CLICKABLE);
+
+    ctx->faces.face_reveal_shell = lv_obj_create(ctx->screen);
+    lv_obj_set_size(ctx->faces.face_reveal_shell, FACE_REVEAL_START_SIZE, FACE_REVEAL_START_SIZE);
+    lv_obj_center(ctx->faces.face_reveal_shell);
+    lv_obj_set_style_bg_opa(ctx->faces.face_reveal_shell, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(ctx->faces.face_reveal_shell, 0, 0);
+    lv_obj_set_style_pad_all(ctx->faces.face_reveal_shell, 0, 0);
+    lv_obj_set_style_radius(ctx->faces.face_reveal_shell, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_clip_corner(ctx->faces.face_reveal_shell, true, 0);
+    lv_obj_clear_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
+
+    ctx->faces.face_reveal_img = lv_image_create(ctx->faces.face_reveal_shell);
+    lv_obj_clear_flag(ctx->faces.face_reveal_img, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(ctx->faces.face_reveal_img, LV_OBJ_FLAG_CLICKABLE);
+    lv_image_set_inner_align(ctx->faces.face_reveal_img, LV_IMAGE_ALIGN_COVER);
+    lv_obj_align(ctx->faces.face_reveal_img, LV_ALIGN_CENTER, 0, 0);
 }
 
 static void create_face_swipe_layer(clock_ui_context_t *ctx)
@@ -1148,6 +1285,7 @@ void build_root_ui(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(ctx->tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL, ctx);
     lv_obj_add_event_cb(ctx->tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
 
+    create_face_reveal_layer(ctx);
     create_face_swipe_layer(ctx);
     create_dots(ctx);
     create_face_theme_pull_hint(ctx);

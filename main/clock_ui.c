@@ -694,7 +694,8 @@ void clock_ui_tick(time_t now)
                             ctx->alarms.settings_open ||
                             ctx->face_theme.overlay_open;
 
-    if (tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)) != desired_face) {
+    if (!ctx->faces.face_reveal_animating &&
+        tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)) != desired_face) {
         set_active_face(ctx, desired_face, LV_ANIM_OFF);
     }
     active_face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
