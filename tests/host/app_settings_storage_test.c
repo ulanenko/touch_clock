@@ -265,6 +265,7 @@ static int test_fresh_defaults(void)
     EXPECT_EQ_INT(50, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
     EXPECT_TRUE(settings.ui_click_sound_enabled);
+    EXPECT_EQ_INT(70, settings.ui_click_volume);
     EXPECT_FALSE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(0, settings.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
@@ -280,10 +281,11 @@ static int test_v5_round_trip(void)
     app_settings_t loaded;
 
     settings_policy_set_defaults(&saved);
-    saved.version = 8;
+    saved.version = 9;
     saved.base_brightness = 77;
     saved.alarm_volume = 61;
     saved.ui_click_sound_enabled = false;
+    saved.ui_click_volume = 42;
     saved.ascending_alarm_enabled = true;
     saved.snooze_minutes = 12;
     saved.current_face = CLOCK_FACE_MATRIX;
@@ -310,6 +312,7 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(find_entry(&store, "base_bri") != NULL);
     EXPECT_TRUE(find_entry(&store, "alarm_vol") != NULL);
     EXPECT_TRUE(find_entry(&store, "ui_click") != NULL);
+    EXPECT_TRUE(find_entry(&store, "ui_clk_vol") != NULL);
     EXPECT_TRUE(find_entry(&store, "alarm_ramp") != NULL);
     EXPECT_TRUE(find_entry(&store, "snooze") != NULL);
     EXPECT_TRUE(find_entry(&store, "face") != NULL);
@@ -326,6 +329,7 @@ static int test_v5_round_trip(void)
     EXPECT_EQ_INT(77, loaded.base_brightness);
     EXPECT_EQ_INT(61, loaded.alarm_volume);
     EXPECT_FALSE(loaded.ui_click_sound_enabled);
+    EXPECT_EQ_INT(42, loaded.ui_click_volume);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MATRIX, loaded.current_face);
     EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_DIGITAL]);
@@ -362,8 +366,9 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
+    EXPECT_EQ_INT(70, loaded.ui_click_volume);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(8, loaded.version);
+    EXPECT_EQ_INT(9, loaded.version);
     return 0;
 }
 
@@ -384,13 +389,14 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(0, loaded.base_brightness);
     EXPECT_EQ_INT(70, loaded.alarm_volume);
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
+    EXPECT_EQ_INT(70, loaded.ui_click_volume);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
     EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
     EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(8, loaded.version);
+    EXPECT_EQ_INT(9, loaded.version);
     return 0;
 }
 
@@ -414,7 +420,30 @@ static int test_v7_alarm_blob_migration(void)
     EXPECT_EQ_INT(7, loaded.alarms[0].hour);
     EXPECT_EQ_INT(30, loaded.alarms[0].minute);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(8, loaded.version);
+    EXPECT_EQ_INT(9, loaded.version);
+    return 0;
+}
+
+static int test_future_structured_version_loads_without_reset(void)
+{
+    fake_store_t store = {0};
+    app_settings_storage_t storage = make_storage(&store);
+    app_settings_t loaded;
+
+    EXPECT_EQ_INT(ESP_OK, store_set_u32(&store, "ver", 99));
+    EXPECT_EQ_INT(ESP_OK, store_set_u8(&store, "base_bri", 64));
+    EXPECT_EQ_INT(ESP_OK, store_set_u8(&store, "alarm_vol", 55));
+    EXPECT_EQ_INT(ESP_OK, store_set_u8(&store, "ui_click", 1));
+    EXPECT_EQ_INT(ESP_OK, store_set_u8(&store, "ui_clk_vol", 33));
+    EXPECT_EQ_INT(ESP_OK, store_set_str(&store, "wifi_ssid", "Office"));
+
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
+    EXPECT_EQ_INT(64, loaded.base_brightness);
+    EXPECT_EQ_INT(55, loaded.alarm_volume);
+    EXPECT_TRUE(loaded.ui_click_sound_enabled);
+    EXPECT_EQ_INT(33, loaded.ui_click_volume);
+    EXPECT_STR_EQ("Office", loaded.wifi.ssid);
+    EXPECT_EQ_INT(9, loaded.version);
     return 0;
 }
 
@@ -444,5 +473,10 @@ int main(void)
         return status;
     }
 
-    return test_v7_alarm_blob_migration();
+    status = test_v7_alarm_blob_migration();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_future_structured_version_loads_without_reset();
 }

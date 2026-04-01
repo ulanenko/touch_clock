@@ -12,6 +12,7 @@ static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_colo
 
 static void close_wifi_dialog(clock_ui_context_t *ctx);
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text);
+static void settings_set_slider_value_if_changed(lv_obj_t *slider, int32_t value);
 static void wifi_network_btn_event_cb(lv_event_t *event);
 static void sync_night_face_preview(clock_ui_context_t *ctx);
 static void sync_night_face_picker_previews(clock_ui_context_t *ctx);
@@ -56,6 +57,7 @@ static void invalidate_settings_ui_cache(clock_ui_context_t *ctx)
     ctx->settings_ui.wifi_cache_valid = false;
     ctx->settings_ui.night_cache_valid = false;
     ctx->settings_ui.cached_ui_click_sound_enabled = !ctx->settings->ui_click_sound_enabled;
+    ctx->settings_ui.cached_ui_click_volume = (uint8_t)(ctx->settings->ui_click_volume + 1U);
 }
 
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -121,17 +123,32 @@ static void settings_format_face_label(char *buffer, size_t size, clock_face_id_
 
 static void sync_other_controls(clock_ui_context_t *ctx)
 {
+    char volume_label[32];
+    bool sound_enabled;
+
     sync_wifi_controls(ctx);
 
     if (ctx->settings_ui.other_sound_sw == NULL) {
         return;
     }
 
+    sound_enabled = ctx->settings->ui_click_sound_enabled;
     ctx->suppress_events = true;
     settings_set_switch_checked_if_changed(ctx->settings_ui.other_sound_sw,
-                                           ctx->settings->ui_click_sound_enabled);
+                                           sound_enabled);
+    settings_set_slider_value_if_changed(ctx->settings_ui.other_sound_volume_slider,
+                                         ctx->settings->ui_click_volume);
     ctx->suppress_events = false;
-    ctx->settings_ui.cached_ui_click_sound_enabled = ctx->settings->ui_click_sound_enabled;
+    snprintf(volume_label, sizeof(volume_label), "%u%%", ctx->settings->ui_click_volume);
+    settings_set_label_text_if_changed(ctx->settings_ui.other_sound_volume_label, volume_label);
+    settings_set_enabled_state(ctx->settings_ui.other_sound_volume_slider, sound_enabled);
+    if (ctx->settings_ui.other_sound_volume_label != NULL) {
+        lv_obj_set_style_text_color(ctx->settings_ui.other_sound_volume_label,
+                                    sound_enabled ? lv_color_white() : lv_color_hex(0xA8A8A8),
+                                    0);
+    }
+    ctx->settings_ui.cached_ui_click_sound_enabled = sound_enabled;
+    ctx->settings_ui.cached_ui_click_volume = ctx->settings->ui_click_volume;
 }
 
 static void settings_format_night_schedule_label(const clock_ui_context_t *ctx, char *buffer, size_t size)
@@ -415,6 +432,7 @@ static void sync_wifi_list(clock_ui_context_t *ctx)
         char meta[64];
         const char *ssid = results[i].ssid[0] ? results[i].ssid : "<hidden>";
 
+        ctx->settings_ui.network_ctx[i].ui = ctx;
         ctx->settings_ui.network_ctx[i].network_index = i;
         snprintf(meta, sizeof(meta), "%ddBm", results[i].rssi);
         create_network_button(ctx->settings_ui.wifi_network_list, ssid, meta, &ctx->settings_ui.network_ctx[i]);
@@ -1389,6 +1407,22 @@ static void other_sound_enabled_event_cb(lv_event_t *event)
     sync_other_controls(ctx);
 }
 
+static void other_sound_volume_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    char volume_label[32];
+    int volume;
+
+    if (ctx->suppress_events) {
+        return;
+    }
+
+    volume = lv_slider_get_value(lv_event_get_target(event));
+    snprintf(volume_label, sizeof(volume_label), "%d%%", volume);
+    settings_set_label_text_if_changed(ctx->settings_ui.other_sound_volume_label, volume_label);
+    request_set_ui_click_volume(ctx, (uint8_t)volume);
+}
+
 static void open_night_face_picker(clock_ui_context_t *ctx)
 {
     if (ctx->settings_ui.night_face_picker_overlay == NULL) {
@@ -2061,6 +2095,49 @@ static void create_other_overlay(clock_ui_context_t *ctx)
                         LV_EVENT_VALUE_CHANGED,
                         ctx);
     ui_attach_click_feedback(ctx->settings_ui.other_sound_sw, LV_EVENT_VALUE_CHANGED);
+
+    card = create_card(surface.content);
+    ctx->settings_ui.other_sound_volume_card = card;
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 14, 0);
+    create_section_title(card, "Touch sound volume", "Adjust the click loudness separately");
+
+    row = create_row(card);
+    center_row(row);
+    ctx->settings_ui.other_sound_volume_label = lv_label_create(row);
+    lv_obj_set_style_text_font(ctx->settings_ui.other_sound_volume_label, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_color(ctx->settings_ui.other_sound_volume_label, lv_color_white(), 0);
+    lv_label_set_text(ctx->settings_ui.other_sound_volume_label, "70%");
+
+    ctx->settings_ui.other_sound_volume_slider = lv_slider_create(card);
+    lv_slider_set_range(ctx->settings_ui.other_sound_volume_slider, 0, 100);
+    lv_obj_set_width(ctx->settings_ui.other_sound_volume_slider, lv_pct(100));
+    style_slider(ctx->settings_ui.other_sound_volume_slider);
+    lv_obj_set_height(ctx->settings_ui.other_sound_volume_slider, 24);
+    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider, lv_color_hex(0x2D2D2D), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
+                              lv_color_hex(UI_ACCENT_COL),
+                              LV_PART_INDICATOR);
+    lv_obj_set_style_shadow_width(ctx->settings_ui.other_sound_volume_slider, 16, LV_PART_KNOB);
+    lv_obj_set_style_shadow_color(ctx->settings_ui.other_sound_volume_slider,
+                                  lv_color_hex(UI_ACCENT_BORDER_COL),
+                                  LV_PART_KNOB);
+    lv_obj_set_style_shadow_opa(ctx->settings_ui.other_sound_volume_slider, LV_OPA_20, LV_PART_KNOB);
+    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
+                              lv_color_hex(0x222222),
+                              LV_PART_MAIN | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
+                              lv_color_hex(0x5A5A5A),
+                              LV_PART_INDICATOR | LV_STATE_DISABLED);
+    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
+                              lv_color_hex(0xA8A8A8),
+                              LV_PART_KNOB | LV_STATE_DISABLED);
+    lv_obj_add_event_cb(ctx->settings_ui.other_sound_volume_slider,
+                        other_sound_volume_event_cb,
+                        LV_EVENT_VALUE_CHANGED,
+                        ctx);
+    ui_attach_click_feedback(ctx->settings_ui.other_sound_volume_slider, LV_EVENT_VALUE_CHANGED);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
                                   &ctx->settings_ui.other_top_sensor,

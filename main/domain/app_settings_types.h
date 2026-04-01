@@ -20,4 +20,5 @@ typedef struct {
     time_t last_synced_epoch;
     time_t skipped_alarm_epoch;
     int8_t skipped_alarm_index;
+    uint8_t ui_click_volume;
 } app_settings_t;

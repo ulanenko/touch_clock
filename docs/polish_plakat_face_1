@@ -1,0 +1,110 @@
+import React, { useState, useEffect } from 'react';
+
+const BackgroundPattern = () => (
+  <svg 
+    width="100%" 
+    height="100%" 
+    viewBox="0 0 400 400" 
+    className="absolute inset-0 z-0 opacity-60"
+    preserveAspectRatio="xMidYMid slice"
+  >
+    <defs>
+      <style>
+        {`
+          .arc-dark { fill: none; stroke: #222222; stroke-width: 28; }
+          .arc-light { fill: none; stroke: #333333; stroke-width: 28; }
+        `}
+      </style>
+    </defs>
+    
+    {/* Concentric circles to mimic the geometric overlapping wave pattern */}
+    {/* Left center */}
+    <circle cx="-140" cy="200" r="220" className="arc-dark" />
+    <circle cx="-140" cy="200" r="270" className="arc-light" />
+    <circle cx="-140" cy="200" r="320" className="arc-dark" />
+    
+    {/* Right center */}
+    <circle cx="540" cy="200" r="220" className="arc-dark" />
+    <circle cx="540" cy="200" r="270" className="arc-light" />
+    <circle cx="540" cy="200" r="320" className="arc-dark" />
+  </svg>
+);
+
+const CustomColon = () => (
+  // Custom colon to match the 3-line Monoton aesthetic from the image
+  <div className="flex flex-col gap-[6px] md:gap-[8px] justify-center mx-1 md:mx-2 pb-2 md:pb-4">
+    <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-gray-200"></div>
+    <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-gray-200"></div>
+    <div className="w-1.5 h-1.5 md:w-2 md:h-2 bg-gray-200"></div>
+  </div>
+);
+
+export default function App() {
+  const [time, setTime] = useState(new Date());
+
+  useEffect(() => {
+    // Update the clock every second
+    const timer = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getHours = (date) => {
+    const hours = date.getHours();
+    return hours < 10 ? '0' + hours : hours.toString();
+  };
+
+  const getMinutes = (date) => {
+    const minutes = date.getMinutes();
+    return minutes < 10 ? '0' + minutes : minutes.toString();
+  };
+
+  const formatDate = (date) => {
+    const day = date.getDate().toString().padStart(2, '0');
+    // Using a short month string, standardizing to uppercase
+    const month = date.toLocaleString('default', { month: 'short' }).toUpperCase();
+    return `${day} ${month}`;
+  };
+
+  return (
+    <div className="min-h-screen bg-[#E34234] flex items-center justify-center p-4">
+      {/* Import the requested Monoton font */}
+      <style>
+        {`
+          @import url('https://fonts.googleapis.com/css2?family=Monoton&display=swap');
+          .font-monoton {
+            font-family: 'Monoton', sans-serif;
+            font-weight: 400;
+          }
+        `}
+      </style>
+      
+      {/* Outer Clock Bezel */}
+      <div className="relative w-[340px] h-[340px] md:w-[480px] md:h-[480px] rounded-full bg-gradient-to-br from-[#3a3a3a] via-[#1a1a1a] to-[#0a0a0a] p-[8px] md:p-[12px] shadow-2xl shadow-black/60">
+        
+        {/* Inner Clock Face */}
+        <div className="relative w-full h-full rounded-full bg-[#111111] overflow-hidden flex flex-col items-center justify-center border-2 border-black/50 shadow-inner">
+          
+          <BackgroundPattern />
+
+          {/* Time & Date Display */}
+          <div className="relative z-10 flex flex-col items-center justify-center -mt-6">
+            
+            {/* Time */}
+            <div className="flex items-center text-7xl md:text-[110px] text-gray-200 font-monoton tracking-widest leading-none drop-shadow-lg">
+              <span>{getHours(time)}</span>
+              <CustomColon />
+              <span>{getMinutes(time)}</span>
+            </div>
+            
+            {/* Date */}
+            <div className="text-4xl md:text-6xl text-gray-300 font-monoton tracking-widest mt-2 md:mt-4 drop-shadow-md">
+              {formatDate(time)}
+            </div>
+            
+          </div>
+          
+        </div>
+      </div>
+    </div>
+  );
+}

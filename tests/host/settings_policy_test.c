@@ -13,6 +13,7 @@ static int test_defaults(void)
     EXPECT_EQ_INT(50, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
     EXPECT_TRUE(settings.ui_click_sound_enabled);
+    EXPECT_EQ_INT(70, settings.ui_click_volume);
     EXPECT_FALSE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(10, settings.snooze_minutes);
     EXPECT_TRUE(face_catalog_is_enabled(settings.current_face));
@@ -34,6 +35,7 @@ static int test_sanitize_invalid_values(void)
     memset(&settings, 0xFF, sizeof(settings));
     settings.base_brightness = 0;
     settings.alarm_volume = 255;
+    settings.ui_click_volume = 255;
     settings.snooze_minutes = 0;
     settings.current_face = CLOCK_FACE_SLAVA_DARK;
     settings.face_themes[CLOCK_FACE_DIGITAL] = 99;
@@ -55,6 +57,7 @@ static int test_sanitize_invalid_values(void)
     EXPECT_EQ_INT(0, settings.base_brightness);
     EXPECT_EQ_INT(70, settings.alarm_volume);
     EXPECT_TRUE(settings.ui_click_sound_enabled);
+    EXPECT_EQ_INT(70, settings.ui_click_volume);
     EXPECT_TRUE(settings.ascending_alarm_enabled);
     EXPECT_EQ_INT(10, settings.snooze_minutes);
     EXPECT_EQ_INT(face_catalog_first_enabled(), settings.current_face);

@@ -20,6 +20,7 @@ typedef struct {
     void (*on_wifi_sync_requested)(void *user_ctx);
     void (*on_ui_click_feedback)(void *user_ctx);
     void (*on_set_ui_click_sound_enabled)(void *user_ctx, bool enabled);
+    void (*on_set_ui_click_volume)(void *user_ctx, uint8_t volume);
     void (*on_set_night_mode_enabled)(void *user_ctx, bool enabled);
     void (*on_set_night_schedule)(void *user_ctx,
                                   uint8_t start_hour,

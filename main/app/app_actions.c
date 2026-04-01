@@ -174,6 +174,21 @@ app_action_result_t app_action_set_ui_click_sound_enabled(app_state_t *state, bo
     return result;
 }
 
+app_action_result_t app_action_set_ui_click_volume(app_state_t *state, uint8_t volume)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    if (state->settings.ui_click_volume == volume) {
+        return result;
+    }
+
+    state->settings.ui_click_volume = volume;
+    settings_policy_sanitize(&state->settings);
+    emit_settings_changed(&result);
+    return result;
+}
+
 app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_id_t face)
 {
     app_action_result_t result;

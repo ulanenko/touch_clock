@@ -37,6 +37,11 @@ static int test_face_and_wifi_actions(void)
     EXPECT_FALSE(state.settings.ui_click_sound_enabled);
     EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
     EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_UI_REFRESH));
+
+    result = app_action_set_ui_click_volume(&state, 42);
+    EXPECT_EQ_INT(42, state.settings.ui_click_volume);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_SETTINGS_CHANGED));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_UI_REFRESH));
     return 0;
 }
 

@@ -29,6 +29,7 @@ void request_set_timezone(clock_ui_context_t *ctx, int8_t utc_offset_hours);
 void request_save_wifi_credentials(clock_ui_context_t *ctx, const char *ssid, const char *password);
 void request_ui_click_feedback(clock_ui_context_t *ctx);
 void request_set_ui_click_sound_enabled(clock_ui_context_t *ctx, bool enabled);
+void request_set_ui_click_volume(clock_ui_context_t *ctx, uint8_t volume);
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t start_hour,

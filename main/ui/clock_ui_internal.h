@@ -213,6 +213,9 @@ typedef struct {
     lv_obj_t *other_right_sensor;
     lv_obj_t *other_sound_card;
     lv_obj_t *other_sound_sw;
+    lv_obj_t *other_sound_volume_card;
+    lv_obj_t *other_sound_volume_slider;
+    lv_obj_t *other_sound_volume_label;
     lv_obj_t *night_overlay;
     lv_obj_t *night_content;
     lv_obj_t *night_top_sensor;
@@ -235,6 +238,7 @@ typedef struct {
     lv_obj_t *wifi_network_list;
     lv_obj_t *wifi_timezone_dd;
     bool cached_ui_click_sound_enabled;
+    uint8_t cached_ui_click_volume;
     lv_obj_t *night_enabled_sw;
     lv_obj_t *night_schedule_card;
     lv_obj_t *night_schedule_button;
