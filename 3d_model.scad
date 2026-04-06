@@ -2,19 +2,18 @@
    - Display scaled to 125.1mm
    - Screen opening uses a squared-off recessed bezel
    - 4mm body wall with an internal support ring for the display
-   - USB port remains a separate modular insert for cleaner printing
-   - Internal base floor includes a parametric chamfer
+   - USB port is cut directly into the body shell
+   - Stand replaced with a 3-part modular pedestal using tapered hex joints
 */
 
 /* [Render Options] */
-part_to_render = "all"; // ["all": "Full Assembly", "body": "Clock Body Only", "stand": "Stand Only", "plate": "Bottom Pad Only", "insert": "USB Port Insert Only"]
-quality_profile = "preview"; // ["preview": "Browser Preview", "final": "Export / Print"]
+part_to_render = "body"; // ["all": "Full Assembly", "body": "Clock Body Only", "stand": "Assembled Stand Only", "stand_base": "Base Plate Only", "stand_stem": "Stem Only", "stand_top": "Top Plate Only", "stand_print": "Stand Print Layout"]
+quality_profile = "final"; // ["preview": "Browser Preview", "final": "Export / Print"]
 
 /* [Hardware / Connection Parameters] */
 m3_hole_d = 3.4;
 m3_nut_d = 6.7;
 m3_nut_depth = 2.5;
-m3_bolt_head_d = 7;
 m3_bolt_head_access_d = 9.0;
 stand_ceiling_thickness = 3;
 body_floor_thickness = 4;
@@ -31,6 +30,14 @@ screen_pocket_clearance = 0.4;
 screen_ledge_margin_d = 6;
 screen_ledge_backset = 5;
 screen_ledge_thickness = 5.1;
+screen_ear_hole_d = 1.9;
+screen_ear_hole_angle = 20;
+screen_ear_margin = 2;
+screen_ear_bridge_w = 2;
+screen_ear_base_w = 4.2;
+screen_ear_base_depth = 1.6;
+screen_ear_overlap = 0;
+screen_ear_thickness = 1.2;
 
 /* [Clock Body Interior] */
 body_is_hollow = true;
@@ -40,23 +47,25 @@ floor_chamfer_height = 4;
 
 /* [Stand Parameters] */
 stand_height = 45;
-stand_base_radius = 54;
-stand_base_radius_bottom = 50;
-stand_chamfer_height = 11;
-stand_top_radius = 40;
-stand_neck_radius = 18;
-stand_neck_height = 25;
-stand_bottom_curve = 2.5;
-stand_top_curve = 2.5;
-stand_is_hollow = false;
-stand_wall_thickness = 4;
-stand_top_rounding_radius = 1.0;
+stand_base_diameter = 95;
+stand_base_thickness = 9;
+stand_top_diameter = 78;
+stand_top_thickness = 2.5;
+anti_rotation_hole_d = 1.8;
+anti_rotation_hole_radius = 14;
+anti_rotation_hole_angle = 0;
+anti_rotation_hole_depth = 7;
+anti_rotation_hole_offset_x = 0;
+anti_rotation_hole_offset_y = -4.0;
+anti_rotation_hole_offset_z = 0;
+stem_diameter = 22;
+stem_height = stand_height - stand_base_thickness - stand_top_thickness;
 
-/* [Plate Parameters] */
-plate_thickness = 10;
-plate_bottom_thickness = 3;
-plate_flange_width = 2.5;
-plate_clearance = 0.3;
+/* [Rigid Joint Parameters] */
+joint_depth = 12;
+joint_bottom_d = 16;
+joint_top_d = 14;
+fit_tolerance = 0.3;
 
 /* [Access Slot Parameters] */
 access_slot_outer_r = 30;
@@ -71,32 +80,26 @@ speaker_ring_count = 5;
 speaker_depth = 15;
 speaker_face_margin = 4;
 
-/* [USB Insert Parameters] */
+/* [USB Port Parameters] */
 rear_port_z = -40;
-usb_insert_hole_d = 20;
-usb_insert_clearance = 0.3;
-usb_insert_body_d = usb_insert_hole_d - usb_insert_clearance;
-usb_insert_body_thickness = body_wall_thickness;
-usb_insert_flange_d = 24;
-usb_insert_flange_thickness = 2;
-usb_insert_cut_depth = 30;
-
+usb_mount_angle = 35;
 usb_port_half_spacing = 3.25;
 usb_port_end_d = 3.5;
 usb_port_cut_depth = 10;
 
-usb_recess_inner_half_spacing = 4.5;
-usb_recess_inner_d = 6;
-usb_recess_depth = 3;
-usb_recess_outer_half_spacing = 7;
-usb_recess_outer_d = 12;
+/* [USB Mounting Holes Parameters] */
+usb_holder_bolt_half_spacing = 10;
+usb_holder_boss_d = 6;
+usb_holder_boss_depth = 1.6;
+usb_holder_boss_pilot_d = 1.8;
+usb_holder_shell_overlap = 2;
 
 // ==========================================
 // SYSTEM & DERIVED CALCULATIONS
 // ==========================================
 
 preview_fn = 100;
-final_fn = 300;
+final_fn = 400;
 $fn = quality_profile == "final" ? final_fn : preview_fn;
 access_slot_sweep_fn = quality_profile == "final" ? 100 : 100;
 profile_corner_steps = quality_profile == "final" ? 20 : 20;
@@ -112,45 +115,65 @@ function chord_offset_for_diameter(sphere_d, chord_d) =
 function sphere_radius_at_z(sphere_d, z) =
     sqrt(max(0, pow(sphere_radius(sphere_d), 2) - pow(z, 2)));
 function rear_surface_y(sphere_d, z) = -sphere_radius_at_z(sphere_d, z);
+function stand_top_body_curve_depth(r) =
+    sqrt(max(0, pow(sphere_radius(body_d), 2) - pow(r, 2))) - bottom_cut_dist;
+function screen_ledge_inner_r() = (display_d - screen_ledge_margin_d) / 2;
+function screen_ear_pad_d() = screen_ear_hole_d + (screen_ear_margin * 2);
+function screen_ear_center_y() = screen_ledge_inner_r() - (screen_ear_pad_d() / 2) + screen_ear_overlap;
+function screen_ear_bridge_x() = (screen_ear_hole_d + screen_ear_bridge_w) / 2;
+function screen_ear_bridge_anchor_y() = screen_ledge_inner_r() + (screen_ear_bridge_w / 2);
+function screen_ear_base_y() = screen_ear_bridge_anchor_y() - screen_ear_base_depth;
 
 module validate_parameters() {
     assert(
         part_to_render == "all" ||
         part_to_render == "body" ||
         part_to_render == "stand" ||
-        part_to_render == "plate" ||
-        part_to_render == "insert",
-        "part_to_render must be one of: all, body, stand, plate, insert"
+        part_to_render == "stand_base" ||
+        part_to_render == "stand_stem" ||
+        part_to_render == "stand_top" ||
+        part_to_render == "stand_print",
+        "part_to_render must be one of: all, body, stand, stand_base, stand_stem, stand_top, stand_print"
     );
     assert(
         quality_profile == "preview" || quality_profile == "final",
         "quality_profile must be preview or final"
     );
     assert(display_d < body_d, "display_d must stay smaller than body_d");
-    assert(stand_top_radius < sphere_radius(body_d), "stand_top_radius must fit within the body sphere");
+    assert(stand_top_diameter < body_d, "stand_top_diameter must stay smaller than body_d");
     assert(abs(rear_port_z) < sphere_radius(body_d), "rear_port_z must intersect the sphere");
     assert(body_wall_thickness > 0 && body_wall_thickness < sphere_radius(body_d), "body_wall_thickness is out of range");
-    assert(stand_wall_thickness >= 0, "stand_wall_thickness must be non-negative");
-    assert(stand_chamfer_height > 0, "stand_chamfer_height must be greater than zero");
-    assert(stand_neck_height > stand_chamfer_height, "stand_neck_height must exceed stand_chamfer_height");
-    assert(stand_height > stand_top_rounding_radius, "stand_height must exceed stand_top_rounding_radius");
+    assert(stand_base_thickness > 0, "stand_base_thickness must be greater than zero");
+    assert(stand_top_thickness > 0, "stand_top_thickness must be greater than zero");
+    assert(anti_rotation_hole_d > 0, "anti_rotation_hole_d must be greater than zero");
+    assert(anti_rotation_hole_radius > (joint_bottom_d / 2) + (anti_rotation_hole_d / 2), "anti_rotation_hole_radius must clear the center joint");
+    assert(anti_rotation_hole_radius < (stand_top_diameter / 2) - (anti_rotation_hole_d / 2), "anti_rotation_hole_radius must stay inside the stand top");
+    assert(anti_rotation_hole_depth > 0, "anti_rotation_hole_depth must be greater than zero");
+    assert(anti_rotation_hole_depth < stand_top_body_curve_depth(anti_rotation_hole_radius), "anti_rotation_hole_depth is deeper than the stand top at the chosen radius");
+    assert(joint_depth > 0, "joint_depth must be greater than zero");
+    assert(stem_height > (joint_depth * 2), "stem_height must exceed twice the joint depth");
     assert(screen_thickness > 0, "screen_thickness must be greater than zero");
     assert(screen_ledge_margin_d < display_d, "screen_ledge_margin_d must stay smaller than display_d");
+    assert(screen_ear_hole_d > 0, "screen_ear_hole_d must be greater than zero");
+    assert(abs(screen_ear_hole_angle) < 85, "screen_ear_hole_angle must stay between -85 and 85 degrees");
+    assert(screen_ear_margin > 0, "screen_ear_margin must be greater than zero");
+    assert(screen_ear_bridge_w > 0, "screen_ear_bridge_w must be greater than zero");
+    assert(screen_ear_base_w > 0, "screen_ear_base_w must be greater than zero");
+    assert(screen_ear_base_depth >= 0, "screen_ear_base_depth must be non-negative");
+    assert(screen_ear_overlap >= 0, "screen_ear_overlap must be non-negative");
+    assert(screen_ear_thickness > 0 && screen_ear_thickness <= screen_ledge_thickness, "screen_ear_thickness must be between 0 and screen_ledge_thickness");
     assert(access_slot_outer_r > access_slot_inner_r, "access_slot_outer_r must exceed access_slot_inner_r");
-    assert(usb_insert_hole_d > usb_insert_clearance, "usb_insert_clearance is larger than the hole");
+    assert(abs(usb_mount_angle) < 85, "usb_mount_angle must stay below 85 degrees");
+    assert(usb_port_end_d > 0, "usb_port_end_d must be greater than zero");
+    assert(usb_port_cut_depth > 0, "usb_port_cut_depth must be greater than zero");
+    assert(usb_holder_boss_depth > 0, "usb_holder_boss_depth must be greater than zero");
+    assert(usb_holder_boss_d > usb_holder_boss_pilot_d, "usb_holder_boss_d must exceed the M2 pilot hole");
     assert(speaker_ring_count >= 0, "speaker_ring_count must be non-negative");
 }
 
 cut_dist = chord_offset_for_diameter(body_d, display_d);
-bottom_cut_dist = chord_offset_for_diameter(body_d, stand_top_radius * 2);
+bottom_cut_dist = chord_offset_for_diameter(body_d, stand_top_diameter);
 body_z = stand_height + bottom_cut_dist;
-
-vase_chamfer_slope = (stand_base_radius - stand_base_radius_bottom) / stand_chamfer_height;
-vase_rad_at_plate_height = stand_base_radius_bottom + (vase_chamfer_slope * plate_thickness);
-plate_inner_radius_top = vase_rad_at_plate_height + plate_clearance;
-plate_outer_radius_top = plate_inner_radius_top + plate_flange_width;
-plate_outer_radius_bottom = plate_outer_radius_top - (vase_chamfer_slope * plate_thickness);
-plate_outer_radius_floor = plate_outer_radius_bottom - (vase_chamfer_slope * plate_bottom_thickness);
 
 rear_port_y_outer = rear_surface_y(body_d, rear_port_z);
 
@@ -161,21 +184,22 @@ validate_parameters();
 // ==========================================
 
 if (part_to_render == "all") {
-    color("Silver") stand_part();
-    color("Gold") plate();
+    color("DarkGray") base_piece();
+    color("Silver") translate([0, 0, stand_base_thickness]) stem_piece();
+    color("DarkGray") translate([0, 0, stand_height]) rotate([180, 0, 0]) top_piece();
     color("Gold") translate([0, 0, body_z]) clock_body();
-    color("DarkSlateGray")
-        translate([0, rear_port_y_outer - 15, body_z + rear_port_z])
-            rotate([-90, 0, 0])
-                usb_insert();
 } else if (part_to_render == "body") {
     translate([0, 0, bottom_cut_dist]) clock_body();
 } else if (part_to_render == "stand") {
     stand_part();
-} else if (part_to_render == "plate") {
-    plate();
-} else if (part_to_render == "insert") {
-    usb_insert();
+} else if (part_to_render == "stand_base") {
+    base_piece();
+} else if (part_to_render == "stand_stem") {
+    stem_piece();
+} else if (part_to_render == "stand_top") {
+    top_piece();
+} else if (part_to_render == "stand_print") {
+    stand_print_layout();
 }
 
 // ==========================================
@@ -190,19 +214,154 @@ module screen_axis() {
 
 module rear_port_axis() {
     translate([0, rear_port_y_outer, rear_port_z])
-        rotate([90, 0, 0])
+        rotate([90 + usb_mount_angle, 0, 0])
             children();
 }
 
+module usb_port_hole() {
+    outer_overshoot = 1;
+    cut_start_z = -usb_port_cut_depth - outer_overshoot;
+    cut_height = usb_port_cut_depth + outer_overshoot * 2;
+
+    hull() {
+        translate([-usb_port_half_spacing, 0, cut_start_z])
+            cylinder(d=usb_port_end_d, h=cut_height);
+        translate([usb_port_half_spacing, 0, cut_start_z])
+            cylinder(d=usb_port_end_d, h=cut_height);
+    }
+}
+
+module usb_holder_bosses() {
+    boss_front_z = -body_wall_thickness - usb_holder_boss_depth;
+    boss_height = usb_holder_boss_depth + usb_holder_shell_overlap;
+
+    for (x = [-usb_holder_bolt_half_spacing, usb_holder_bolt_half_spacing]) {
+        translate([x, 0, boss_front_z])
+            cylinder(d=usb_holder_boss_d, h=boss_height);
+    }
+}
+
+module usb_holder_boss_holes() {
+    boss_front_z = -body_wall_thickness - usb_holder_boss_depth - 0.5;
+    boss_hole_height = usb_holder_boss_depth + usb_holder_shell_overlap + 1;
+
+    rear_port_axis()
+        for (x = [-usb_holder_bolt_half_spacing, usb_holder_bolt_half_spacing]) {
+            translate([x, 0, boss_front_z])
+                cylinder(d=usb_holder_boss_pilot_d, h=boss_hole_height);
+        }
+}
+
 module stand_part() {
+    color("DarkGray") base_piece();
+    color("Silver") translate([0, 0, stand_base_thickness]) stem_piece();
+    color("DarkGray") translate([0, 0, stand_height]) rotate([180, 0, 0]) top_piece();
+}
+
+module stand_print_layout() {
+    translate([-stand_base_diameter / 2 - 10, 0, 0])
+        base_piece();
+    translate([stand_base_diameter / 2 + 10, 0, 0])
+        stem_piece();
+    translate([0, stand_base_diameter / 2 + stand_top_diameter / 2 + 15, 0])
+        top_piece();
+}
+
+module base_piece() {
     difference() {
-        vase();
+        union() {
+            hull() {
+                cylinder(d=stand_base_diameter, h=stand_base_thickness - 1);
+                translate([0, 0, stand_base_thickness - 1])
+                    cylinder(d=stand_base_diameter - 2, h=1);
+            }
+
+            translate([0, 0, stand_base_thickness])
+                cylinder(h=joint_depth, d1=joint_bottom_d, d2=joint_top_d, $fn=6);
+        }
 
         translate([0, 0, -1])
-            cylinder(d=m3_hole_d, h=stand_height + 2);
+            cylinder(d=m3_bolt_head_access_d, h=stand_base_thickness + joint_depth + 2);
+    }
+}
+
+module top_piece_profile() {
+    outer_r = stand_top_diameter / 2;
+    curve_steps = profile_corner_steps * 4;
+
+    polygon(concat(
+        [
+            [0, 0],
+            [outer_r, 0]
+        ],
+        [
+            for (i = [curve_steps : -1 : 0])
+            let(
+                t = i / curve_steps,
+                r = outer_r * t,
+                z = stand_top_body_curve_depth(r)
+            )
+            [r, z]
+        ]
+    ));
+}
+
+module anti_rotation_hole_positions() {
+    for (side = [-1, 1]) {
+        translate([
+            anti_rotation_hole_offset_x + side * anti_rotation_hole_radius * cos(anti_rotation_hole_angle),
+            anti_rotation_hole_offset_y + side * anti_rotation_hole_radius * sin(anti_rotation_hole_angle),
+            anti_rotation_hole_offset_z
+        ])
+            children();
+    }
+}
+
+module top_piece() {
+    difference() {
+        union() {
+            rotate_extrude()
+                top_piece_profile();
+
+            translate([0, 0, stand_top_thickness])
+                cylinder(h=joint_depth, d1=joint_bottom_d, d2=joint_top_d, $fn=6);
+        }
+
+        translate([0, 0, stand_ceiling_thickness])
+            cylinder(d=m3_bolt_head_access_d, h=stand_top_thickness + joint_depth + 2);
 
         translate([0, 0, -1])
-            cylinder(d=m3_bolt_head_d, h=stand_height - stand_ceiling_thickness + 1);
+            cylinder(d=m3_hole_d, h=stand_ceiling_thickness + 2);
+
+        anti_rotation_hole_positions()
+            translate([0, 0, -0.1])
+                cylinder(d=anti_rotation_hole_d, h=anti_rotation_hole_depth + 0.1);
+    }
+}
+
+module stem_piece() {
+    difference() {
+        cylinder(d=stem_diameter, h=stem_height);
+
+        translate([0, 0, -0.1])
+            cylinder(
+                h=joint_depth + 0.5,
+                d1=joint_bottom_d + fit_tolerance,
+                d2=joint_top_d + fit_tolerance,
+                $fn=6
+            );
+
+        translate([0, 0, stem_height + 0.1])
+            rotate([180, 0, 0])
+                cylinder(
+                    h=joint_depth + 0.5,
+                    d1=joint_bottom_d + fit_tolerance,
+                    d2=joint_top_d + fit_tolerance,
+                    $fn=6
+                );
+
+        translate([0, 0, -1])
+            cylinder(d=m3_bolt_head_access_d, h=stem_height + 2);
     }
 }
 
@@ -228,13 +387,66 @@ module curved_access_slot() {
     }
 }
 
+module screen_ear_profile() {
+    ear_pad_d = screen_ear_pad_d();
+    ear_center_y = screen_ear_center_y();
+    bridge_w = screen_ear_bridge_w;
+    bridge_x = screen_ear_bridge_x();
+    bridge_anchor_y = screen_ear_bridge_anchor_y();
+    base_w = screen_ear_base_w;
+    base_y = screen_ear_base_y();
+
+    union() {
+        translate([0, ear_center_y])
+            circle(d=ear_pad_d);
+
+        for (side = [-1, 1]) {
+            hull() {
+                translate([side * bridge_x, ear_center_y])
+                    circle(d=bridge_w);
+                translate([side * bridge_x, bridge_anchor_y])
+                    circle(d=bridge_w);
+            }
+        }
+
+        for (side = [-1, 1]) {
+            hull() {
+                translate([side * bridge_x, bridge_anchor_y])
+                    circle(d=base_w);
+                translate([side * bridge_x, base_y])
+                    circle(d=base_w);
+            }
+        }
+
+        hull() {
+            translate([-bridge_x, base_y])
+                circle(d=base_w);
+            translate([bridge_x, base_y])
+                circle(d=base_w);
+        }
+    }
+}
+
 module screen_support_ring(pocket_bottom) {
+    inner_d = display_d - screen_ledge_margin_d;
+    ear_center_y = screen_ear_center_y();
+    ear_z = 0;
+    hole_cut_len = screen_ear_thickness + screen_ear_hole_d + 4;
+
     screen_axis()
         translate([0, 0, pocket_bottom - screen_ledge_backset])
             difference() {
                 cylinder(d=body_d, h=screen_ledge_thickness);
-                translate([0, 0, -1])
-                    cylinder(d=display_d - screen_ledge_margin_d, h=screen_ledge_thickness + 2);
+                difference() {
+                    translate([0, 0, -1])
+                        cylinder(d=inner_d, h=screen_ledge_thickness + 2);
+                    translate([0, 0, ear_z - 1])
+                        linear_extrude(height=screen_ear_thickness + 2)
+                            screen_ear_profile();
+                }
+                translate([0, ear_center_y, ear_z + (screen_ear_thickness / 2)])
+                    rotate([screen_ear_hole_angle, 0, 0])
+                        cylinder(d=screen_ear_hole_d, h=hole_cut_len, center=true);
             }
 }
 
@@ -265,6 +477,8 @@ module clock_body() {
                 }
 
                 screen_support_ring(pocket_bottom);
+                rear_port_axis()
+                    usb_holder_bosses();
             }
         }
 
@@ -292,144 +506,8 @@ module clock_body() {
         speaker_holes();
 
         rear_port_axis()
-            cylinder(d=usb_insert_hole_d, h=usb_insert_cut_depth, center=true);
-    }
-}
-
-module usb_insert() {
-    difference() {
-        union() {
-            cylinder(d=usb_insert_body_d, h=usb_insert_body_thickness);
-            translate([0, 0, usb_insert_body_thickness])
-                cylinder(d=usb_insert_flange_d, h=usb_insert_flange_thickness);
-        }
-
-        hull() {
-            translate([-usb_port_half_spacing, 0, -1])
-                cylinder(d=usb_port_end_d, h=usb_port_cut_depth);
-            translate([usb_port_half_spacing, 0, -1])
-                cylinder(d=usb_port_end_d, h=usb_port_cut_depth);
-        }
-
-        hull() {
-            translate([-usb_recess_inner_half_spacing, 0, usb_recess_depth])
-                cylinder(d=usb_recess_inner_d, h=0.1, center=true);
-            translate([usb_recess_inner_half_spacing, 0, usb_recess_depth])
-                cylinder(d=usb_recess_inner_d, h=0.1, center=true);
-
-            translate([-usb_recess_outer_half_spacing, 0, -0.1])
-                cylinder(d=usb_recess_outer_d, h=0.1, center=true);
-            translate([usb_recess_outer_half_spacing, 0, -0.1])
-                cylinder(d=usb_recess_outer_d, h=0.1, center=true);
-        }
-    }
-}
-
-module vase_profile(h, b_rad, b_rad_bot, c_h, t_rad, n_rad, n_h, b_curve, t_curve) {
-    profile_steps = $fn * 2;
-    h_rescaled_end = h - stand_top_rounding_radius;
-
-    curve_points = [
-        for (i = [0 : profile_steps - 1])
-        let (
-            z_step = h_rescaled_end / (profile_steps - 1),
-            z = i * z_step,
-            r = (z <= c_h)
-                ? b_rad_bot + (b_rad - b_rad_bot) * (z / c_h)
-                : (z < n_h)
-                    ? n_rad + (b_rad - n_rad) * pow((n_h - z) / (n_h - c_h), b_curve)
-                    : n_rad + (t_rad - n_rad) * pow((z - n_h) / (h_rescaled_end - n_h), t_curve)
-        )
-        [r, z]
-    ];
-
-    corner_r = t_rad - stand_top_rounding_radius;
-    corner_z = h - stand_top_rounding_radius;
-
-    corner_points = [
-        for (j = [1 : profile_corner_steps])
-        let (
-            a = 90 * j / profile_corner_steps,
-            x = corner_r + stand_top_rounding_radius * cos(a),
-            y = corner_z + stand_top_rounding_radius * sin(a)
-        )
-        [x, y]
-    ];
-
-    polygon(concat([[0, 0]], curve_points, corner_points, [[0, h]]));
-}
-
-module vase() {
-    if (stand_is_hollow) {
-        difference() {
-            rotate_extrude()
-                vase_profile(
-                    stand_height,
-                    stand_base_radius,
-                    stand_base_radius_bottom,
-                    stand_chamfer_height,
-                    stand_top_radius,
-                    stand_neck_radius,
-                    stand_neck_height,
-                    stand_bottom_curve,
-                    stand_top_curve
-                );
-
-            translate([0, 0, stand_wall_thickness])
-                rotate_extrude()
-                    vase_profile(
-                        stand_height,
-                        max(0.1, stand_base_radius - stand_wall_thickness),
-                        max(0.1, stand_base_radius_bottom - stand_wall_thickness),
-                        stand_chamfer_height,
-                        max(0.1, stand_top_radius - stand_wall_thickness),
-                        max(0.1, stand_neck_radius - stand_wall_thickness),
-                        stand_neck_height,
-                        stand_bottom_curve,
-                        stand_top_curve
-                    );
-        }
-    } else {
-        rotate_extrude()
-            vase_profile(
-                stand_height,
-                stand_base_radius,
-                stand_base_radius_bottom,
-                stand_chamfer_height,
-                stand_top_radius,
-                stand_neck_radius,
-                stand_neck_height,
-                stand_bottom_curve,
-                stand_top_curve
-            );
-    }
-}
-
-module plate_profile(thickness, floor_thickness, r_bot_in, r_top_in, r_top_out, r_floor_out) {
-    polygon([
-        [0, -floor_thickness],
-        [r_floor_out, -floor_thickness],
-        [r_top_out, thickness],
-        [r_top_in, thickness],
-        [r_bot_in, 0],
-        [0, 0]
-    ]);
-}
-
-module plate() {
-    difference() {
-        rotate_extrude()
-            plate_profile(
-                plate_thickness,
-                plate_bottom_thickness,
-                stand_base_radius_bottom + plate_clearance,
-                plate_inner_radius_top,
-                plate_outer_radius_top,
-                plate_outer_radius_floor
-            );
-
-        translate([0, 0, -plate_bottom_thickness - 1])
-            cylinder(d=m3_bolt_head_access_d, h=plate_thickness + plate_bottom_thickness + 2);
+            usb_port_hole();
+        usb_holder_boss_holes();
     }
 }
 
