@@ -63,7 +63,7 @@ static void copy_text(char *dst, size_t dst_size, const char *src)
     snprintf(dst, dst_size, "%s", src != NULL ? src : "");
 }
 
-static void build_device_id(char *out, size_t out_size)
+void telemetry_update_get_device_id(char *out, size_t out_size)
 {
     uint8_t mac[6] = {0};
     esp_err_t err;
@@ -274,7 +274,7 @@ void telemetry_update_tick(const app_runtime_state_t *runtime, const app_setting
         return;
     }
 
-    build_device_id(snapshot->device_id, sizeof(snapshot->device_id));
+    telemetry_update_get_device_id(snapshot->device_id, sizeof(snapshot->device_id));
     copy_text(snapshot->label, sizeof(snapshot->label), snapshot->device_id);
     copy_text(snapshot->ip, sizeof(snapshot->ip), runtime->wifi_ip);
     copy_text(snapshot->ota_status, sizeof(snapshot->ota_status), runtime->ota_status);

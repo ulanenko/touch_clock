@@ -3,6 +3,7 @@
 #include "domain/timezone_rules.h"
 #include "esp_system.h"
 #include "sdkconfig.h"
+#include "telemetry_update.h"
 
 static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
 {
@@ -153,6 +154,7 @@ static void create_about_device_card(lv_obj_t *parent)
 {
     lv_obj_t *card = create_card(parent);
     char build[40];
+    char device_id[64];
 
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
@@ -160,6 +162,8 @@ static void create_about_device_card(lv_obj_t *parent)
     create_section_title(card, "About this device", "Firmware and hardware details");
 
     create_about_info_row(card, "Device", "Touch Clock");
+    telemetry_update_get_device_id(device_id, sizeof(device_id));
+    create_about_info_row(card, "Device ID", device_id);
     create_about_info_row(card, "Version", TOUCH_CLOCK_FIRMWARE_VERSION);
     snprintf(build, sizeof(build), "%s %s", __DATE__, __TIME__);
     create_about_info_row(card, "Build", build);
