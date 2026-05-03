@@ -784,6 +784,47 @@ static void shell_settings_button_event_cb(lv_event_t *event)
     settings_button_event_cb(event);
 }
 
+static void update_button_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+
+    if (ctx == NULL || ctx->runtime == NULL || ctx->runtime->ota_busy) {
+        return;
+    }
+
+    request_ota_install(ctx);
+    sync_update_button(ctx);
+}
+
+void sync_update_button(clock_ui_context_t *ctx)
+{
+    bool visible;
+
+    if (ctx == NULL || ctx->update_button == NULL || ctx->runtime == NULL) {
+        return;
+    }
+
+    visible = ctx->runtime->ota_update_available && !ctx->runtime->ota_reboot_pending;
+    if (visible) {
+        lv_obj_clear_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (ctx->update_button_label != NULL) {
+        if (ctx->runtime->ota_busy) {
+            lv_label_set_text(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " Updating");
+        } else {
+            lv_label_set_text(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " Install update");
+        }
+    }
+    if (ctx->runtime->ota_busy) {
+        lv_obj_add_state(ctx->update_button, LV_STATE_DISABLED);
+    } else {
+        lv_obj_remove_state(ctx->update_button, LV_STATE_DISABLED);
+    }
+}
+
 void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
@@ -1109,6 +1150,30 @@ static void create_settings_button(clock_ui_context_t *ctx)
     lv_obj_center(label);
 }
 
+void create_update_button(clock_ui_context_t *ctx)
+{
+    ctx->update_button = lv_button_create(ctx->screen);
+    lv_obj_set_size(ctx->update_button, 210, 44);
+    lv_obj_align(ctx->update_button, LV_ALIGN_TOP_MID, 0, 30);
+    lv_obj_set_style_radius(ctx->update_button, 22, 0);
+    lv_obj_set_style_bg_color(ctx->update_button, lv_color_hex(0xF3B340), 0);
+    lv_obj_set_style_bg_color(ctx->update_button, lv_color_hex(0xD99B2F), LV_STATE_PRESSED);
+    lv_obj_set_style_bg_opa(ctx->update_button, LV_OPA_90, 0);
+    lv_obj_set_style_border_width(ctx->update_button, 0, 0);
+    lv_obj_set_style_shadow_width(ctx->update_button, 18, 0);
+    lv_obj_set_style_shadow_opa(ctx->update_button, LV_OPA_30, 0);
+    lv_obj_set_style_shadow_color(ctx->update_button, lv_color_hex(0xF3B340), 0);
+    lv_obj_add_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_event_cb(ctx->update_button, update_button_event_cb, LV_EVENT_CLICKED, ctx);
+    ui_attach_click_feedback(ctx->update_button, LV_EVENT_CLICKED);
+
+    ctx->update_button_label = lv_label_create(ctx->update_button);
+    lv_obj_set_style_text_font(ctx->update_button_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(ctx->update_button_label, lv_color_hex(0x15110A), 0);
+    lv_label_set_text(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " Install update");
+    lv_obj_center(ctx->update_button_label);
+}
+
 void create_face_theme_button(clock_ui_context_t *ctx)
 {
     lv_obj_t *label;
@@ -1294,6 +1359,7 @@ void build_root_ui(clock_ui_context_t *ctx)
     create_brightness_overlay(ctx);
     create_brightness_panel(ctx);
     create_settings_button(ctx);
+    create_update_button(ctx);
     create_alarm_banner(ctx);
     create_alarm_management_overlay(ctx);
     create_alarm_settings_overlay(ctx);

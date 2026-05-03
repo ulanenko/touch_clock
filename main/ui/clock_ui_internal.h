@@ -530,6 +530,8 @@ typedef struct clock_ui_state_t {
     lv_obj_t *tiles[CLOCK_FACE_COUNT];
     lv_obj_t *page_dots[CLOCK_FACE_COUNT];
     lv_obj_t *settings_button;
+    lv_obj_t *update_button;
+    lv_obj_t *update_button_label;
     clock_ui_boot_state_t boot;
     clock_ui_brightness_state_t brightness;
     clock_ui_settings_state_t settings_ui;

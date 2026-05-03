@@ -92,6 +92,8 @@ bool face_theme_overlay_is_open(const clock_ui_context_t *ctx);
 void hide_face_theme_button(clock_ui_context_t *ctx);
 void face_theme_overlay_close(clock_ui_context_t *ctx);
 void create_face_theme_button(clock_ui_context_t *ctx);
+void create_update_button(clock_ui_context_t *ctx);
+void sync_update_button(clock_ui_context_t *ctx);
 void create_face_theme_overlay(clock_ui_context_t *ctx);
 void create_brightness_pull_hint(clock_ui_context_t *ctx);
 void create_brightness_edge_sensor(clock_ui_context_t *ctx);

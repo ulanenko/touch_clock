@@ -498,6 +498,14 @@ void set_root_ui_hidden(clock_ui_context_t *ctx, bool hidden)
         }
     }
 
+    if (ctx->update_button != NULL) {
+        if (hidden) {
+            lv_obj_add_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            sync_update_button(ctx);
+        }
+    }
+
     if (ctx->face_theme.button != NULL) {
         if (hidden) {
             lv_obj_add_flag(ctx->face_theme.button, LV_OBJ_FLAG_HIDDEN);
@@ -733,6 +741,7 @@ esp_err_t clock_ui_finish_boot(void)
     lv_timer_pause(ctx->affordance_hide_timer);
     refresh_settings_controls(ctx);
     update_brightness_ui(ctx);
+    sync_update_button(ctx);
     boot_overlay_advance(ctx, "Ready");
     boot_overlay_destroy(ctx);
     show_affordances_temporarily(ctx);
@@ -776,6 +785,7 @@ void clock_ui_tick(time_t now)
         update_face(ctx, active_face);
         update_dots(ctx, active_face);
     }
+    sync_update_button(ctx);
 
     if (!opaque_menu_open) {
         update_alarm_banner(ctx, now);

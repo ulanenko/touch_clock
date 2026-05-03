@@ -11,6 +11,8 @@
 #define APP_SETTINGS_VERSION_V7 7U
 #define APP_ALARM_AUTO_STOP_SECONDS 600
 #define APP_BRIGHTNESS_FADE_DOWN_MS 3500
+#define APP_OTA_AUTO_CHECK_INITIAL_DELAY_MS 30000
+#define APP_OTA_AUTO_CHECK_INTERVAL_MS (6 * 60 * 60 * 1000)
 
 static int64_t monotonic_ms(const app_controller_core_t *core)
 {
@@ -222,6 +224,29 @@ static void execute_ota_command(app_controller_core_t *core, const app_action_re
     }
 }
 
+static void maybe_request_periodic_ota_check(app_controller_core_t *core)
+{
+    int64_t now_ms;
+
+    if (core->config.ota_service == NULL ||
+        core->config.ota_service->request_check == NULL ||
+        !core->state.runtime.wifi_connected ||
+        !core->state.runtime.ota_configured ||
+        core->state.runtime.ota_busy ||
+        core->state.runtime.ota_update_available ||
+        core->state.runtime.ota_reboot_pending) {
+        return;
+    }
+
+    now_ms = monotonic_ms(core);
+    if (now_ms < core->state.ota_next_check_ms) {
+        return;
+    }
+
+    core->state.ota_next_check_ms = now_ms + APP_OTA_AUTO_CHECK_INTERVAL_MS;
+    core->config.ota_service->request_check();
+}
+
 static void reconcile_alarm_audio(app_controller_core_t *core)
 {
     const audio_service_t *audio = core->config.audio_service;
@@ -317,6 +342,7 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
 
     alarm_scheduler_init(&core->state.runtime, &core->state.settings);
     core->state.applied_brightness = UCHAR_MAX;
+    core->state.ota_next_check_ms = monotonic_ms(core) + APP_OTA_AUTO_CHECK_INITIAL_DELAY_MS;
 
     if (core->config.audio_service != NULL && core->config.audio_service->init != NULL) {
         if (core->config.audio_service->init(core->state.settings.alarm_volume) == 0) {
@@ -484,6 +510,7 @@ time_t app_controller_core_tick(app_controller_core_t *core)
     if (core->config.ota_service != NULL && core->config.ota_service->snapshot != NULL) {
         core->config.ota_service->snapshot(&core->state.runtime);
     }
+    maybe_request_periodic_ota_check(core);
     if (core->config.telemetry_service != NULL && core->config.telemetry_service->tick != NULL) {
         core->config.telemetry_service->tick(&core->state.runtime, &core->state.settings, now);
     }
