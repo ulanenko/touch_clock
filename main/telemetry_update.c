@@ -66,13 +66,22 @@ static void copy_text(char *dst, size_t dst_size, const char *src)
 static void build_device_id(char *out, size_t out_size)
 {
     uint8_t mac[6] = {0};
+    esp_err_t err;
 
     if (CONFIG_TOUCH_CLOCK_TELEMETRY_DEVICE_ID[0] != '\0') {
         copy_text(out, out_size, CONFIG_TOUCH_CLOCK_TELEMETRY_DEVICE_ID);
         return;
     }
 
-    if (esp_read_mac(mac, ESP_MAC_WIFI_STA) == ESP_OK) {
+    err = esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    if (err != ESP_OK) {
+        err = esp_read_mac(mac, ESP_MAC_BASE);
+    }
+    if (err != ESP_OK) {
+        err = esp_efuse_mac_get_default(mac);
+    }
+
+    if (err == ESP_OK) {
         snprintf(out,
                  out_size,
                  "clock-%02x%02x%02x%02x%02x%02x",
