@@ -1,7 +1,0 @@
-1:face_catalog_test
-2:settings_policy_test
-3:brightness_policy_test
-4:alarm_scheduler_test
-5:app_actions_test
-6:app_controller_core_test
-7:app_settings_storage_test

@@ -11,13 +11,13 @@ The goal is high visual fidelity first, then performance and interaction quality
 
 ## Where Face Code Lives
 
-- face enum and face count: [main/clock_model.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_model.h)
-- face display names: [main/clock_model.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_model.c)
-- face UI state: [main/clock_ui.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c)
-- face creation/update logic: [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c)
-- face registration in carousel: [main/ui/ui_shell.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_shell.c)
-- font/image assets: [main/assets](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets)
-- build wiring for assets: [main/CMakeLists.txt](/Users/borysulanenko/PycharmProjects/touch_clock/main/CMakeLists.txt)
+- face enum and face count: [main/clock_model.h](main/clock_model.h)
+- face display names: [main/clock_model.c](main/clock_model.c)
+- face UI state: [main/clock_ui.c](main/clock_ui.c)
+- face creation/update logic: [main/ui/ui_faces.c](main/ui/ui_faces.c)
+- face registration in carousel: [main/ui/ui_shell.c](main/ui/ui_shell.c)
+- font/image assets: [main/assets](main/assets)
+- build wiring for assets: [main/CMakeLists.txt](main/CMakeLists.txt)
 
 To add a face, you usually need to touch all of those.
 
@@ -74,8 +74,8 @@ Important notes:
 - generate only the glyphs you need
 - `--no-compress` avoided compatibility trouble here
 - the generated files may include `#include "lvgl/lvgl.h"`; this project expects `#include "lvgl.h"`, so patch that if needed
-- add the new asset to [main/CMakeLists.txt](/Users/borysulanenko/PycharmProjects/touch_clock/main/CMakeLists.txt)
-- export it from [main/assets/seven_segment_font.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/seven_segment_font.h) or another shared asset header
+- add the new asset to [main/CMakeLists.txt](main/CMakeLists.txt)
+- export it from [main/assets/seven_segment_font.h](main/assets/seven_segment_font.h) or another shared asset header
 
 ## Static vs Dynamic Split
 
@@ -120,10 +120,10 @@ This was required for:
 
 ### Where it is already used
 
-- Digital Vintage snapshot path in [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c)
+- Digital Vintage snapshot path in [main/ui/ui_faces.c](main/ui/ui_faces.c)
 - LVGL snapshot support enabled in:
-  - [sdkconfig](/Users/borysulanenko/PycharmProjects/touch_clock/sdkconfig)
-  - [sdkconfig.defaults](/Users/borysulanenko/PycharmProjects/touch_clock/sdkconfig.defaults)
+  - local `sdkconfig`
+  - [sdkconfig.defaults](sdkconfig.defaults)
 
 ### Important caveat
 
@@ -240,12 +240,12 @@ Do not assume the first scale that looks right in code will feel right on the de
 
 When adding a face, check all of these:
 
-- add enum in [main/clock_model.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_model.h)
-- add display name in [main/clock_model.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_model.c)
-- add state fields in [main/clock_ui.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c) if needed
-- add create/update functions in [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c)
-- register the face in [main/ui/ui_shell.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_shell.c)
-- add new asset sources to [main/CMakeLists.txt](/Users/borysulanenko/PycharmProjects/touch_clock/main/CMakeLists.txt)
+- add enum in [main/clock_model.h](main/clock_model.h)
+- add display name in [main/clock_model.c](main/clock_model.c)
+- add state fields in [main/clock_ui.c](main/clock_ui.c) if needed
+- add create/update functions in [main/ui/ui_faces.c](main/ui/ui_faces.c)
+- register the face in [main/ui/ui_shell.c](main/ui/ui_shell.c)
+- add new asset sources to [main/CMakeLists.txt](main/CMakeLists.txt)
 - export font symbols from the shared asset header
 - build the `clock_ui.c` object first for quick iteration
 - then do a full build
@@ -266,7 +266,7 @@ For each new face, test:
 
 ## Good Defaults For Future Faces
 
-- build the face in [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c)
+- build the face in [main/ui/ui_faces.c](main/ui/ui_faces.c)
 - keep static art cached when possible
 - keep dynamic parts minimal
 - use the real font

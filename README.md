@@ -12,6 +12,9 @@ The app is in active iteration but already usable as a bedside clock:
 - dedicated alarm UX separate from settings
 - focused Wi-Fi/settings surfaces instead of the older tabbed form
 - SNTP time sync through the onboard Wi-Fi companion
+- manual time and timezone controls with DST-aware city/timezone selection
+- Wi-Fi OTA update checks and install flow
+- optional remote status heartbeat backend
 - touch-first round-screen interactions
 
 Recent work focused heavily on:
@@ -85,6 +88,9 @@ The sheet is a draggable pull-up/pull-down surface, not a simple pop-in menu.
 - SNTP sync
 - persisted last-synced epoch
 - clock starts from a seed/persisted time instead of Unix epoch zero
+- optional manual time mode
+- OTA update check/install support
+- optional remote status telemetry
 
 ## Important Current Behavior
 
@@ -107,33 +113,33 @@ That last point is intentional for now:
 
 ### App Layer
 
-- [main/main.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/main.c): bootstrap only
-- [main/app_controller.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/app_controller.c): app shell, tick orchestration, settings save debounce, UI callback bridge, brightness application
-- [main/clock_model.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_model.h): shared model types
-- [main/app_settings.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/app_settings.c): persistence
-- [main/alarm_logic.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/alarm_logic.c): alarm/snooze/night/runtime calculations
-- [main/alarm_audio.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/alarm_audio.c): audio playback
-- [main/wifi_time.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/wifi_time.c): Wi-Fi + SNTP integration
+- [main/main.c](main/main.c): bootstrap only
+- [main/app_controller.c](main/app_controller.c): app shell, tick orchestration, settings save debounce, UI callback bridge, brightness application
+- [main/clock_model.h](main/clock_model.h): shared model types
+- [main/app_settings.c](main/app_settings.c): persistence
+- [main/alarm_logic.c](main/alarm_logic.c): alarm/snooze/night/runtime calculations
+- [main/alarm_audio.c](main/alarm_audio.c): audio playback
+- [main/wifi_time.c](main/wifi_time.c): Wi-Fi + SNTP integration
 
 ### UI Layer
 
-- [main/clock_ui.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/clock_ui.c): public UI entrypoints, shared UI context owner, top-level coordination
-- [main/ui/ui_shell.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_shell.c): tileview, affordances, quick-actions behavior, navigation policy
-- [main/ui/ui_faces.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_faces.c): clock face construction and updates
-- [main/ui/ui_alarms.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_alarms.c): alarm list, editor, ringing overlay, face badge behavior
-- [main/ui/ui_settings.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_settings.c): Wi-Fi/timezone/night-mode surfaces driven from controller runtime snapshots
-- [main/ui/ui_brightness.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_brightness.c): quick-actions sheet and brightness panel behavior
-- [main/ui/ui_controls.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_controls.c): shared controls
-- [main/ui/ui_surface.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/ui_surface.c): reusable full-screen surface shell and edge swipe sensors
+- [main/clock_ui.c](main/clock_ui.c): public UI entrypoints, shared UI context owner, top-level coordination
+- [main/ui/ui_shell.c](main/ui/ui_shell.c): tileview, affordances, quick-actions behavior, navigation policy
+- [main/ui/ui_faces.c](main/ui/ui_faces.c): clock face construction and updates
+- [main/ui/ui_alarms.c](main/ui/ui_alarms.c): alarm list, editor, ringing overlay, face badge behavior
+- [main/ui/ui_settings.c](main/ui/ui_settings.c): Wi-Fi/timezone/night-mode surfaces driven from controller runtime snapshots
+- [main/ui/ui_brightness.c](main/ui/ui_brightness.c): quick-actions sheet and brightness panel behavior
+- [main/ui/ui_controls.c](main/ui/ui_controls.c): shared controls
+- [main/ui/ui_surface.c](main/ui/ui_surface.c): reusable full-screen surface shell and edge swipe sensors
 
 ### Assets
 
-- [main/assets/dseg7_classic_italic_112.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg7_classic_italic_112.c): main retro digits
-- [main/assets/dseg7_classic_italic_56.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg7_classic_italic_56.c): retro seconds
-- [main/assets/dseg14_classic_italic_36.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_36.c): large retro text
-- [main/assets/dseg14_classic_italic_24.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_24.c): date text
-- [main/assets/dseg14_classic_italic_20.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_20.c): weekday text
-- [main/assets/alarm_pcm.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/assets/alarm_pcm.c): alarm tone PCM
+- [main/assets/dseg7_classic_italic_112.c](main/assets/dseg7_classic_italic_112.c): main retro digits
+- [main/assets/dseg7_classic_italic_56.c](main/assets/dseg7_classic_italic_56.c): retro seconds
+- [main/assets/dseg14_classic_italic_36.c](main/assets/dseg14_classic_italic_36.c): large retro text
+- [main/assets/dseg14_classic_italic_24.c](main/assets/dseg14_classic_italic_24.c): date text
+- [main/assets/dseg14_classic_italic_20.c](main/assets/dseg14_classic_italic_20.c): weekday text
+- [main/assets/alarm_pcm.c](main/assets/alarm_pcm.c): alarm tone PCM
 
 ## Performance and Optimization Notes
 
@@ -159,8 +165,8 @@ To keep it usable:
 
 Snapshot support is enabled in:
 
-- [sdkconfig](/Users/borysulanenko/PycharmProjects/touch_clock/sdkconfig)
-- [sdkconfig.defaults](/Users/borysulanenko/PycharmProjects/touch_clock/sdkconfig.defaults)
+- local `sdkconfig`
+- [sdkconfig.defaults](sdkconfig.defaults)
 
 Important caveat:
 
@@ -189,10 +195,10 @@ Important caveat:
 
 The UI and controller boundaries were refactored without changing the on-device UX:
 
-- [main/ui/clock_ui_internal.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/clock_ui_internal.h) now holds the single private UI context and state definition
-- [main/ui/clock_ui_private.h](/Users/borysulanenko/PycharmProjects/touch_clock/main/ui/clock_ui_private.h) holds cross-feature private API declarations
+- [main/ui/clock_ui_internal.h](main/ui/clock_ui_internal.h) now holds the single private UI context and state definition
+- [main/ui/clock_ui_private.h](main/ui/clock_ui_private.h) holds cross-feature private API declarations
 - Wi-Fi scan data now flows through `app_runtime_state_t` snapshots instead of direct UI calls into `wifi_time`
-- the active face catalog is the six-face manifest in [main/domain/face_catalog.c](/Users/borysulanenko/PycharmProjects/touch_clock/main/domain/face_catalog.c)
+- the active face catalog is the six-face manifest in [main/domain/face_catalog.c](main/domain/face_catalog.c)
 
 ## Build and Flash
 
@@ -229,4 +235,8 @@ Typical macOS port:
 
 ## Additional Docs
 
-- face creation know-how: [FACE_CREATION_KNOWHOW.md](/Users/borysulanenko/PycharmProjects/touch_clock/FACE_CREATION_KNOWHOW.md)
+- face creation know-how: [FACE_CREATION_KNOWHOW.md](FACE_CREATION_KNOWHOW.md)
+- operations and public-safety rules: [docs/operations.md](docs/operations.md)
+- OTA release procedure: [docs/ota_releases.md](docs/ota_releases.md)
+- Railway status backend: [docs/railway_status.md](docs/railway_status.md)
+- feature backlog: [docs/features.md](docs/features.md)

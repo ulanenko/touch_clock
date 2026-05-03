@@ -6,6 +6,10 @@ This is intentionally dependency-free so it can run locally, on Railway, or on
 any Node host. It stores the latest heartbeat per clock in `data/heartbeats.json`;
 for a larger fleet, move this to a persistent Railway Volume or Postgres.
 
+Do not commit real tokens, device/customer mapping, or production heartbeat data
+from this service. Operational guidance lives in
+[../../docs/railway_status.md](../../docs/railway_status.md).
+
 ## API
 
 - `POST /api/heartbeat` stores one device heartbeat.
@@ -39,6 +43,9 @@ railway up --detach -m "deploy clock status backend"
 railway variable set CLOCK_STATUS_TOKEN="$(openssl rand -hex 24)"
 ```
 
+Keep the token in Railway variables and a password manager. Do not place the
+real value in `README.md`, `sdkconfig.defaults`, or committed OTA artifacts.
+
 ## Firmware Config
 
 Set these ESP-IDF config values before building the firmware that should report
@@ -46,9 +53,12 @@ status:
 
 ```ini
 CONFIG_TOUCH_CLOCK_TELEMETRY_URL="https://your-service.up.railway.app/api/heartbeat"
-CONFIG_TOUCH_CLOCK_TELEMETRY_TOKEN="same-token-as-clock-status-token"
+CONFIG_TOUCH_CLOCK_TELEMETRY_TOKEN="<clock-status-token>"
 CONFIG_TOUCH_CLOCK_TELEMETRY_DEVICE_ID="kitchen"
 ```
 
 If `CONFIG_TOUCH_CLOCK_TELEMETRY_DEVICE_ID` is empty, the firmware uses the
 station MAC address as a stable ID.
+
+Public OTA binaries should be built without telemetry tokens. Use private
+builds or a future provisioning flow for devices that should report status.

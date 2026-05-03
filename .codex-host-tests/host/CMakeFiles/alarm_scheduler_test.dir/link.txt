@@ -1,1 +1,0 @@
-/usr/bin/cc -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/alarm_scheduler_test.dir/alarm_scheduler_test.c.o -o alarm_scheduler_test  libtouch_clock_host_core.a

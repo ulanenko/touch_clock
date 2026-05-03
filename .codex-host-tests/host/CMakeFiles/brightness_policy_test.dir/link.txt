@@ -1,1 +1,0 @@
-/usr/bin/cc -Wl,-search_paths_first -Wl,-headerpad_max_install_names CMakeFiles/brightness_policy_test.dir/brightness_policy_test.c.o -o brightness_policy_test  libtouch_clock_host_core.a

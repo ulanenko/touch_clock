@@ -1,4 +1,6 @@
 build/
+**/build/
+.codex-host-tests/
 managed_components/
 dependencies.lock
 sdkconfig
@@ -6,3 +8,8 @@ sdkconfig.old
 .cache/
 tmp/
 .DS_Store
+.env
+.env.*
+!.env.example
+docs/private_ops_notes.md
+docs/*.private.md

@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 36 px
  * Bpp: 4
- * Opts: --size 36 --bpp 4 --format lvgl --font /tmp/DSEG14Classic-Italic.woff --symbols ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,  --no-kerning --no-compress --lv-font-name dseg14_classic_italic_36 -o /Users/borysulanenko/PycharmProjects/touch_clock/main/assets/dseg14_classic_italic_36.c
+ * Opts: --size 36 --bpp 4 --format lvgl --font /tmp/DSEG14Classic-Italic.woff --symbols ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789,  --no-kerning --no-compress --lv-font-name dseg14_classic_italic_36 -o main/assets/dseg14_classic_italic_36.c
  ******************************************************************************/
 
 #include "lvgl.h"

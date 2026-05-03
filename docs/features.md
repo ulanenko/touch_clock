@@ -1,24 +1,45 @@
-V In add alarm menu, remove "enabled" switch, it's confusing
-V Not clear how to set periodicity as its in the menu at the bottom and you need to scroll, if you don't scroll you don't see it available. 
-V Ascending alarm selection should impact preview
-V Preview is a stupid name
-V When you click on face, you should see the bottom dots/swipe up, swipe down (themes) options, now you need to guess
-Would be good to add some audio feedback on some clicks, i.e. some nice click sound
-V Increase brightness with a sunrise in night mode
-V night mode if disabled  settings should be greyed/disabled 
+# Feature Backlog
 
+Public-safe product notes and future feature ideas. Keep customer-specific
+notes, credentials, deployment tokens, and private support context out of this
+file.
 
-Annoying alarm feature:
-Basic math
-3+8, 14−6, few others.
-Classic. Effective because it forces actual cognition.
+## Alarm UX
 
+- Hide the `Enabled` switch while creating a new alarm; new alarms should be
+  enabled by default after save.
+- Keep repeat/periodicity controls visible enough that users do not need to
+  discover them by scrolling.
+- Make the alarm-time selector influence preview sound timing where useful.
+- Consider a wake-up challenge mode for intentionally harder alarm dismissal,
+  such as simple arithmetic prompts.
 
-Language support (English, Polish, Russian, Ukrainian, Dutch, German, French, Italian)
+## Face Navigation
 
+- Make face-level affordances more discoverable after a tap, including page
+  dots, quick actions, and theme controls.
 
-3d printing suggestions/improvements:
+## Sound And Night Mode
 
-For a 3D printed part, my first choice would be:
-	•	add 0.3 mm interference on diameter
-	•	plus 3 small retention bumps
+- Add tasteful daytime touch feedback if it does not interfere with bedside use.
+- Keep night mode silent for interaction sounds.
+
+## Localization
+
+Candidate UI languages:
+
+- English
+- Polish
+- Russian
+- Ukrainian
+- Dutch
+- German
+- French
+- Italian
+
+## Hardware / Enclosure
+
+Potential 3D-print fit improvements:
+
+- Add roughly 0.3 mm diameter interference where a friction fit is needed.
+- Add three small retention bumps instead of relying only on uniform friction.
