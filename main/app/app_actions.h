@@ -23,11 +23,14 @@ typedef enum {
     APP_EFFECT_AUDIO_RECONCILE = 1U << 4,
     APP_EFFECT_AUDIO_VOLUME = 1U << 5,
     APP_EFFECT_WIFI_COMMAND = 1U << 6,
+    APP_EFFECT_CLOCK_SET = 1U << 7,
+    APP_EFFECT_BRIGHTNESS_FADE = 1U << 8,
 } app_effect_flags_t;
 
 typedef struct {
     uint32_t effects;
     app_wifi_command_type_t wifi_command;
+    time_t clock_epoch;
     char wifi_ssid[33];
     char wifi_password[65];
 } app_action_result_t;
@@ -49,7 +52,9 @@ app_action_result_t app_action_set_ui_click_volume(app_state_t *state, uint8_t v
 app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_id_t face);
 app_action_result_t app_action_set_face_theme(app_state_t *state, clock_face_id_t face, uint8_t theme);
 app_action_result_t app_action_set_night_face(app_state_t *state, clock_face_id_t face);
-app_action_result_t app_action_set_timezone(app_state_t *state, int8_t utc_offset_hours, time_t now);
+app_action_result_t app_action_set_timezone(app_state_t *state, uint8_t timezone_id, time_t now);
+app_action_result_t app_action_set_time_sync_mode(app_state_t *state, time_sync_mode_t mode, time_t now);
+app_action_result_t app_action_set_manual_time(app_state_t *state, time_t epoch);
 app_action_result_t app_action_set_night_mode_enabled(app_state_t *state, bool enabled, time_t now);
 app_action_result_t app_action_set_night_schedule(app_state_t *state,
                                                   uint8_t start_hour,
@@ -68,7 +73,7 @@ app_action_result_t app_action_set_alarm_enabled(app_state_t *state, uint8_t ind
 app_action_result_t app_action_save_alarm(app_state_t *state, uint8_t index, const alarm_config_t *alarm, time_t now);
 app_action_result_t app_action_delete_alarm(app_state_t *state, uint8_t index, time_t now);
 app_action_result_t app_action_alarm_snooze(app_state_t *state, time_t now);
-app_action_result_t app_action_alarm_stop(app_state_t *state);
+app_action_result_t app_action_alarm_stop(app_state_t *state, time_t now);
 app_action_result_t app_action_alarm_test_toggle(app_state_t *state);
 app_action_result_t app_action_cancel_next_alarm(app_state_t *state, time_t now);
 app_action_result_t app_action_undo_cancel_next_alarm(app_state_t *state, time_t now);

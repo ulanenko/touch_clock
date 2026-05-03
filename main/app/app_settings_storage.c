@@ -6,6 +6,7 @@
 #include <string.h>
 
 #include "domain/settings_policy.h"
+#include "domain/timezone_rules.h"
 
 #if defined(ESP_ERR_NVS_NOT_FOUND)
 #define SETTINGS_STORAGE_ERR_NOT_FOUND ESP_ERR_NVS_NOT_FOUND
@@ -21,6 +22,7 @@
 #define SETTINGS_VERSION_V7 7U
 #define SETTINGS_VERSION_V8 8U
 #define SETTINGS_VERSION_V9 9U
+#define SETTINGS_VERSION_V10 10U
 #define SETTINGS_KEY_LEGACY_BLOB "settings"
 #define SETTINGS_KEY_VERSION "ver"
 #define SETTINGS_KEY_BASE_BRIGHTNESS "base_bri"
@@ -34,6 +36,8 @@
 #define SETTINGS_KEY_WIFI_SSID "wifi_ssid"
 #define SETTINGS_KEY_WIFI_PASSWORD "wifi_pass"
 #define SETTINGS_KEY_TIMEZONE "tz"
+#define SETTINGS_KEY_TIMEZONE_ID "tz_id"
+#define SETTINGS_KEY_TIME_SYNC_MODE "time_mode"
 #define SETTINGS_KEY_NIGHT_ENABLED "n_en"
 #define SETTINGS_KEY_NIGHT_START_HOUR "n_sh"
 #define SETTINGS_KEY_NIGHT_START_MINUTE "n_sm"
@@ -123,6 +127,16 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .offset = offsetof(app_settings_t, wifi.timezone_offset_hours),
     },
     {
+        .key = SETTINGS_KEY_TIMEZONE_ID,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, wifi.timezone_id),
+    },
+    {
+        .key = SETTINGS_KEY_TIME_SYNC_MODE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, wifi.time_sync_mode),
+    },
+    {
         .key = SETTINGS_KEY_NIGHT_ENABLED,
         .kind = SETTINGS_FIELD_U8,
         .offset = offsetof(app_settings_t, night_mode.enabled),
@@ -182,7 +196,7 @@ static const settings_field_descriptor_t s_settings_fields[] = {
 static void set_defaults(app_settings_t *settings)
 {
     settings_policy_set_defaults(settings);
-    settings->version = SETTINGS_VERSION_V9;
+    settings->version = SETTINGS_VERSION_V10;
 }
 
 static void *field_ptr(void *base, size_t offset)
@@ -263,7 +277,9 @@ static esp_err_t save_field(const app_settings_storage_t *storage,
     return ESP_FAIL;
 }
 
-static esp_err_t load_structured_settings(const app_settings_storage_t *storage, app_settings_t *settings)
+static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
+                                          app_settings_t *settings,
+                                          uint32_t version)
 {
     size_t alarms_size = sizeof(settings->alarms);
     app_settings_t defaults;
@@ -277,6 +293,11 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
 
     for (size_t i = 0; i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]); ++i) {
         load_field_if_present(storage, settings, &s_settings_fields[i]);
+    }
+    if (version < SETTINGS_VERSION_V10) {
+        settings->wifi.timezone_id =
+            timezone_id_from_legacy_offset(settings->wifi.timezone_offset_hours);
+        settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
     }
 
     if (storage->get_blob == NULL ||
@@ -313,7 +334,7 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
     }
 
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V9;
+    settings->version = SETTINGS_VERSION_V10;
     return ESP_OK;
 }
 
@@ -345,8 +366,10 @@ static esp_err_t load_legacy_v4_settings(const app_settings_storage_t *storage, 
     settings->night_mode.sunrise_brightness_enabled = true;
     settings->ui_click_sound_enabled = true;
     settings->ui_click_volume = 70;
+    settings->wifi.timezone_id = timezone_id_from_legacy_offset(settings->wifi.timezone_offset_hours);
+    settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V9;
+    settings->version = SETTINGS_VERSION_V10;
     return ESP_OK;
 }
 
@@ -367,7 +390,7 @@ esp_err_t app_settings_load_from_storage(const app_settings_storage_t *storage, 
         if (version < SETTINGS_VERSION_V5) {
             return ESP_ERR_INVALID_VERSION;
         }
-        return load_structured_settings(storage, settings);
+        return load_structured_settings(storage, settings, version);
     }
     if (err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
         return load_legacy_v4_settings(storage, settings);
@@ -386,9 +409,9 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
     }
 
     settings_policy_sanitize(&copy);
-    copy.version = SETTINGS_VERSION_V9;
+    copy.version = SETTINGS_VERSION_V10;
 
-    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V9);
+    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V10);
     for (size_t i = 0;
          err == ESP_OK && i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]);
          ++i) {

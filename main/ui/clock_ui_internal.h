@@ -177,7 +177,8 @@ typedef struct {
     bool cached_night_enabled;
     bool cached_night_sunrise_brightness_enabled;
     bool cached_in_night_mode;
-    int8_t cached_timezone_offset_hours;
+    uint8_t cached_timezone_id;
+    time_sync_mode_t cached_time_sync_mode;
     uint8_t cached_night_start_hour;
     uint8_t cached_night_start_minute;
     uint8_t cached_night_end_hour;
@@ -237,6 +238,14 @@ typedef struct {
     lv_obj_t *wifi_saved_label;
     lv_obj_t *wifi_network_list;
     lv_obj_t *wifi_timezone_dd;
+    lv_obj_t *time_mode_card;
+    lv_obj_t *time_mode_label;
+    lv_obj_t *manual_time_card;
+    lv_obj_t *manual_year_dd;
+    lv_obj_t *manual_month_dd;
+    lv_obj_t *manual_day_dd;
+    lv_obj_t *manual_hour_dd;
+    lv_obj_t *manual_min_dd;
     bool cached_ui_click_sound_enabled;
     uint8_t cached_ui_click_volume;
     lv_obj_t *night_enabled_sw;
@@ -282,6 +291,7 @@ typedef struct {
     bool management_scrolling;
     bool editor_is_new;
     bool cache_valid;
+    bool banner_visible;
     bool list_swipe_dragging;
     bool list_swipe_consumed;
     bool cached_alarm_ringing;
@@ -504,7 +514,9 @@ typedef struct clock_ui_state_t {
     bool affordances_visible;
     char hour_options[96];
     char minute_options[192];
-    char timezone_options[256];
+    char day_options[96];
+    char year_options[64];
+    char timezone_options[1024];
     char face_options[96];
     lv_timer_t *affordance_hide_timer;
     lv_obj_t *screen;

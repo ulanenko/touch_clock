@@ -100,6 +100,31 @@ static int test_cancel_next_and_undo(void)
     return 0;
 }
 
+static int test_alarm_stop_fades_brightness(void)
+{
+    app_state_t state = make_state();
+    app_action_result_t result;
+    time_t now = make_utc_time(2026, 3, 12, 23, 0, 0);
+
+    state.settings.night_mode.enabled = true;
+    state.settings.night_mode.start_hour = 22;
+    state.settings.night_mode.start_minute = 0;
+    state.settings.night_mode.end_hour = 7;
+    state.settings.night_mode.end_minute = 0;
+    state.settings.night_mode.brightness = 12;
+    alarm_scheduler_tick(&state.runtime, &state.settings, now);
+    state.runtime.alarm_ringing = true;
+    state.runtime.effective_brightness = 100;
+
+    result = app_action_alarm_stop(&state, now);
+    EXPECT_FALSE(state.runtime.alarm_ringing);
+    EXPECT_EQ_INT(12, state.runtime.effective_brightness);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_BRIGHTNESS_FADE));
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_AUDIO_RECONCILE));
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -116,5 +141,10 @@ int main(void)
         return status;
     }
 
-    return test_cancel_next_and_undo();
+    status = test_cancel_next_and_undo();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_alarm_stop_fades_brightness();
 }

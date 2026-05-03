@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "domain/face_catalog.h"
+#include "domain/timezone_rules.h"
 
 static clock_face_id_t default_night_face(void)
 {
@@ -68,6 +69,15 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (settings->wifi.timezone_offset_hours < -12 || settings->wifi.timezone_offset_hours > 14) {
         settings->wifi.timezone_offset_hours = 0;
     }
+    if (!timezone_id_is_valid(settings->wifi.timezone_id)) {
+        settings->wifi.timezone_id =
+            timezone_id_from_legacy_offset(settings->wifi.timezone_offset_hours);
+    }
+    settings->wifi.timezone_offset_hours =
+        timezone_legacy_offset_hours(settings->wifi.timezone_id);
+    if (settings->wifi.time_sync_mode != TIME_SYNC_MODE_MANUAL) {
+        settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
+    }
 
     for (size_t i = 0; i < MAX_ALARMS; ++i) {
         if (settings->alarms[i].hour > 23) {
@@ -102,6 +112,8 @@ void settings_policy_set_defaults(app_settings_t *settings)
     settings->snooze_minutes = 10;
     settings->current_face = face_catalog_default_face();
     settings->wifi.timezone_offset_hours = 0;
+    settings->wifi.timezone_id = CLOCK_TIMEZONE_ID_UTC_CITY;
+    settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
     settings->night_mode.enabled = false;
     settings->night_mode.sunrise_brightness_enabled = true;
     settings->night_mode.start_hour = 22;

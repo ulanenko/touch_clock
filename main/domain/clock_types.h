@@ -30,6 +30,11 @@ typedef enum {
     ALARM_REPEAT_ONCE = 1,
 } alarm_repeat_mode_t;
 
+typedef enum {
+    TIME_SYNC_MODE_AUTO = 0,
+    TIME_SYNC_MODE_MANUAL = 1,
+} time_sync_mode_t;
+
 typedef struct {
     bool enabled;
     uint8_t hour;
@@ -54,6 +59,8 @@ typedef struct {
     char ssid[33];
     char password[65];
     int8_t timezone_offset_hours;
+    uint8_t timezone_id;
+    uint8_t time_sync_mode;
 } wifi_settings_t;
 
 typedef struct {

@@ -7,6 +7,7 @@
 
 #include "app/app_settings_storage.h"
 #include "domain/settings_policy.h"
+#include "domain/timezone_rules.h"
 #include "nvs.h"
 
 #define SETTINGS_NAMESPACE "clock"
@@ -155,10 +156,9 @@ esp_err_t app_settings_save(const app_settings_t *settings)
 
 void app_settings_apply_timezone(const app_settings_t *settings)
 {
-    char tz_buf[16];
-    int posix_offset = -settings->wifi.timezone_offset_hours;
+    char tz_buf[48];
 
-    snprintf(tz_buf, sizeof(tz_buf), "UTC%+d", posix_offset);
+    timezone_format_posix(tz_buf, sizeof(tz_buf), settings->wifi.timezone_id);
     setenv("TZ", tz_buf, 1);
     tzset();
 }

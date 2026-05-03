@@ -2,13 +2,17 @@
 
 #include "app/app_controller_core.h"
 #include "domain/alarm_scheduler.h"
+#include "domain/brightness_policy.h"
 #include "domain/settings_policy.h"
+#include "domain/timezone_rules.h"
 #include "test_support.h"
 
 typedef struct {
     time_t now;
     time_t set_epoch_value;
-    int8_t applied_timezone;
+    uint8_t applied_timezone;
+    bool auto_sync_enabled;
+    int wifi_set_auto_sync_calls;
     uint8_t brightness_value;
     int display_set_calls;
     int audio_init_calls;
@@ -50,9 +54,9 @@ static void fake_set_epoch(time_t epoch)
     g_env->set_epoch_value = epoch;
 }
 
-static void fake_apply_timezone(int8_t utc_offset_hours)
+static void fake_apply_timezone(uint8_t timezone_id)
 {
-    g_env->applied_timezone = utc_offset_hours;
+    g_env->applied_timezone = timezone_id;
 }
 
 static int fake_audio_init(uint8_t volume)
@@ -151,6 +155,13 @@ static int fake_wifi_sync(void)
     return 0;
 }
 
+static int fake_wifi_set_auto_sync(bool enabled)
+{
+    g_env->wifi_set_auto_sync_calls += 1;
+    g_env->auto_sync_enabled = enabled;
+    return 0;
+}
+
 static int fake_display_set_brightness(uint8_t hw_percent)
 {
     g_env->display_set_calls += 1;
@@ -209,6 +220,7 @@ static const wifi_service_t s_wifi_service = {
     .connect = fake_wifi_connect,
     .forget = fake_wifi_forget,
     .request_sync = fake_wifi_sync,
+    .set_auto_sync = fake_wifi_set_auto_sync,
 };
 
 static const display_service_t s_display_service = {
@@ -250,6 +262,7 @@ static int test_bootstrap_and_action_flow(void)
     env.stored_settings.version = 5;
     snprintf(env.stored_settings.wifi.ssid, sizeof(env.stored_settings.wifi.ssid), "SavedWiFi");
     env.stored_settings.wifi.timezone_offset_hours = 2;
+    env.stored_settings.wifi.timezone_id = timezone_id_from_legacy_offset(2);
     env.stored_settings.last_synced_epoch = make_utc_time(2026, 3, 12, 8, 0, 0);
     env.now = make_utc_time(2026, 3, 12, 8, 5, 0);
     env.monotonic_ms = 100;
@@ -261,7 +274,8 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_EQ_INT(1, env.audio_set_ascending_calls);
     EXPECT_FALSE(env.audio_ascending_enabled);
     EXPECT_EQ_INT(1, env.wifi_init_calls);
-    EXPECT_EQ_INT(2, env.applied_timezone);
+    EXPECT_EQ_INT(timezone_id_from_legacy_offset(2), env.applied_timezone);
+    EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
     EXPECT_EQ_INT(env.stored_settings.last_synced_epoch, env.set_epoch_value);
 
     result = app_action_set_base_brightness(&core.state, 77, env.now);
@@ -353,8 +367,19 @@ static int test_alarm_test_and_cancel_window(void)
     EXPECT_EQ_INT(1, env.audio_start_test_calls);
     EXPECT_TRUE(core.state.runtime.alarm_test_active);
 
-    app_controller_core_toggle_alarm_test(&core, now);
+    app_controller_core_stop_alarm_test(&core);
     EXPECT_EQ_INT(1, env.audio_stop_calls);
+    EXPECT_FALSE(core.state.runtime.alarm_test_active);
+
+    app_controller_core_stop_alarm_test(&core);
+    EXPECT_EQ_INT(1, env.audio_stop_calls);
+
+    app_controller_core_toggle_alarm_test(&core, now);
+    EXPECT_EQ_INT(2, env.audio_start_test_calls);
+    EXPECT_TRUE(core.state.runtime.alarm_test_active);
+
+    app_controller_core_toggle_alarm_test(&core, now);
+    EXPECT_EQ_INT(2, env.audio_stop_calls);
     EXPECT_FALSE(core.state.runtime.alarm_test_active);
 
     core.state.settings.alarms[0].enabled = true;
@@ -370,6 +395,77 @@ static int test_alarm_test_and_cancel_window(void)
 
     env.monotonic_ms = 3000;
     EXPECT_FALSE(app_controller_core_cancel_revert_window_active(&core));
+    return 0;
+}
+
+static int test_alarm_auto_stop_and_brightness_fade(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+    time_t now = make_utc_time(2026, 3, 12, 23, 0, 0);
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    env.stored_settings.night_mode.enabled = true;
+    env.stored_settings.night_mode.start_hour = 22;
+    env.stored_settings.night_mode.start_minute = 0;
+    env.stored_settings.night_mode.end_hour = 7;
+    env.stored_settings.night_mode.end_minute = 0;
+    env.stored_settings.night_mode.brightness = 10;
+    env.now = now;
+    env.monotonic_ms = 0;
+    core = make_core(&env);
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, now));
+
+    core.state.runtime.in_night_mode = true;
+    core.state.runtime.alarm_ringing = true;
+    core.state.runtime.effective_brightness = 100;
+    core.state.applied_brightness = 100;
+    env.alarm_active = true;
+    env.wifi_snapshot = core.state.runtime;
+    app_controller_core_tick(&core);
+    EXPECT_TRUE(core.state.runtime.alarm_ringing);
+    EXPECT_TRUE(core.state.alarm_auto_stop_armed);
+
+    env.now = now + 601;
+    env.monotonic_ms = 1000;
+    env.wifi_snapshot = core.state.runtime;
+    app_controller_core_tick(&core);
+    EXPECT_FALSE(core.state.runtime.alarm_ringing);
+    EXPECT_FALSE(core.state.alarm_auto_stop_armed);
+    EXPECT_EQ_INT(1, env.audio_stop_calls);
+    EXPECT_TRUE(core.state.brightness_fade_active);
+    EXPECT_EQ_INT(10, core.state.runtime.effective_brightness);
+    EXPECT_TRUE(env.brightness_value < 100);
+
+    env.now = now + 605;
+    env.monotonic_ms = 5000;
+    env.wifi_snapshot = core.state.runtime;
+    app_controller_core_tick(&core);
+    EXPECT_FALSE(core.state.brightness_fade_active);
+    EXPECT_EQ_INT(DISPLAY_BRIGHTNESS_MIN_PERCENT, env.brightness_value);
+    return 0;
+}
+
+static int test_temporary_brightness_floor(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+    uint8_t badge_floor = brightness_policy_ui_to_hw(10);
+    time_t now = make_utc_time(2026, 3, 12, 23, 0, 0);
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    env.now = now;
+    core = make_core(&env);
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, now));
+
+    core.state.runtime.effective_brightness = 0;
+    app_controller_core_set_temporary_brightness_floor(&core, true, badge_floor);
+    EXPECT_EQ_INT(badge_floor, env.brightness_value);
+
+    app_controller_core_set_temporary_brightness_floor(&core, false, badge_floor);
+    EXPECT_EQ_INT(DISPLAY_BRIGHTNESS_MIN_PERCENT, env.brightness_value);
     return 0;
 }
 
@@ -389,5 +485,15 @@ int main(void)
         return status;
     }
 
-    return test_alarm_test_and_cancel_window();
+    status = test_alarm_test_and_cancel_window();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_alarm_auto_stop_and_brightness_fade();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_temporary_brightness_floor();
 }

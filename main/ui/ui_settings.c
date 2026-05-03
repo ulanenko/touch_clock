@@ -1,4 +1,8 @@
 #include "ui/clock_ui_private.h"
+#include "app_version.h"
+#include "domain/timezone_rules.h"
+#include "esp_system.h"
+#include "sdkconfig.h"
 
 static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
 {
@@ -111,14 +115,56 @@ static void settings_set_clickable_enabled(lv_obj_t *obj, bool enabled)
     }
 }
 
-static void settings_format_timezone_label(char *buffer, size_t size, int tz)
+static void settings_format_time_mode_label(char *buffer, size_t size, time_sync_mode_t mode)
 {
-    snprintf(buffer, size, "UTC%+d", tz);
+    snprintf(buffer, size, "%s", mode == TIME_SYNC_MODE_MANUAL ? "Manual time" : "Auto sync");
 }
 
 static void settings_format_face_label(char *buffer, size_t size, clock_face_id_t face)
 {
     snprintf(buffer, size, "%s", clock_face_name(face));
+}
+
+static void create_about_info_row(lv_obj_t *parent, const char *title, const char *value)
+{
+    lv_obj_t *row = create_row(parent);
+    lv_obj_t *label;
+
+    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+
+    label = lv_label_create(row);
+    lv_obj_set_width(label, 190);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
+    lv_label_set_text(label, title);
+
+    label = lv_label_create(row);
+    lv_obj_set_width(label, 280);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
+    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(label, value);
+}
+
+static void create_about_device_card(lv_obj_t *parent)
+{
+    lv_obj_t *card = create_card(parent);
+    char build[40];
+
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 12, 0);
+    create_section_title(card, "About this device", "Firmware and hardware details");
+
+    create_about_info_row(card, "Device", "Touch Clock");
+    create_about_info_row(card, "Version", TOUCH_CLOCK_FIRMWARE_VERSION);
+    snprintf(build, sizeof(build), "%s %s", __DATE__, __TIME__);
+    create_about_info_row(card, "Build", build);
+    create_about_info_row(card, "Target", CONFIG_IDF_TARGET);
+    create_about_info_row(card, "Flash", CONFIG_ESPTOOLPY_FLASHSIZE);
+    create_about_info_row(card, "ESP-IDF", esp_get_idf_version());
+    create_about_info_row(card, "Updates", "USB now; OTA not configured");
 }
 
 static void sync_other_controls(clock_ui_context_t *ctx)
@@ -544,14 +590,27 @@ void sync_night_controls(clock_ui_context_t *ctx)
 void sync_wifi_controls(clock_ui_context_t *ctx)
 {
     char saved[160];
-    char timezone_label[24];
+    char mode_label[24];
+    time_t now;
+    struct tm local_tm;
 
     if (ctx->settings_ui.wifi_timezone_dd == NULL) {
         return;
     }
 
-    settings_format_timezone_label(timezone_label, sizeof(timezone_label), ctx->settings->wifi.timezone_offset_hours);
-    settings_set_label_text_if_changed(ctx->settings_ui.wifi_timezone_dd, timezone_label);
+    ctx->suppress_events = true;
+    lv_dropdown_set_selected(ctx->settings_ui.wifi_timezone_dd,
+                             timezone_picker_index_from_id(ctx->settings->wifi.timezone_id));
+    ctx->suppress_events = false;
+    settings_format_time_mode_label(mode_label, sizeof(mode_label), ctx->settings->wifi.time_sync_mode);
+    settings_set_label_text_if_changed(ctx->settings_ui.time_mode_label, mode_label);
+    if (ctx->settings_ui.manual_time_card != NULL) {
+        if (ctx->settings->wifi.time_sync_mode == TIME_SYNC_MODE_MANUAL) {
+            lv_obj_clear_flag(ctx->settings_ui.manual_time_card, LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(ctx->settings_ui.manual_time_card, LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 
     settings_set_label_text_if_changed(ctx->settings_ui.wifi_status_label,
                                        ctx->runtime->wifi_status[0] ? ctx->runtime->wifi_status : "Wi-Fi idle");
@@ -565,7 +624,26 @@ void sync_wifi_controls(clock_ui_context_t *ctx)
 
     sync_wifi_list(ctx);
 
-    ctx->settings_ui.cached_timezone_offset_hours = ctx->settings->wifi.timezone_offset_hours;
+    now = time(NULL);
+    localtime_r(&now, &local_tm);
+    if (ctx->settings_ui.manual_year_dd != NULL) {
+        int year = local_tm.tm_year + 1900;
+        if (year < 2024) {
+            year = 2024;
+        } else if (year > 2035) {
+            year = 2035;
+        }
+        ctx->suppress_events = true;
+        lv_dropdown_set_selected(ctx->settings_ui.manual_year_dd, (uint16_t)(year - 2024));
+        lv_dropdown_set_selected(ctx->settings_ui.manual_month_dd, (uint16_t)local_tm.tm_mon);
+        lv_dropdown_set_selected(ctx->settings_ui.manual_day_dd, (uint16_t)local_tm.tm_mday - 1);
+        lv_dropdown_set_selected(ctx->settings_ui.manual_hour_dd, (uint16_t)local_tm.tm_hour);
+        lv_dropdown_set_selected(ctx->settings_ui.manual_min_dd, (uint16_t)local_tm.tm_min);
+        ctx->suppress_events = false;
+    }
+
+    ctx->settings_ui.cached_timezone_id = ctx->settings->wifi.timezone_id;
+    ctx->settings_ui.cached_time_sync_mode = ctx->settings->wifi.time_sync_mode;
     snprintf(ctx->settings_ui.cached_wifi_status, sizeof(ctx->settings_ui.cached_wifi_status), "%s",
              ctx->runtime->wifi_status);
     snprintf(ctx->settings_ui.cached_wifi_saved_ssid, sizeof(ctx->settings_ui.cached_wifi_saved_ssid), "%s",
@@ -586,7 +664,11 @@ bool wifi_controls_need_sync(const clock_ui_context_t *ctx)
         return true;
     }
 
-    if (ctx->settings_ui.cached_timezone_offset_hours != ctx->settings->wifi.timezone_offset_hours) {
+    if (ctx->settings_ui.cached_timezone_id != ctx->settings->wifi.timezone_id) {
+        return true;
+    }
+
+    if (ctx->settings_ui.cached_time_sync_mode != ctx->settings->wifi.time_sync_mode) {
         return true;
     }
 
@@ -1268,25 +1350,72 @@ static void settings_close_swipe_event_cb(lv_event_t *event)
     }
 }
 
-static void timezone_prev_event_cb(lv_event_t *event)
+static void timezone_dropdown_event_cb(lv_event_t *event)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->settings->wifi.timezone_offset_hours <= -12) {
-        request_set_timezone(ctx, 14);
-    } else {
-        request_set_timezone(ctx, (int8_t)(ctx->settings->wifi.timezone_offset_hours - 1));
+
+    if (ctx->suppress_events) {
+        return;
     }
+
+    request_set_timezone(ctx, timezone_id_from_picker_index((uint8_t)lv_dropdown_get_selected(lv_event_get_target(event))));
     sync_wifi_controls(ctx);
 }
 
-static void timezone_next_event_cb(lv_event_t *event)
+static void time_mode_prev_event_cb(lv_event_t *event)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->settings->wifi.timezone_offset_hours >= 14) {
-        request_set_timezone(ctx, -12);
-    } else {
-        request_set_timezone(ctx, (int8_t)(ctx->settings->wifi.timezone_offset_hours + 1));
+    time_sync_mode_t mode = ctx->settings->wifi.time_sync_mode == TIME_SYNC_MODE_MANUAL
+                                ? TIME_SYNC_MODE_AUTO
+                                : TIME_SYNC_MODE_MANUAL;
+
+    request_set_time_sync_mode(ctx, mode);
+    sync_wifi_controls(ctx);
+}
+
+static void time_mode_next_event_cb(lv_event_t *event)
+{
+    time_mode_prev_event_cb(event);
+}
+
+static uint8_t days_in_month(uint16_t year, uint8_t month)
+{
+    static const uint8_t s_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+
+    if (month == 2 && ((year % 4U == 0U && year % 100U != 0U) || year % 400U == 0U)) {
+        return 29;
     }
+    if (month < 1 || month > 12) {
+        return 31;
+    }
+    return s_days[month - 1U];
+}
+
+static void manual_time_apply_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    uint16_t year;
+    uint8_t month;
+    uint8_t day;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t max_day;
+
+    if (ctx->settings_ui.manual_year_dd == NULL) {
+        return;
+    }
+
+    year = (uint16_t)(2024U + lv_dropdown_get_selected(ctx->settings_ui.manual_year_dd));
+    month = (uint8_t)(1U + lv_dropdown_get_selected(ctx->settings_ui.manual_month_dd));
+    day = (uint8_t)(1U + lv_dropdown_get_selected(ctx->settings_ui.manual_day_dd));
+    hour = (uint8_t)lv_dropdown_get_selected(ctx->settings_ui.manual_hour_dd);
+    minute = (uint8_t)lv_dropdown_get_selected(ctx->settings_ui.manual_min_dd);
+    max_day = days_in_month(year, month);
+    if (day > max_day) {
+        day = max_day;
+    }
+
+    request_set_manual_time(ctx, year, month, day, hour, minute);
     sync_wifi_controls(ctx);
 }
 
@@ -1507,21 +1636,74 @@ static void create_wifi_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 
 static void create_timezone_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
-    lv_obj_t *row;
-
     ctx->settings_ui.timezone_card = create_card(parent);
     center_card_children(ctx->settings_ui.timezone_card);
     create_centered_card_title(ctx->settings_ui.timezone_card, "Time zone");
 
-    row = create_step_selector(ctx->settings_ui.timezone_card,
-                               240,
+    ctx->settings_ui.wifi_timezone_dd = create_dropdown(ctx->settings_ui.timezone_card,
+                                                        ctx->timezone_options,
+                                                        420);
+    lv_obj_add_event_cb(ctx->settings_ui.wifi_timezone_dd,
+                        timezone_dropdown_event_cb,
+                        LV_EVENT_VALUE_CHANGED,
+                        ctx);
+}
+
+static void create_time_mode_card(clock_ui_context_t *ctx, lv_obj_t *parent)
+{
+    lv_obj_t *row;
+
+    ctx->settings_ui.time_mode_card = create_card(parent);
+    center_card_children(ctx->settings_ui.time_mode_card);
+    create_centered_card_title(ctx->settings_ui.time_mode_card, "Clock");
+
+    row = create_step_selector(ctx->settings_ui.time_mode_card,
+                               260,
                                78,
-                               &ctx->settings_ui.wifi_timezone_dd,
-                               timezone_prev_event_cb,
+                               &ctx->settings_ui.time_mode_label,
+                               time_mode_prev_event_cb,
                                ctx,
-                               timezone_next_event_cb,
+                               time_mode_next_event_cb,
                                ctx);
     center_row(row);
+}
+
+static void create_manual_time_card(clock_ui_context_t *ctx, lv_obj_t *parent)
+{
+    static const char *s_month_options =
+        "Jan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nOct\nNov\nDec";
+    lv_obj_t *card;
+    lv_obj_t *row;
+    lv_obj_t *label;
+
+    card = create_card(parent);
+    ctx->settings_ui.manual_time_card = card;
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 16, 0);
+    center_card_children(card);
+    create_centered_card_title(card, "Set manually");
+
+    row = create_row(card);
+    center_row(row);
+    lv_obj_set_style_pad_column(row, 12, 0);
+    ctx->settings_ui.manual_year_dd = create_dropdown(row, ctx->year_options, 132);
+    ctx->settings_ui.manual_month_dd = create_dropdown(row, s_month_options, 132);
+    ctx->settings_ui.manual_day_dd = create_dropdown(row, ctx->day_options, 100);
+
+    row = create_row(card);
+    center_row(row);
+    lv_obj_set_style_pad_column(row, 10, 0);
+    ctx->settings_ui.manual_hour_dd = create_dropdown(row, ctx->hour_options, 120);
+    label = lv_label_create(row);
+    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(label, lv_color_white(), 0);
+    lv_label_set_text(label, ":");
+    ctx->settings_ui.manual_min_dd = create_dropdown(row, ctx->minute_options, 120);
+
+    row = create_row(card);
+    center_row(row);
+    create_action_button(row, "Set time", manual_time_apply_event_cb, ctx);
 }
 
 static void create_networks_card(clock_ui_context_t *ctx, lv_obj_t *parent)
@@ -2020,8 +2202,11 @@ static void create_wifi_overlay(clock_ui_context_t *ctx)
     title = surface.title;
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
+    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     create_wifi_card(ctx, surface.content);
+    create_time_mode_card(ctx, surface.content);
+    create_manual_time_card(ctx, surface.content);
     create_networks_card(ctx, surface.content);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.wifi_overlay,
@@ -2072,8 +2257,9 @@ static void create_other_overlay(clock_ui_context_t *ctx)
     title = surface.title;
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_bottom(surface.content, 72, 0);
+    lv_obj_add_flag(surface.content, LV_OBJ_FLAG_SCROLL_MOMENTUM);
 
     create_timezone_card(ctx, surface.content);
 
@@ -2138,6 +2324,8 @@ static void create_other_overlay(clock_ui_context_t *ctx)
                         LV_EVENT_VALUE_CHANGED,
                         ctx);
     ui_attach_click_feedback(ctx->settings_ui.other_sound_volume_slider, LV_EVENT_VALUE_CHANGED);
+
+    create_about_device_card(surface.content);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
                                   &ctx->settings_ui.other_top_sensor,
@@ -2270,7 +2458,7 @@ void create_settings_overlay(clock_ui_context_t *ctx)
     create_settings_menu_entry(surface.content,
                                LV_SYMBOL_SETTINGS,
                                "Other",
-                               "Time zone",
+                               "Sound and device info",
                                settings_other_entry_event_cb,
                                ctx);
 

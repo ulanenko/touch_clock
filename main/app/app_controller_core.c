@@ -9,6 +9,8 @@
 #include "domain/settings_policy.h"
 
 #define APP_SETTINGS_VERSION_V7 7U
+#define APP_ALARM_AUTO_STOP_SECONDS 600
+#define APP_BRIGHTNESS_FADE_DOWN_MS 3500
 
 static int64_t monotonic_ms(const app_controller_core_t *core)
 {
@@ -25,6 +27,39 @@ static void mark_settings_dirty(app_controller_core_t *core)
     core->state.save_deadline_ms = monotonic_ms(core) + 1000;
 }
 
+static uint8_t clamp_display_brightness(uint8_t brightness)
+{
+    if (brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
+        return DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    }
+    if (brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
+        return DISPLAY_BRIGHTNESS_MAX_PERCENT;
+    }
+    return brightness;
+}
+
+static void start_brightness_fade_down(app_controller_core_t *core, uint8_t target_brightness, int64_t duration_ms)
+{
+    uint8_t target = clamp_display_brightness(target_brightness);
+    uint8_t start = core->state.applied_brightness;
+
+    if (start == UCHAR_MAX) {
+        start = target;
+    }
+    start = clamp_display_brightness(start);
+
+    if (duration_ms <= 0 || start <= target) {
+        core->state.brightness_fade_active = false;
+        return;
+    }
+
+    core->state.brightness_fade_active = true;
+    core->state.brightness_fade_start = start;
+    core->state.brightness_fade_target = target;
+    core->state.brightness_fade_start_ms = monotonic_ms(core);
+    core->state.brightness_fade_duration_ms = duration_ms;
+}
+
 static void apply_runtime_brightness(app_controller_core_t *core)
 {
     uint8_t target_brightness;
@@ -34,13 +69,31 @@ static void apply_runtime_brightness(app_controller_core_t *core)
         return;
     }
 
-    target_brightness = core->state.runtime.effective_brightness;
-    applied_brightness = target_brightness;
-    if (applied_brightness < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
-        applied_brightness = DISPLAY_BRIGHTNESS_MIN_PERCENT;
+    target_brightness = clamp_display_brightness(core->state.runtime.effective_brightness);
+    if (core->state.temporary_brightness_floor_active &&
+        target_brightness < core->state.temporary_brightness_floor) {
+        target_brightness = core->state.temporary_brightness_floor;
     }
-    if (applied_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
-        applied_brightness = DISPLAY_BRIGHTNESS_MAX_PERCENT;
+    applied_brightness = target_brightness;
+    if (core->state.brightness_fade_active) {
+        int64_t now_ms = monotonic_ms(core);
+        int64_t elapsed_ms = now_ms - core->state.brightness_fade_start_ms;
+
+        core->state.brightness_fade_target = target_brightness;
+        if (elapsed_ms < 0) {
+            elapsed_ms = 0;
+        }
+        if (elapsed_ms >= core->state.brightness_fade_duration_ms ||
+            core->state.brightness_fade_duration_ms <= 0) {
+            core->state.brightness_fade_active = false;
+            applied_brightness = target_brightness;
+        } else {
+            int diff = (int)core->state.brightness_fade_target -
+                       (int)core->state.brightness_fade_start;
+            applied_brightness = (uint8_t)((int)core->state.brightness_fade_start +
+                                           (int)((diff * elapsed_ms) /
+                                                 core->state.brightness_fade_duration_ms));
+        }
     }
 
     if (core->state.applied_brightness == applied_brightness) {
@@ -52,6 +105,35 @@ static void apply_runtime_brightness(app_controller_core_t *core)
     }
 
     core->state.applied_brightness = applied_brightness;
+}
+
+static bool update_alarm_auto_stop(app_controller_core_t *core, time_t now)
+{
+    if (!core->state.runtime.alarm_ringing) {
+        core->state.alarm_auto_stop_armed = false;
+        core->state.alarm_auto_stop_deadline = 0;
+        return false;
+    }
+
+    if (!core->state.alarm_auto_stop_armed) {
+        core->state.alarm_auto_stop_armed = true;
+        core->state.alarm_auto_stop_deadline = now + APP_ALARM_AUTO_STOP_SECONDS;
+        return false;
+    }
+
+    if (now < core->state.alarm_auto_stop_deadline) {
+        return false;
+    }
+
+    alarm_scheduler_stop(&core->state.runtime);
+    core->state.alarm_auto_stop_armed = false;
+    core->state.alarm_auto_stop_deadline = 0;
+    core->state.runtime.effective_brightness =
+        brightness_policy_get_target(&core->state.runtime, &core->state.settings, now);
+    start_brightness_fade_down(core,
+                               core->state.runtime.effective_brightness,
+                               APP_BRIGHTNESS_FADE_DOWN_MS);
+    return true;
 }
 
 static void maybe_save_settings(app_controller_core_t *core, bool force)
@@ -117,6 +199,11 @@ static void reconcile_alarm_audio(app_controller_core_t *core)
 {
     const audio_service_t *audio = core->config.audio_service;
 
+    if (!core->state.runtime.alarm_ringing) {
+        core->state.alarm_auto_stop_armed = false;
+        core->state.alarm_auto_stop_deadline = 0;
+    }
+
     if (!core->state.audio_available || audio == NULL) {
         core->state.runtime.alarm_test_active = false;
         return;
@@ -158,7 +245,11 @@ static void apply_audio_preferences(app_controller_core_t *core)
 static void reconcile_settings_side_effects(app_controller_core_t *core, time_t now)
 {
     if (core->config.clock_service != NULL && core->config.clock_service->apply_timezone != NULL) {
-        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_offset_hours);
+        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_id);
+    }
+
+    if (core->config.wifi_service != NULL && core->config.wifi_service->set_auto_sync != NULL) {
+        core->config.wifi_service->set_auto_sync(core->state.settings.wifi.time_sync_mode == TIME_SYNC_MODE_AUTO);
     }
 
     core->state.runtime.effective_brightness =
@@ -187,7 +278,7 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
     }
 
     if (core->config.clock_service != NULL && core->config.clock_service->apply_timezone != NULL) {
-        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_offset_hours);
+        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_id);
     }
 
     if (core->state.settings.last_synced_epoch > 1700000000) {
@@ -228,6 +319,12 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
         mark_settings_dirty(core);
     }
 
+    if (app_action_has_effect(result, APP_EFFECT_CLOCK_SET) &&
+        core->config.clock_service != NULL &&
+        core->config.clock_service->set_epoch != NULL) {
+        core->config.clock_service->set_epoch(result->clock_epoch);
+    }
+
     if (app_action_has_effect(result, APP_EFFECT_WIFI_COMMAND)) {
         execute_wifi_command(core, result);
     }
@@ -240,6 +337,12 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
         reconcile_alarm_audio(core);
     }
 
+    if (app_action_has_effect(result, APP_EFFECT_BRIGHTNESS_FADE)) {
+        start_brightness_fade_down(core,
+                                   core->state.runtime.effective_brightness,
+                                   APP_BRIGHTNESS_FADE_DOWN_MS);
+    }
+
     if (app_action_has_effect(result, APP_EFFECT_BRIGHTNESS_APPLY)) {
         apply_runtime_brightness(core);
     }
@@ -247,6 +350,22 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
     if (app_action_has_effect(result, APP_EFFECT_UI_REFRESH) && core->config.ui_refresh != NULL) {
         core->config.ui_refresh(core->config.ui_refresh_ctx);
     }
+}
+
+void app_controller_core_set_temporary_brightness_floor(app_controller_core_t *core,
+                                                        bool enabled,
+                                                        uint8_t floor_brightness)
+{
+    uint8_t floor = clamp_display_brightness(floor_brightness);
+
+    if (core->state.temporary_brightness_floor_active == enabled &&
+        core->state.temporary_brightness_floor == floor) {
+        return;
+    }
+
+    core->state.temporary_brightness_floor_active = enabled;
+    core->state.temporary_brightness_floor = floor;
+    apply_runtime_brightness(core);
 }
 
 void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t now)
@@ -270,6 +389,29 @@ void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t n
         core->state.runtime.alarm_test_active = audio->is_test_active();
     }
     app_controller_core_apply_action_result(core, &result, now);
+}
+
+void app_controller_core_stop_alarm_test(app_controller_core_t *core)
+{
+    const audio_service_t *audio = core->config.audio_service;
+
+    if (!core->state.audio_available || audio == NULL) {
+        core->state.runtime.alarm_test_active = false;
+        return;
+    }
+
+    if (audio->is_test_active != NULL && audio->is_test_active() && audio->stop != NULL) {
+        audio->stop();
+    }
+    if (audio->is_test_active != NULL) {
+        core->state.runtime.alarm_test_active = audio->is_test_active();
+    } else {
+        core->state.runtime.alarm_test_active = false;
+    }
+
+    if (core->config.ui_refresh != NULL) {
+        core->config.ui_refresh(core->config.ui_refresh_ctx);
+    }
 }
 
 void app_controller_core_arm_cancel_revert_window(app_controller_core_t *core, int64_t duration_ms)
@@ -296,6 +438,9 @@ time_t app_controller_core_tick(app_controller_core_t *core)
     }
     if (alarm_scheduler_tick(&core->state.runtime, &core->state.settings, now)) {
         mark_settings_dirty(core);
+    }
+    if (update_alarm_auto_stop(core, now) && core->config.ui_refresh != NULL) {
+        core->config.ui_refresh(core->config.ui_refresh_ctx);
     }
     reconcile_alarm_audio(core);
 

@@ -10,7 +10,7 @@
 typedef struct {
     time_t (*now)(void);
     void (*set_epoch)(time_t epoch);
-    void (*apply_timezone)(int8_t utc_offset_hours);
+    void (*apply_timezone)(uint8_t timezone_id);
 } clock_time_service_t;
 
 typedef struct {
@@ -33,6 +33,7 @@ typedef struct {
     int (*connect)(const char *ssid, const char *password);
     int (*forget)(void);
     int (*request_sync)(void);
+    int (*set_auto_sync)(bool enabled);
 } wifi_service_t;
 
 typedef struct {

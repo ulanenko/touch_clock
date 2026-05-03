@@ -10,10 +10,13 @@
 typedef struct {
     void (*on_set_base_brightness)(void *user_ctx, uint8_t hw_percent);
     void (*on_set_runtime_night_brightness)(void *user_ctx, uint8_t hw_percent);
+    void (*on_set_temporary_brightness_floor)(void *user_ctx, bool enabled, uint8_t hw_percent);
     void (*on_set_current_face)(void *user_ctx, clock_face_id_t face);
     void (*on_set_face_theme)(void *user_ctx, clock_face_id_t face, uint8_t theme);
     void (*on_set_night_face)(void *user_ctx, clock_face_id_t face);
-    void (*on_set_timezone)(void *user_ctx, int8_t utc_offset_hours);
+    void (*on_set_timezone)(void *user_ctx, uint8_t timezone_id);
+    void (*on_set_time_sync_mode)(void *user_ctx, time_sync_mode_t mode);
+    void (*on_set_manual_time)(void *user_ctx, uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute);
     void (*on_save_wifi_credentials)(void *user_ctx, const char *ssid, const char *password);
     void (*on_wifi_scan_requested)(void *user_ctx);
     void (*on_wifi_forget_requested)(void *user_ctx);
@@ -38,6 +41,7 @@ typedef struct {
     void (*on_alarm_snooze_requested)(void *user_ctx);
     void (*on_alarm_stop_requested)(void *user_ctx);
     void (*on_alarm_test_requested)(void *user_ctx);
+    void (*on_alarm_test_stop_requested)(void *user_ctx);
     void (*on_next_alarm_cancel_requested)(void *user_ctx);
     void (*on_next_alarm_cancel_undo_requested)(void *user_ctx);
 } clock_ui_callbacks_t;

@@ -2,6 +2,7 @@
 
 #include "domain/face_catalog.h"
 #include "domain/settings_policy.h"
+#include "domain/timezone_rules.h"
 #include "test_support.h"
 
 static int test_defaults(void)
@@ -22,6 +23,8 @@ static int test_defaults(void)
     EXPECT_TRUE(settings.night_mode.sunrise_brightness_enabled);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     EXPECT_EQ_INT(0, settings.wifi.timezone_offset_hours);
+    EXPECT_EQ_INT(CLOCK_TIMEZONE_ID_UTC_CITY, settings.wifi.timezone_id);
+    EXPECT_EQ_INT(TIME_SYNC_MODE_AUTO, settings.wifi.time_sync_mode);
     EXPECT_EQ_INT(ALARM_REPEAT_ONCE, settings.alarms[0].repeat_mode);
     EXPECT_EQ_INT(0x7F, settings.alarms[0].days_mask);
     EXPECT_FALSE(settings.alarms[0].math_unlock_enabled);
@@ -44,6 +47,8 @@ static int test_sanitize_invalid_values(void)
     settings.night_mode.start_hour = 255;
     settings.night_mode.end_hour = 255;
     settings.wifi.timezone_offset_hours = 42;
+    settings.wifi.timezone_id = 255;
+    settings.wifi.time_sync_mode = 99;
     settings.alarms[0].hour = 99;
     settings.alarms[0].minute = 99;
     settings.alarms[0].repeat_mode = 99;
@@ -68,6 +73,8 @@ static int test_sanitize_invalid_values(void)
     EXPECT_EQ_INT(22, settings.night_mode.start_hour);
     EXPECT_EQ_INT(7, settings.night_mode.end_hour);
     EXPECT_EQ_INT(0, settings.wifi.timezone_offset_hours);
+    EXPECT_EQ_INT(CLOCK_TIMEZONE_ID_UTC_CITY, settings.wifi.timezone_id);
+    EXPECT_EQ_INT(TIME_SYNC_MODE_AUTO, settings.wifi.time_sync_mode);
     EXPECT_EQ_INT(7, settings.alarms[0].hour);
     EXPECT_EQ_INT(0, settings.alarms[0].minute);
     EXPECT_EQ_INT(ALARM_REPEAT_WEEKLY, settings.alarms[0].repeat_mode);

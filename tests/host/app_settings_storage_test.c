@@ -2,6 +2,7 @@
 
 #include "app/app_settings_storage.h"
 #include "domain/settings_policy.h"
+#include "domain/timezone_rules.h"
 #include "test_support.h"
 
 typedef enum {
@@ -281,7 +282,7 @@ static int test_v5_round_trip(void)
     app_settings_t loaded;
 
     settings_policy_set_defaults(&saved);
-    saved.version = 9;
+    saved.version = 10;
     saved.base_brightness = 77;
     saved.alarm_volume = 61;
     saved.ui_click_sound_enabled = false;
@@ -294,6 +295,8 @@ static int test_v5_round_trip(void)
     snprintf(saved.wifi.ssid, sizeof(saved.wifi.ssid), "Office");
     snprintf(saved.wifi.password, sizeof(saved.wifi.password), "secret");
     saved.wifi.timezone_offset_hours = 3;
+    saved.wifi.timezone_id = timezone_id_from_legacy_offset(3);
+    saved.wifi.time_sync_mode = TIME_SYNC_MODE_MANUAL;
     saved.night_mode.enabled = true;
     saved.night_mode.start_hour = 21;
     saved.night_mode.end_hour = 6;
@@ -320,6 +323,8 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(find_entry(&store, "wifi_ssid") != NULL);
     EXPECT_TRUE(find_entry(&store, "wifi_pass") != NULL);
     EXPECT_TRUE(find_entry(&store, "tz") != NULL);
+    EXPECT_TRUE(find_entry(&store, "tz_id") != NULL);
+    EXPECT_TRUE(find_entry(&store, "time_mode") != NULL);
     EXPECT_TRUE(find_entry(&store, "n_en") != NULL);
     EXPECT_TRUE(find_entry(&store, "n_face") != NULL);
     EXPECT_TRUE(find_entry(&store, "n_sun") != NULL);
@@ -336,6 +341,8 @@ static int test_v5_round_trip(void)
     EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_STERNGLAS]);
     EXPECT_STR_EQ("Office", loaded.wifi.ssid);
     EXPECT_EQ_INT(3, loaded.wifi.timezone_offset_hours);
+    EXPECT_EQ_INT(timezone_id_from_legacy_offset(3), loaded.wifi.timezone_id);
+    EXPECT_EQ_INT(TIME_SYNC_MODE_MANUAL, loaded.wifi.time_sync_mode);
     EXPECT_TRUE(loaded.night_mode.enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MODERN_SILVER, loaded.night_mode.face);
     EXPECT_FALSE(loaded.night_mode.sunrise_brightness_enabled);
@@ -368,7 +375,7 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
     EXPECT_EQ_INT(70, loaded.ui_click_volume);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(9, loaded.version);
+    EXPECT_EQ_INT(10, loaded.version);
     return 0;
 }
 
@@ -396,7 +403,7 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(9, loaded.version);
+    EXPECT_EQ_INT(10, loaded.version);
     return 0;
 }
 
@@ -420,7 +427,7 @@ static int test_v7_alarm_blob_migration(void)
     EXPECT_EQ_INT(7, loaded.alarms[0].hour);
     EXPECT_EQ_INT(30, loaded.alarms[0].minute);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(9, loaded.version);
+    EXPECT_EQ_INT(10, loaded.version);
     return 0;
 }
 
@@ -443,7 +450,7 @@ static int test_future_structured_version_loads_without_reset(void)
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
     EXPECT_EQ_INT(33, loaded.ui_click_volume);
     EXPECT_STR_EQ("Office", loaded.wifi.ssid);
-    EXPECT_EQ_INT(9, loaded.version);
+    EXPECT_EQ_INT(10, loaded.version);
     return 0;
 }
 

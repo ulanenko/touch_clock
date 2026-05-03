@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <time.h>
 
 #include "app/app_actions.h"
 #include "app/app_controller_core.h"
@@ -52,6 +53,13 @@ static void on_set_runtime_night_brightness(void *user_ctx, uint8_t hw_percent)
     app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
+static void on_set_temporary_brightness_floor(void *user_ctx, bool enabled, uint8_t hw_percent)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+
+    app_controller_core_set_temporary_brightness_floor(&app->core, enabled, hw_percent);
+}
+
 static void on_set_current_face(void *user_ctx, clock_face_id_t face)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -76,13 +84,40 @@ static void on_set_night_face(void *user_ctx, clock_face_id_t face)
     app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
-static void on_set_timezone(void *user_ctx, int8_t utc_offset_hours)
+static void on_set_timezone(void *user_ctx, uint8_t timezone_id)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
     time_t now = app->core.config.clock_service->now();
-    app_action_result_t result = app_action_set_timezone(&app->core.state, utc_offset_hours, now);
+    app_action_result_t result = app_action_set_timezone(&app->core.state, timezone_id, now);
 
     app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_time_sync_mode(void *user_ctx, time_sync_mode_t mode)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_time_sync_mode(&app->core.state, mode, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
+static void on_set_manual_time(void *user_ctx, uint16_t year, uint8_t month, uint8_t day, uint8_t hour, uint8_t minute)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    struct tm local = {
+        .tm_year = (int)year - 1900,
+        .tm_mon = (int)month - 1,
+        .tm_mday = day,
+        .tm_hour = hour,
+        .tm_min = minute,
+        .tm_sec = 0,
+        .tm_isdst = -1,
+    };
+    time_t epoch = mktime(&local);
+    app_action_result_t result = app_action_set_manual_time(&app->core.state, epoch);
+
+    app_controller_core_apply_action_result(&app->core, &result, epoch);
 }
 
 static void on_save_wifi_credentials(void *user_ctx, const char *ssid, const char *password)
@@ -131,6 +166,7 @@ static void on_ui_click_feedback(void *user_ctx)
         audio->play_ui_click == NULL ||
         !app->core.state.audio_available ||
         !app->core.state.settings.ui_click_sound_enabled ||
+        app->core.state.runtime.in_night_mode ||
         app->core.state.settings.ui_click_volume == 0U) {
         return;
     }
@@ -264,15 +300,22 @@ static void on_alarm_snooze_requested(void *user_ctx)
 static void on_alarm_stop_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-    app_action_result_t result = app_action_alarm_stop(&app->core.state);
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_alarm_stop(&app->core.state, now);
 
-    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+    app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
 static void on_alarm_test_requested(void *user_ctx)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
     app_controller_core_toggle_alarm_test(&app->core, app->core.config.clock_service->now());
+}
+
+static void on_alarm_test_stop_requested(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_controller_core_stop_alarm_test(&app->core);
 }
 
 static void on_next_alarm_cancel_requested(void *user_ctx)
@@ -316,10 +359,13 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
     clock_ui_callbacks_t ui_callbacks = {
         .on_set_base_brightness = on_set_base_brightness,
         .on_set_runtime_night_brightness = on_set_runtime_night_brightness,
+        .on_set_temporary_brightness_floor = on_set_temporary_brightness_floor,
         .on_set_current_face = on_set_current_face,
         .on_set_face_theme = on_set_face_theme,
         .on_set_night_face = on_set_night_face,
         .on_set_timezone = on_set_timezone,
+        .on_set_time_sync_mode = on_set_time_sync_mode,
+        .on_set_manual_time = on_set_manual_time,
         .on_save_wifi_credentials = on_save_wifi_credentials,
         .on_wifi_scan_requested = on_wifi_scan_requested,
         .on_wifi_forget_requested = on_wifi_forget_requested,
@@ -340,6 +386,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_alarm_snooze_requested = on_alarm_snooze_requested,
         .on_alarm_stop_requested = on_alarm_stop_requested,
         .on_alarm_test_requested = on_alarm_test_requested,
+        .on_alarm_test_stop_requested = on_alarm_test_stop_requested,
         .on_next_alarm_cancel_requested = on_next_alarm_cancel_requested,
         .on_next_alarm_cancel_undo_requested = on_next_alarm_cancel_undo_requested,
     };

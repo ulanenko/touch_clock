@@ -12,6 +12,7 @@ idf_component_register(
         domain/brightness_policy.c
         domain/face_catalog.c
         domain/settings_policy.c
+        domain/timezone_rules.c
         main.c
         app_controller.c
         platform/platform_esp_services.c

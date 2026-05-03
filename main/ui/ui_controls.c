@@ -95,6 +95,31 @@ static void ui_roller_click_feedback_event_cb(lv_event_t *event)
     ui_play_click_feedback();
 }
 
+static void style_dropdown_list(lv_obj_t *list)
+{
+    if (list == NULL) {
+        return;
+    }
+
+    lv_obj_set_style_bg_color(list, lv_color_hex(0x101010), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
+    lv_obj_set_style_radius(list, 22, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(list, 12, LV_PART_MAIN);
+    lv_obj_set_style_text_font(list, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_color(list, lv_color_hex(0xD8DDE3), LV_PART_MAIN);
+    lv_obj_set_style_bg_color(list, lv_color_hex(0xD8DDE3), LV_PART_SELECTED);
+    lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
+    lv_obj_set_style_radius(list, 14, LV_PART_SELECTED);
+    lv_obj_set_style_text_font(list, &lv_font_montserrat_24, LV_PART_SELECTED);
+    lv_obj_set_style_text_color(list, lv_color_black(), LV_PART_SELECTED);
+}
+
+static void dropdown_ready_event_cb(lv_event_t *event)
+{
+    style_dropdown_list(lv_dropdown_get_list(lv_event_get_current_target(event)));
+}
+
 void ui_attach_click_feedback(lv_obj_t *obj, lv_event_code_t code)
 {
     if (obj == NULL) {
@@ -447,13 +472,18 @@ lv_obj_t *create_dropdown(lv_obj_t *parent, const char *options, uint32_t width)
 
     lv_dropdown_set_options(dd, options);
     lv_obj_set_width(dd, width);
-    lv_obj_set_height(dd, 48);
+    lv_obj_set_height(dd, 64);
     lv_obj_set_style_bg_color(dd, lv_color_hex(0x232323), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dd, LV_OPA_COVER, LV_PART_MAIN);
+    lv_obj_set_style_text_font(dd, &lv_font_montserrat_24, LV_PART_MAIN);
     lv_obj_set_style_text_color(dd, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_color(dd, lv_color_white(), LV_PART_INDICATOR);
     lv_obj_set_style_border_width(dd, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(dd, 16, LV_PART_MAIN);
+    lv_obj_set_style_radius(dd, 20, LV_PART_MAIN);
+    lv_obj_set_style_pad_left(dd, 18, LV_PART_MAIN);
+    lv_obj_set_style_pad_right(dd, 18, LV_PART_MAIN);
+    lv_dropdown_set_selected_highlight(dd, true);
+    lv_obj_add_event_cb(dd, dropdown_ready_event_cb, LV_EVENT_READY, NULL);
     return dd;
 }
 

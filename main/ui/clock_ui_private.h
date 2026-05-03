@@ -22,10 +22,18 @@ enum {
 
 void request_set_base_brightness(clock_ui_context_t *ctx, uint8_t hw_percent);
 void request_set_runtime_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent);
+void request_set_temporary_brightness_floor(clock_ui_context_t *ctx, bool enabled, uint8_t hw_percent);
 void request_set_current_face(clock_ui_context_t *ctx, clock_face_id_t face);
 void request_set_face_theme(clock_ui_context_t *ctx, clock_face_id_t face, uint8_t theme);
 void request_set_night_face(clock_ui_context_t *ctx, clock_face_id_t face);
-void request_set_timezone(clock_ui_context_t *ctx, int8_t utc_offset_hours);
+void request_set_timezone(clock_ui_context_t *ctx, uint8_t timezone_id);
+void request_set_time_sync_mode(clock_ui_context_t *ctx, time_sync_mode_t mode);
+void request_set_manual_time(clock_ui_context_t *ctx,
+                             uint16_t year,
+                             uint8_t month,
+                             uint8_t day,
+                             uint8_t hour,
+                             uint8_t minute);
 void request_save_wifi_credentials(clock_ui_context_t *ctx, const char *ssid, const char *password);
 void request_ui_click_feedback(clock_ui_context_t *ctx);
 void request_set_ui_click_sound_enabled(clock_ui_context_t *ctx, bool enabled);

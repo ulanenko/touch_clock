@@ -22,6 +22,7 @@ typedef struct {
     bool connecting;
     bool scanning;
     bool time_synced;
+    bool auto_time_sync;
     int rssi;
     char ssid[33];
     char password[65];
@@ -93,7 +94,9 @@ static void wifi_event_handler(void *arg,
         snprintf(s_wifi.ip, sizeof(s_wifi.ip), IPSTR, IP2STR(&event->ip_info.ip));
         snprintf(s_wifi.status, sizeof(s_wifi.status), "Connected: %s", s_wifi.ip);
         xSemaphoreGive(s_wifi.lock);
-        start_sntp();
+        if (s_wifi.auto_time_sync) {
+            start_sntp();
+        }
         return;
     }
 
@@ -161,6 +164,7 @@ esp_err_t wifi_time_init(const app_settings_t *settings)
     }
 
     set_status_locked("Wi-Fi idle");
+    s_wifi.auto_time_sync = settings->wifi.time_sync_mode == TIME_SYNC_MODE_AUTO;
 
     ESP_ERROR_CHECK(esp_netif_init());
     err = esp_event_loop_create_default();
@@ -317,11 +321,46 @@ esp_err_t wifi_time_request_sync(void)
     }
 
     xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
+    if (!s_wifi.auto_time_sync) {
+        set_status_locked("Manual time mode");
+        xSemaphoreGive(s_wifi.lock);
+        return ESP_ERR_INVALID_STATE;
+    }
     s_wifi.time_synced = false;
     set_status_locked("Syncing time...");
     xSemaphoreGive(s_wifi.lock);
 
     start_sntp();
+    return ESP_OK;
+}
+
+esp_err_t wifi_time_set_auto_sync(bool enabled)
+{
+    bool connected;
+
+    if (!s_wifi.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
+    s_wifi.auto_time_sync = enabled;
+    connected = s_wifi.connected;
+    if (!enabled) {
+        s_wifi.time_synced = false;
+        set_status_locked(connected ? "Manual time mode" : "Wi-Fi idle");
+    }
+    xSemaphoreGive(s_wifi.lock);
+
+    if (!enabled) {
+        if (esp_sntp_enabled()) {
+            esp_sntp_stop();
+        }
+        return ESP_OK;
+    }
+
+    if (connected) {
+        start_sntp();
+    }
     return ESP_OK;
 }
 

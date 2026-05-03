@@ -16,6 +16,29 @@ static lv_obj_t *create_alarm_math_keypad_button(lv_obj_t *parent,
                                                  void *user_data);
 
 #define ALARM_MATH_MAX_INPUT_LEN 2U
+#define ALARM_BANNER_MIN_BRIGHTNESS_UI_PERCENT 10
+
+static void alarm_banner_set_visible(clock_ui_context_t *ctx, bool visible)
+{
+    if (ctx->alarms.banner == NULL) {
+        return;
+    }
+
+    if (visible) {
+        lv_obj_clear_flag(ctx->alarms.banner, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(ctx->alarms.banner, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (ctx->alarms.banner_visible == visible) {
+        return;
+    }
+
+    ctx->alarms.banner_visible = visible;
+    request_set_temporary_brightness_floor(ctx,
+                                           visible,
+                                           brightness_ui_to_hw(ALARM_BANNER_MIN_BRIGHTNESS_UI_PERCENT));
+}
 
 void sync_alarm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face)
 {
@@ -49,7 +72,7 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now)
 
     if (ctx->alarms.banner_feedback_until > now && ctx->alarms.banner_feedback_text[0] != '\0') {
         alarm_set_label_text_if_changed(ctx->alarms.banner_label, ctx->alarms.banner_feedback_text);
-        lv_obj_clear_flag(ctx->alarms.banner, LV_OBJ_FLAG_HIDDEN);
+        alarm_banner_set_visible(ctx, true);
         return;
     }
 
@@ -67,7 +90,7 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now)
                  minutes_left,
                  (minutes_left == 1) ? "" : "s");
         alarm_set_label_text_if_changed(ctx->alarms.banner_label, text);
-        lv_obj_clear_flag(ctx->alarms.banner, LV_OBJ_FLAG_HIDDEN);
+        alarm_banner_set_visible(ctx, true);
         return;
     }
 
@@ -83,11 +106,11 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now)
                  minutes_left,
                  (minutes_left == 1) ? "" : "s");
         alarm_set_label_text_if_changed(ctx->alarms.banner_label, text);
-        lv_obj_clear_flag(ctx->alarms.banner, LV_OBJ_FLAG_HIDDEN);
+        alarm_banner_set_visible(ctx, true);
         return;
     }
 
-    lv_obj_add_flag(ctx->alarms.banner, LV_OBJ_FLAG_HIDDEN);
+    alarm_banner_set_visible(ctx, false);
 }
 
 void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now)
@@ -1605,6 +1628,12 @@ static void alarm_editor_close_event_cb(lv_event_t *event)
 
 static void alarm_settings_close(clock_ui_context_t *ctx)
 {
+    if (ctx->runtime != NULL &&
+        ctx->runtime->alarm_test_active &&
+        ctx->callbacks.on_alarm_test_stop_requested != NULL) {
+        ctx->callbacks.on_alarm_test_stop_requested(ctx->user_ctx);
+    }
+
     ctx->alarms.settings_open = false;
     ctx->alarms.close_swipe_consumed = false;
     if (ctx->alarms.settings_overlay != NULL) {

@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "domain/timezone_rules.h"
 
 static clock_ui_context_t s_ctx = {0};
 
@@ -184,13 +185,36 @@ static void build_minute_options(char *buffer, size_t size)
     }
 }
 
-static void build_timezone_options(char *buffer, size_t size)
+static void build_day_options(char *buffer, size_t size)
 {
     size_t pos = 0;
 
     buffer[0] = '\0';
-    for (int tz = -12; tz <= 14; ++tz) {
-        pos += snprintf(buffer + pos, size - pos, "UTC%+d%s", tz, (tz == 14) ? "" : "\n");
+    for (int day = 1; day <= 31; ++day) {
+        pos += snprintf(buffer + pos, size - pos, "%02d%s", day, (day == 31) ? "" : "\n");
+    }
+}
+
+static void build_year_options(char *buffer, size_t size)
+{
+    size_t pos = 0;
+
+    buffer[0] = '\0';
+    for (int year = 2024; year <= 2035; ++year) {
+        pos += snprintf(buffer + pos, size - pos, "%d%s", year, (year == 2035) ? "" : "\n");
+    }
+}
+
+static void build_timezone_options(char *buffer, size_t size)
+{
+    size_t pos = 0;
+    char label[32];
+    uint8_t count = timezone_picker_count();
+
+    buffer[0] = '\0';
+    for (uint8_t index = 0; index < count; ++index) {
+        timezone_format_picker_label(label, sizeof(label), index);
+        pos += snprintf(buffer + pos, size - pos, "%s%s", label, (index + 1U == count) ? "" : "\n");
     }
 }
 
@@ -273,6 +297,13 @@ void request_set_runtime_night_brightness(clock_ui_context_t *ctx, uint8_t hw_pe
     }
 }
 
+void request_set_temporary_brightness_floor(clock_ui_context_t *ctx, bool enabled, uint8_t hw_percent)
+{
+    if (ctx->callbacks.on_set_temporary_brightness_floor != NULL) {
+        ctx->callbacks.on_set_temporary_brightness_floor(ctx->user_ctx, enabled, hw_percent);
+    }
+}
+
 void request_set_current_face(clock_ui_context_t *ctx, clock_face_id_t face)
 {
     if (ctx->callbacks.on_set_current_face != NULL) {
@@ -294,10 +325,29 @@ void request_set_night_face(clock_ui_context_t *ctx, clock_face_id_t face)
     }
 }
 
-void request_set_timezone(clock_ui_context_t *ctx, int8_t utc_offset_hours)
+void request_set_timezone(clock_ui_context_t *ctx, uint8_t timezone_id)
 {
     if (ctx->callbacks.on_set_timezone != NULL) {
-        ctx->callbacks.on_set_timezone(ctx->user_ctx, utc_offset_hours);
+        ctx->callbacks.on_set_timezone(ctx->user_ctx, timezone_id);
+    }
+}
+
+void request_set_time_sync_mode(clock_ui_context_t *ctx, time_sync_mode_t mode)
+{
+    if (ctx->callbacks.on_set_time_sync_mode != NULL) {
+        ctx->callbacks.on_set_time_sync_mode(ctx->user_ctx, mode);
+    }
+}
+
+void request_set_manual_time(clock_ui_context_t *ctx,
+                             uint16_t year,
+                             uint8_t month,
+                             uint8_t day,
+                             uint8_t hour,
+                             uint8_t minute)
+{
+    if (ctx->callbacks.on_set_manual_time != NULL) {
+        ctx->callbacks.on_set_manual_time(ctx->user_ctx, year, month, day, hour, minute);
     }
 }
 
@@ -648,6 +698,8 @@ esp_err_t clock_ui_begin_boot(const app_settings_t *settings,
 
     build_hour_options(ctx->hour_options, sizeof(ctx->hour_options));
     build_minute_options(ctx->minute_options, sizeof(ctx->minute_options));
+    build_day_options(ctx->day_options, sizeof(ctx->day_options));
+    build_year_options(ctx->year_options, sizeof(ctx->year_options));
     build_timezone_options(ctx->timezone_options, sizeof(ctx->timezone_options));
     build_face_options(ctx->face_options, sizeof(ctx->face_options));
     styles_init();

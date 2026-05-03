@@ -7,6 +7,7 @@
 #include "domain/brightness_policy.h"
 #include "domain/face_catalog.h"
 #include "domain/settings_policy.h"
+#include "domain/timezone_rules.h"
 
 static void add_effect(app_action_result_t *result, app_effect_flags_t effect)
 {
@@ -232,21 +233,58 @@ app_action_result_t app_action_set_night_face(app_state_t *state, clock_face_id_
     return result;
 }
 
-app_action_result_t app_action_set_timezone(app_state_t *state, int8_t utc_offset_hours, time_t now)
+app_action_result_t app_action_set_timezone(app_state_t *state, uint8_t timezone_id, time_t now)
 {
     app_action_result_t result;
 
     app_action_result_init(&result);
-    if (state->settings.wifi.timezone_offset_hours == utc_offset_hours) {
+    if (state->settings.wifi.timezone_id == timezone_id) {
         return result;
     }
 
-    state->settings.wifi.timezone_offset_hours = utc_offset_hours;
+    state->settings.wifi.timezone_id = timezone_id;
+    state->settings.wifi.timezone_offset_hours = timezone_legacy_offset_hours(timezone_id);
     settings_policy_sanitize(&state->settings);
     recompute_runtime_state(state, &result, now);
     emit_settings_changed(&result);
     emit_runtime_changed(&result);
     add_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY);
+    return result;
+}
+
+app_action_result_t app_action_set_time_sync_mode(app_state_t *state, time_sync_mode_t mode, time_t now)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    mode = (mode == TIME_SYNC_MODE_MANUAL) ? TIME_SYNC_MODE_MANUAL : TIME_SYNC_MODE_AUTO;
+    if (state->settings.wifi.time_sync_mode == mode) {
+        return result;
+    }
+
+    state->settings.wifi.time_sync_mode = mode;
+    recompute_runtime_state(state, &result, now);
+    emit_settings_changed(&result);
+    emit_runtime_changed(&result);
+    if (mode == TIME_SYNC_MODE_AUTO) {
+        set_wifi_command(&result, APP_WIFI_COMMAND_SYNC);
+    }
+    return result;
+}
+
+app_action_result_t app_action_set_manual_time(app_state_t *state, time_t epoch)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    state->settings.wifi.time_sync_mode = TIME_SYNC_MODE_MANUAL;
+    state->settings.last_synced_epoch = epoch;
+    state->runtime.time_synced = false;
+    result.clock_epoch = epoch;
+    add_effect(&result, APP_EFFECT_CLOCK_SET);
+    recompute_runtime_state(state, &result, epoch);
+    emit_settings_changed(&result);
+    emit_runtime_changed(&result);
     return result;
 }
 
@@ -439,18 +477,19 @@ app_action_result_t app_action_alarm_snooze(app_state_t *state, time_t now)
     app_action_result_init(&result);
     alarm_scheduler_snooze(&state->runtime, &state->settings, now);
     refresh_runtime_after_runtime_change(state, &result, now);
+    add_effect(&result, APP_EFFECT_BRIGHTNESS_FADE);
     add_effect(&result, APP_EFFECT_AUDIO_RECONCILE);
     return result;
 }
 
-app_action_result_t app_action_alarm_stop(app_state_t *state)
+app_action_result_t app_action_alarm_stop(app_state_t *state, time_t now)
 {
     app_action_result_t result;
 
     app_action_result_init(&result);
     alarm_scheduler_stop(&state->runtime);
-    emit_runtime_changed(&result);
-    add_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY);
+    refresh_runtime_after_runtime_change(state, &result, now);
+    add_effect(&result, APP_EFFECT_BRIGHTNESS_FADE);
     add_effect(&result, APP_EFFECT_AUDIO_RECONCILE);
     return result;
 }
@@ -476,10 +515,9 @@ app_action_result_t app_action_cancel_next_alarm(app_state_t *state, time_t now)
     if (state->runtime.snooze_active) {
         alarm_scheduler_stop(&state->runtime);
         clear_cancel_revert_state(state);
-        emit_settings_changed(&result);
-        emit_runtime_changed(&result);
+        refresh_runtime_after_settings_change(state, &result, now);
         add_effect(&result, APP_EFFECT_AUDIO_RECONCILE);
-        add_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY);
+        add_effect(&result, APP_EFFECT_BRIGHTNESS_FADE);
         return result;
     }
 

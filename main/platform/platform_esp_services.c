@@ -28,12 +28,12 @@ static void esp_clock_set_epoch(time_t epoch)
     settimeofday(&tv, NULL);
 }
 
-static void esp_clock_apply_timezone(int8_t utc_offset_hours)
+static void esp_clock_apply_timezone(uint8_t timezone_id)
 {
     app_settings_t settings;
 
     app_settings_set_defaults(&settings);
-    settings.wifi.timezone_offset_hours = utc_offset_hours;
+    settings.wifi.timezone_id = timezone_id;
     app_settings_apply_timezone(&settings);
 }
 
@@ -112,6 +112,11 @@ static int esp_wifi_request_sync_service(void)
     return wifi_time_request_sync();
 }
 
+static int esp_wifi_set_auto_sync_service(bool enabled)
+{
+    return wifi_time_set_auto_sync(enabled);
+}
+
 static int esp_display_set_brightness(uint8_t hw_percent)
 {
     return bsp_display_brightness_set(hw_percent);
@@ -152,6 +157,7 @@ static const wifi_service_t s_wifi_service = {
     .connect = esp_wifi_connect_service,
     .forget = esp_wifi_forget_service,
     .request_sync = esp_wifi_request_sync_service,
+    .set_auto_sync = esp_wifi_set_auto_sync_service,
 };
 
 static const display_service_t s_display_service = {
