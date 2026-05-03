@@ -2,6 +2,7 @@ idf_component_register(
     SRCS
         alarm_audio.c
         alarm_logic.c
+        ota_update.c
         app/app_actions.c
         app/app_controller_core.c
         app/app_settings_storage.c
@@ -45,4 +46,6 @@ idf_component_register(
         ui/ui_settings.c
         ui/ui_shell.c
         ui/ui_surface.c
-    INCLUDE_DIRS .)
+    INCLUDE_DIRS .
+    REQUIRES esp_wifi
+    PRIV_REQUIRES app_update esp_http_client mbedtls nvs_flash)

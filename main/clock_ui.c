@@ -358,6 +358,20 @@ void request_save_wifi_credentials(clock_ui_context_t *ctx, const char *ssid, co
     }
 }
 
+void request_ota_check(clock_ui_context_t *ctx)
+{
+    if (ctx->callbacks.on_ota_check_requested != NULL) {
+        ctx->callbacks.on_ota_check_requested(ctx->user_ctx);
+    }
+}
+
+void request_ota_install(clock_ui_context_t *ctx)
+{
+    if (ctx->callbacks.on_ota_install_requested != NULL) {
+        ctx->callbacks.on_ota_install_requested(ctx->user_ctx);
+    }
+}
+
 void request_ui_click_feedback(clock_ui_context_t *ctx)
 {
     if (ctx->callbacks.on_ui_click_feedback != NULL) {
@@ -773,10 +787,13 @@ void clock_ui_tick(time_t now)
         alarm_controls_need_sync(ctx)) {
         sync_alarm_controls(ctx);
     }
-    if ((ctx->settings_ui.wifi_open || ctx->settings_ui.other_open) &&
+    if (ctx->settings_ui.wifi_open &&
         !ctx->settings_ui.wifi_scrolling &&
         wifi_controls_need_sync(ctx)) {
         sync_wifi_controls(ctx);
+    }
+    if (ctx->settings_ui.other_open) {
+        sync_other_controls(ctx);
     }
     if (ctx->settings_ui.night_open && !ctx->settings_ui.night_scrolling && night_controls_need_sync(ctx)) {
         sync_night_controls(ctx);

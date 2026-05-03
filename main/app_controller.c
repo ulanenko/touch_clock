@@ -152,6 +152,22 @@ static void on_wifi_sync_requested(void *user_ctx)
     app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
+static void on_ota_check_requested(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_request_ota_check(&app->core.state);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
+static void on_ota_install_requested(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_request_ota_install(&app->core.state);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
 static uint8_t ui_click_volume(const app_controller_t *app)
 {
     return app->core.state.settings.ui_click_volume;
@@ -370,6 +386,8 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_wifi_scan_requested = on_wifi_scan_requested,
         .on_wifi_forget_requested = on_wifi_forget_requested,
         .on_wifi_sync_requested = on_wifi_sync_requested,
+        .on_ota_check_requested = on_ota_check_requested,
+        .on_ota_install_requested = on_ota_install_requested,
         .on_ui_click_feedback = on_ui_click_feedback,
         .on_set_ui_click_sound_enabled = on_set_ui_click_sound_enabled,
         .on_set_ui_click_volume = on_set_ui_click_volume,
@@ -396,6 +414,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .audio_service = platform_esp_audio_service(),
         .wifi_service = platform_esp_wifi_service(),
         .display_service = platform_esp_display_service(),
+        .ota_service = platform_esp_ota_service(),
         .settings_store = platform_esp_settings_store(),
         .monotonic_ms = monotonic_ms,
         .monotonic_ctx = NULL,

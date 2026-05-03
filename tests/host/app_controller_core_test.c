@@ -30,9 +30,13 @@ typedef struct {
     int wifi_connect_calls;
     int wifi_forget_calls;
     int wifi_sync_calls;
+    int ota_init_calls;
+    int ota_check_calls;
+    int ota_install_calls;
     char wifi_connect_ssid[33];
     char wifi_connect_password[65];
     app_runtime_state_t wifi_snapshot;
+    app_runtime_state_t ota_snapshot;
     int load_calls;
     int save_calls;
     int load_result;
@@ -162,6 +166,42 @@ static int fake_wifi_set_auto_sync(bool enabled)
     return 0;
 }
 
+static int fake_ota_init(void)
+{
+    g_env->ota_init_calls += 1;
+    return 0;
+}
+
+static void fake_ota_snapshot(app_runtime_state_t *runtime)
+{
+    runtime->ota_configured = g_env->ota_snapshot.ota_configured;
+    runtime->ota_busy = g_env->ota_snapshot.ota_busy;
+    runtime->ota_update_available = g_env->ota_snapshot.ota_update_available;
+    runtime->ota_reboot_pending = g_env->ota_snapshot.ota_reboot_pending;
+    runtime->ota_progress = g_env->ota_snapshot.ota_progress;
+    snprintf(runtime->ota_status, sizeof(runtime->ota_status), "%s", g_env->ota_snapshot.ota_status);
+    snprintf(runtime->ota_available_version,
+             sizeof(runtime->ota_available_version),
+             "%s",
+             g_env->ota_snapshot.ota_available_version);
+    snprintf(runtime->ota_running_partition,
+             sizeof(runtime->ota_running_partition),
+             "%s",
+             g_env->ota_snapshot.ota_running_partition);
+}
+
+static int fake_ota_request_check(void)
+{
+    g_env->ota_check_calls += 1;
+    return 0;
+}
+
+static int fake_ota_request_install(void)
+{
+    g_env->ota_install_calls += 1;
+    return 0;
+}
+
 static int fake_display_set_brightness(uint8_t hw_percent)
 {
     g_env->display_set_calls += 1;
@@ -227,6 +267,13 @@ static const display_service_t s_display_service = {
     .set_brightness = fake_display_set_brightness,
 };
 
+static const ota_service_t s_ota_service = {
+    .init = fake_ota_init,
+    .snapshot = fake_ota_snapshot,
+    .request_check = fake_ota_request_check,
+    .request_install = fake_ota_request_install,
+};
+
 static const settings_store_t s_settings_store = {
     .load = fake_settings_load,
     .save = fake_settings_save,
@@ -240,6 +287,7 @@ static app_controller_core_t make_core(fake_env_t *env)
         .audio_service = &s_audio_service,
         .wifi_service = &s_wifi_service,
         .display_service = &s_display_service,
+        .ota_service = &s_ota_service,
         .settings_store = &s_settings_store,
         .monotonic_ms = fake_monotonic_ms,
         .monotonic_ctx = NULL,
@@ -274,6 +322,7 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_EQ_INT(1, env.audio_set_ascending_calls);
     EXPECT_FALSE(env.audio_ascending_enabled);
     EXPECT_EQ_INT(1, env.wifi_init_calls);
+    EXPECT_EQ_INT(1, env.ota_init_calls);
     EXPECT_EQ_INT(timezone_id_from_legacy_offset(2), env.applied_timezone);
     EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
     EXPECT_EQ_INT(env.stored_settings.last_synced_epoch, env.set_epoch_value);
@@ -295,6 +344,10 @@ static int test_bootstrap_and_action_flow(void)
     result = app_action_request_wifi_scan(&core.state);
     app_controller_core_apply_action_result(&core, &result, env.now);
     EXPECT_EQ_INT(1, env.wifi_scan_calls);
+
+    result = app_action_request_ota_check(&core.state);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(1, env.ota_check_calls);
     return 0;
 }
 

@@ -41,6 +41,13 @@ typedef struct {
 } display_service_t;
 
 typedef struct {
+    int (*init)(void);
+    void (*snapshot)(app_runtime_state_t *runtime);
+    int (*request_check)(void);
+    int (*request_install)(void);
+} ota_service_t;
+
+typedef struct {
     int (*load)(app_settings_t *settings);
     int (*save)(const app_settings_t *settings);
 } settings_store_t;

@@ -82,6 +82,12 @@ static void set_wifi_command(app_action_result_t *result, app_wifi_command_type_
     result->wifi_command = command;
 }
 
+static void set_ota_command(app_action_result_t *result, app_ota_command_type_t command)
+{
+    add_effect(result, APP_EFFECT_OTA_COMMAND);
+    result->ota_command = command;
+}
+
 void app_action_result_init(app_action_result_t *result)
 {
     memset(result, 0, sizeof(*result));
@@ -567,5 +573,27 @@ app_action_result_t app_action_undo_cancel_next_alarm(app_state_t *state, time_t
     emit_settings_changed(&result);
     emit_runtime_changed(&result);
     add_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY);
+    return result;
+}
+
+app_action_result_t app_action_request_ota_check(app_state_t *state)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    (void)state;
+    set_ota_command(&result, APP_OTA_COMMAND_CHECK);
+    add_effect(&result, APP_EFFECT_UI_REFRESH);
+    return result;
+}
+
+app_action_result_t app_action_request_ota_install(app_state_t *state)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    (void)state;
+    set_ota_command(&result, APP_OTA_COMMAND_INSTALL);
+    add_effect(&result, APP_EFFECT_UI_REFRESH);
     return result;
 }

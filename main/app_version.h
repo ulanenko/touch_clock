@@ -1,3 +1,3 @@
 #pragma once
 
-#define TOUCH_CLOCK_FIRMWARE_VERSION "1.0"
+#define TOUCH_CLOCK_FIRMWARE_VERSION "1.1"

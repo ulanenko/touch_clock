@@ -1,0 +1,17 @@
+menu "Touch Clock"
+
+    config TOUCH_CLOCK_OTA_MANIFEST_URL
+        string "OTA manifest URL"
+        default ""
+        help
+            HTTPS URL for the firmware manifest. The manifest should be JSON
+            with "version", "url", and optional "sha256" fields.
+
+    config TOUCH_CLOCK_OTA_ALLOW_DOWNGRADE
+        bool "Allow OTA downgrade"
+        default n
+        help
+            Allow installing a firmware version that is not newer than the
+            running firmware version. This is useful for recovery testing only.
+
+endmenu

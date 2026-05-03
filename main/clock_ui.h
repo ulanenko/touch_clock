@@ -21,6 +21,8 @@ typedef struct {
     void (*on_wifi_scan_requested)(void *user_ctx);
     void (*on_wifi_forget_requested)(void *user_ctx);
     void (*on_wifi_sync_requested)(void *user_ctx);
+    void (*on_ota_check_requested)(void *user_ctx);
+    void (*on_ota_install_requested)(void *user_ctx);
     void (*on_ui_click_feedback)(void *user_ctx);
     void (*on_set_ui_click_sound_enabled)(void *user_ctx, bool enabled);
     void (*on_set_ui_click_volume)(void *user_ctx, uint8_t volume);

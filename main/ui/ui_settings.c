@@ -24,8 +24,10 @@ static void sync_night_face_picker_selection(clock_ui_context_t *ctx);
 static void settings_navigate_back(clock_ui_context_t *ctx);
 static void close_night_face_picker(clock_ui_context_t *ctx);
 static void close_night_schedule_editor(clock_ui_context_t *ctx);
+static void ota_check_event_cb(lv_event_t *event);
+static void ota_install_event_cb(lv_event_t *event);
 void sync_wifi_controls(clock_ui_context_t *ctx);
-static void sync_other_controls(clock_ui_context_t *ctx);
+void sync_other_controls(clock_ui_context_t *ctx);
 static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked);
 static void settings_render_face_preview(clock_ui_context_t *ctx,
                                          lv_obj_t *canvas,
@@ -164,13 +166,51 @@ static void create_about_device_card(lv_obj_t *parent)
     create_about_info_row(card, "Target", CONFIG_IDF_TARGET);
     create_about_info_row(card, "Flash", CONFIG_ESPTOOLPY_FLASHSIZE);
     create_about_info_row(card, "ESP-IDF", esp_get_idf_version());
-    create_about_info_row(card, "Updates", "USB now; OTA not configured");
+    create_about_info_row(card, "Updates", "Wi-Fi OTA capable");
 }
 
-static void sync_other_controls(clock_ui_context_t *ctx)
+static void create_update_card(clock_ui_context_t *ctx, lv_obj_t *parent)
+{
+    lv_obj_t *card = create_card(parent);
+    lv_obj_t *row;
+
+    ctx->settings_ui.other_update_card = card;
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 12, 0);
+    create_section_title(card, "Software update", "Check and install firmware over Wi-Fi");
+
+    ctx->settings_ui.other_update_available_label = lv_label_create(card);
+    lv_obj_set_width(ctx->settings_ui.other_update_available_label, lv_pct(100));
+    lv_obj_set_style_text_font(ctx->settings_ui.other_update_available_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(ctx->settings_ui.other_update_available_label, lv_color_white(), 0);
+    lv_label_set_text(ctx->settings_ui.other_update_available_label, "Current: " TOUCH_CLOCK_FIRMWARE_VERSION);
+
+    ctx->settings_ui.other_update_status_label = lv_label_create(card);
+    lv_obj_set_width(ctx->settings_ui.other_update_status_label, lv_pct(100));
+    lv_obj_set_style_text_font(ctx->settings_ui.other_update_status_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_color(ctx->settings_ui.other_update_status_label, lv_color_hex(0xA8A8A8), 0);
+    lv_label_set_long_mode(ctx->settings_ui.other_update_status_label, LV_LABEL_LONG_WRAP);
+    lv_label_set_text(ctx->settings_ui.other_update_status_label, "OTA status unavailable");
+
+    ctx->settings_ui.other_update_progress_label = lv_label_create(card);
+    lv_obj_set_width(ctx->settings_ui.other_update_progress_label, lv_pct(100));
+    lv_obj_set_style_text_color(ctx->settings_ui.other_update_progress_label, lv_color_hex(0xA8A8A8), 0);
+    lv_label_set_text(ctx->settings_ui.other_update_progress_label, "Manifest: not configured");
+
+    row = create_row(card);
+    center_row(row);
+    ctx->settings_ui.other_update_check_btn = create_action_button(row, "Check", ota_check_event_cb, ctx);
+    ctx->settings_ui.other_update_install_btn = create_action_button(row, "Install", ota_install_event_cb, ctx);
+}
+
+void sync_other_controls(clock_ui_context_t *ctx)
 {
     char volume_label[32];
+    char progress_label[64];
+    char available_label[64];
     bool sound_enabled;
+    bool update_controls_enabled;
 
     sync_wifi_controls(ctx);
 
@@ -193,6 +233,41 @@ static void sync_other_controls(clock_ui_context_t *ctx)
                                     sound_enabled ? lv_color_white() : lv_color_hex(0xA8A8A8),
                                     0);
     }
+
+    if (ctx->settings_ui.other_update_status_label != NULL) {
+        settings_set_label_text_if_changed(ctx->settings_ui.other_update_status_label,
+                                           ctx->runtime->ota_status[0] != '\0'
+                                               ? ctx->runtime->ota_status
+                                               : "OTA status unavailable");
+    }
+    if (ctx->settings_ui.other_update_progress_label != NULL) {
+        if (ctx->runtime->ota_busy) {
+            snprintf(progress_label, sizeof(progress_label), "Progress: %u%%", ctx->runtime->ota_progress);
+        } else if (ctx->runtime->ota_configured) {
+            snprintf(progress_label, sizeof(progress_label), "Manifest: configured");
+        } else {
+            snprintf(progress_label, sizeof(progress_label), "Manifest: not configured");
+        }
+        settings_set_label_text_if_changed(ctx->settings_ui.other_update_progress_label, progress_label);
+    }
+    if (ctx->settings_ui.other_update_available_label != NULL) {
+        if (ctx->runtime->ota_update_available && ctx->runtime->ota_available_version[0] != '\0') {
+            snprintf(available_label, sizeof(available_label), "Available: %s", ctx->runtime->ota_available_version);
+        } else {
+            snprintf(available_label, sizeof(available_label), "Current: %s", TOUCH_CLOCK_FIRMWARE_VERSION);
+        }
+        settings_set_label_text_if_changed(ctx->settings_ui.other_update_available_label, available_label);
+    }
+
+    update_controls_enabled = ctx->runtime->ota_configured && ctx->runtime->wifi_connected &&
+                              !ctx->runtime->ota_busy && !ctx->runtime->ota_reboot_pending;
+    settings_set_enabled_state(ctx->settings_ui.other_update_check_btn, update_controls_enabled);
+    settings_set_clickable_enabled(ctx->settings_ui.other_update_check_btn, update_controls_enabled);
+    settings_set_enabled_state(ctx->settings_ui.other_update_install_btn,
+                               update_controls_enabled && ctx->runtime->ota_update_available);
+    settings_set_clickable_enabled(ctx->settings_ui.other_update_install_btn,
+                                   update_controls_enabled && ctx->runtime->ota_update_available);
+
     ctx->settings_ui.cached_ui_click_sound_enabled = sound_enabled;
     ctx->settings_ui.cached_ui_click_volume = ctx->settings->ui_click_volume;
 }
@@ -1552,6 +1627,30 @@ static void other_sound_volume_event_cb(lv_event_t *event)
     request_set_ui_click_volume(ctx, (uint8_t)volume);
 }
 
+static void ota_check_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+
+    if (ctx == NULL || ctx->runtime->ota_busy) {
+        return;
+    }
+
+    request_ota_check(ctx);
+    sync_other_controls(ctx);
+}
+
+static void ota_install_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+
+    if (ctx == NULL || ctx->runtime->ota_busy) {
+        return;
+    }
+
+    request_ota_install(ctx);
+    sync_other_controls(ctx);
+}
+
 static void open_night_face_picker(clock_ui_context_t *ctx)
 {
     if (ctx->settings_ui.night_face_picker_overlay == NULL) {
@@ -2325,6 +2424,7 @@ static void create_other_overlay(clock_ui_context_t *ctx)
                         ctx);
     ui_attach_click_feedback(ctx->settings_ui.other_sound_volume_slider, LV_EVENT_VALUE_CHANGED);
 
+    create_update_card(ctx, surface.content);
     create_about_device_card(surface.content);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,

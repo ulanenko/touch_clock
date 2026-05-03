@@ -74,9 +74,17 @@ typedef struct {
     bool wifi_connecting;
     bool wifi_scanning;
     bool time_synced;
+    bool ota_configured;
+    bool ota_busy;
+    bool ota_update_available;
+    bool ota_reboot_pending;
     int wifi_rssi;
+    uint8_t ota_progress;
     char wifi_ip[16];
     char wifi_status[96];
+    char ota_status[96];
+    char ota_available_version[24];
+    char ota_running_partition[16];
     bool alarm_ringing;
     bool alarm_test_active;
     bool snooze_active;

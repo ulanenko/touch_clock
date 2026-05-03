@@ -12,6 +12,7 @@ typedef struct {
     const audio_service_t *audio_service;
     const wifi_service_t *wifi_service;
     const display_service_t *display_service;
+    const ota_service_t *ota_service;
     const settings_store_t *settings_store;
     int64_t (*monotonic_ms)(void *ctx);
     void *monotonic_ctx;

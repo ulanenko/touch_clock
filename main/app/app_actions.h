@@ -15,6 +15,12 @@ typedef enum {
 } app_wifi_command_type_t;
 
 typedef enum {
+    APP_OTA_COMMAND_NONE = 0,
+    APP_OTA_COMMAND_CHECK,
+    APP_OTA_COMMAND_INSTALL,
+} app_ota_command_type_t;
+
+typedef enum {
     APP_EFFECT_NONE = 0,
     APP_EFFECT_SETTINGS_CHANGED = 1U << 0,
     APP_EFFECT_RUNTIME_CHANGED = 1U << 1,
@@ -25,11 +31,13 @@ typedef enum {
     APP_EFFECT_WIFI_COMMAND = 1U << 6,
     APP_EFFECT_CLOCK_SET = 1U << 7,
     APP_EFFECT_BRIGHTNESS_FADE = 1U << 8,
+    APP_EFFECT_OTA_COMMAND = 1U << 9,
 } app_effect_flags_t;
 
 typedef struct {
     uint32_t effects;
     app_wifi_command_type_t wifi_command;
+    app_ota_command_type_t ota_command;
     time_t clock_epoch;
     char wifi_ssid[33];
     char wifi_password[65];
@@ -77,3 +85,5 @@ app_action_result_t app_action_alarm_stop(app_state_t *state, time_t now);
 app_action_result_t app_action_alarm_test_toggle(app_state_t *state);
 app_action_result_t app_action_cancel_next_alarm(app_state_t *state, time_t now);
 app_action_result_t app_action_undo_cancel_next_alarm(app_state_t *state, time_t now);
+app_action_result_t app_action_request_ota_check(app_state_t *state);
+app_action_result_t app_action_request_ota_install(app_state_t *state);

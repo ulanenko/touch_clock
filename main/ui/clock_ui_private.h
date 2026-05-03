@@ -35,6 +35,8 @@ void request_set_manual_time(clock_ui_context_t *ctx,
                              uint8_t hour,
                              uint8_t minute);
 void request_save_wifi_credentials(clock_ui_context_t *ctx, const char *ssid, const char *password);
+void request_ota_check(clock_ui_context_t *ctx);
+void request_ota_install(clock_ui_context_t *ctx);
 void request_ui_click_feedback(clock_ui_context_t *ctx);
 void request_set_ui_click_sound_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_ui_click_volume(clock_ui_context_t *ctx, uint8_t volume);
@@ -76,6 +78,7 @@ void alarm_editor_close(clock_ui_context_t *ctx);
 void open_alarm_editor(clock_ui_context_t *ctx, uint8_t alarm_index, bool is_new);
 void refresh_settings_controls(clock_ui_context_t *ctx);
 void sync_wifi_controls(clock_ui_context_t *ctx);
+void sync_other_controls(clock_ui_context_t *ctx);
 bool wifi_controls_need_sync(const clock_ui_context_t *ctx);
 void sync_night_controls(clock_ui_context_t *ctx);
 bool night_controls_need_sync(const clock_ui_context_t *ctx);

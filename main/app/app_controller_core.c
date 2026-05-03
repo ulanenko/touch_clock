@@ -195,6 +195,33 @@ static void execute_wifi_command(app_controller_core_t *core, const app_action_r
     }
 }
 
+static void execute_ota_command(app_controller_core_t *core, const app_action_result_t *result)
+{
+    if (!app_action_has_effect(result, APP_EFFECT_OTA_COMMAND) || core->config.ota_service == NULL) {
+        return;
+    }
+
+    switch (result->ota_command) {
+    case APP_OTA_COMMAND_CHECK:
+        if (core->config.ota_service->request_check != NULL) {
+            core->config.ota_service->request_check();
+        }
+        break;
+    case APP_OTA_COMMAND_INSTALL:
+        if (core->config.ota_service->request_install != NULL) {
+            core->config.ota_service->request_install();
+        }
+        break;
+    case APP_OTA_COMMAND_NONE:
+    default:
+        break;
+    }
+
+    if (core->config.ota_service->snapshot != NULL) {
+        core->config.ota_service->snapshot(&core->state.runtime);
+    }
+}
+
 static void reconcile_alarm_audio(app_controller_core_t *core)
 {
     const audio_service_t *audio = core->config.audio_service;
@@ -307,6 +334,13 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
         }
     }
 
+    if (core->config.ota_service != NULL && core->config.ota_service->init != NULL) {
+        err = core->config.ota_service->init();
+        if (err != 0) {
+            return err;
+        }
+    }
+
     return 0;
 }
 
@@ -327,6 +361,10 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
 
     if (app_action_has_effect(result, APP_EFFECT_WIFI_COMMAND)) {
         execute_wifi_command(core, result);
+    }
+
+    if (app_action_has_effect(result, APP_EFFECT_OTA_COMMAND)) {
+        execute_ota_command(core, result);
     }
 
     if (app_action_has_effect(result, APP_EFFECT_AUDIO_VOLUME)) {
@@ -435,6 +473,9 @@ time_t app_controller_core_tick(app_controller_core_t *core)
 
     if (core->config.wifi_service != NULL && core->config.wifi_service->snapshot != NULL) {
         core->config.wifi_service->snapshot(&core->state.runtime);
+    }
+    if (core->config.ota_service != NULL && core->config.ota_service->snapshot != NULL) {
+        core->config.ota_service->snapshot(&core->state.runtime);
     }
     if (alarm_scheduler_tick(&core->state.runtime, &core->state.settings, now)) {
         mark_settings_dirty(core);

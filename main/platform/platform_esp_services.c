@@ -8,6 +8,7 @@
 #include "app_settings.h"
 #include "bsp/esp-bsp.h"
 #include "esp_err.h"
+#include "ota_update.h"
 #include "wifi_time.h"
 
 static time_t esp_clock_now(void)
@@ -122,6 +123,26 @@ static int esp_display_set_brightness(uint8_t hw_percent)
     return bsp_display_brightness_set(hw_percent);
 }
 
+static int esp_ota_init_service(void)
+{
+    return ota_update_init();
+}
+
+static void esp_ota_snapshot(app_runtime_state_t *runtime)
+{
+    ota_update_snapshot(runtime);
+}
+
+static int esp_ota_request_check(void)
+{
+    return ota_update_request_check();
+}
+
+static int esp_ota_request_install(void)
+{
+    return ota_update_request_install();
+}
+
 static int esp_settings_load(app_settings_t *settings)
 {
     return app_settings_load(settings);
@@ -164,6 +185,13 @@ static const display_service_t s_display_service = {
     .set_brightness = esp_display_set_brightness,
 };
 
+static const ota_service_t s_ota_service = {
+    .init = esp_ota_init_service,
+    .snapshot = esp_ota_snapshot,
+    .request_check = esp_ota_request_check,
+    .request_install = esp_ota_request_install,
+};
+
 static const settings_store_t s_settings_store = {
     .load = esp_settings_load,
     .save = esp_settings_save,
@@ -187,6 +215,11 @@ const wifi_service_t *platform_esp_wifi_service(void)
 const display_service_t *platform_esp_display_service(void)
 {
     return &s_display_service;
+}
+
+const ota_service_t *platform_esp_ota_service(void)
+{
+    return &s_ota_service;
 }
 
 const settings_store_t *platform_esp_settings_store(void)

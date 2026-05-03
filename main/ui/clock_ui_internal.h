@@ -217,6 +217,12 @@ typedef struct {
     lv_obj_t *other_sound_volume_card;
     lv_obj_t *other_sound_volume_slider;
     lv_obj_t *other_sound_volume_label;
+    lv_obj_t *other_update_card;
+    lv_obj_t *other_update_status_label;
+    lv_obj_t *other_update_progress_label;
+    lv_obj_t *other_update_available_label;
+    lv_obj_t *other_update_check_btn;
+    lv_obj_t *other_update_install_btn;
     lv_obj_t *night_overlay;
     lv_obj_t *night_content;
     lv_obj_t *night_top_sensor;
