@@ -3,6 +3,7 @@ idf_component_register(
         alarm_audio.c
         alarm_logic.c
         ota_update.c
+        telemetry_update.c
         app/app_actions.c
         app/app_controller_core.c
         app/app_settings_storage.c
@@ -48,4 +49,4 @@ idf_component_register(
         ui/ui_surface.c
     INCLUDE_DIRS .
     REQUIRES esp_wifi
-    PRIV_REQUIRES app_update esp_http_client mbedtls nvs_flash)
+    PRIV_REQUIRES app_update esp_http_client esp_hw_support esp_timer mbedtls nvs_flash)

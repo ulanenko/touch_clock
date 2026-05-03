@@ -341,6 +341,13 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
         }
     }
 
+    if (core->config.telemetry_service != NULL && core->config.telemetry_service->init != NULL) {
+        err = core->config.telemetry_service->init();
+        if (err != 0) {
+            return err;
+        }
+    }
+
     return 0;
 }
 
@@ -476,6 +483,9 @@ time_t app_controller_core_tick(app_controller_core_t *core)
     }
     if (core->config.ota_service != NULL && core->config.ota_service->snapshot != NULL) {
         core->config.ota_service->snapshot(&core->state.runtime);
+    }
+    if (core->config.telemetry_service != NULL && core->config.telemetry_service->tick != NULL) {
+        core->config.telemetry_service->tick(&core->state.runtime, &core->state.settings, now);
     }
     if (alarm_scheduler_tick(&core->state.runtime, &core->state.settings, now)) {
         mark_settings_dirty(core);

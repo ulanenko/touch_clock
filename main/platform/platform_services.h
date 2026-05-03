@@ -48,6 +48,11 @@ typedef struct {
 } ota_service_t;
 
 typedef struct {
+    int (*init)(void);
+    void (*tick)(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now);
+} telemetry_service_t;
+
+typedef struct {
     int (*load)(app_settings_t *settings);
     int (*save)(const app_settings_t *settings);
 } settings_store_t;

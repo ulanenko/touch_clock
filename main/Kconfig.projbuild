@@ -14,4 +14,29 @@ menu "Touch Clock"
             Allow installing a firmware version that is not newer than the
             running firmware version. This is useful for recovery testing only.
 
+    config TOUCH_CLOCK_TELEMETRY_URL
+        string "Telemetry heartbeat URL"
+        default ""
+        help
+            Optional HTTPS URL for remote clock status heartbeats.
+
+    config TOUCH_CLOCK_TELEMETRY_TOKEN
+        string "Telemetry API token"
+        default ""
+        help
+            Optional token sent as X-Clock-Token with every heartbeat.
+
+    config TOUCH_CLOCK_TELEMETRY_DEVICE_ID
+        string "Telemetry device ID"
+        default ""
+        help
+            Stable device identifier. If empty, the firmware uses the station MAC.
+
+    config TOUCH_CLOCK_TELEMETRY_INTERVAL_SECONDS
+        int "Telemetry heartbeat interval seconds"
+        default 300
+        range 60 86400
+        help
+            How often the clock posts a status heartbeat when connected to Wi-Fi.
+
 endmenu

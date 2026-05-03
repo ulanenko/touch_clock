@@ -33,6 +33,8 @@ typedef struct {
     int ota_init_calls;
     int ota_check_calls;
     int ota_install_calls;
+    int telemetry_init_calls;
+    int telemetry_tick_calls;
     char wifi_connect_ssid[33];
     char wifi_connect_password[65];
     app_runtime_state_t wifi_snapshot;
@@ -202,6 +204,20 @@ static int fake_ota_request_install(void)
     return 0;
 }
 
+static int fake_telemetry_init(void)
+{
+    g_env->telemetry_init_calls += 1;
+    return 0;
+}
+
+static void fake_telemetry_tick(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)
+{
+    (void)runtime;
+    (void)settings;
+    (void)now;
+    g_env->telemetry_tick_calls += 1;
+}
+
 static int fake_display_set_brightness(uint8_t hw_percent)
 {
     g_env->display_set_calls += 1;
@@ -274,6 +290,11 @@ static const ota_service_t s_ota_service = {
     .request_install = fake_ota_request_install,
 };
 
+static const telemetry_service_t s_telemetry_service = {
+    .init = fake_telemetry_init,
+    .tick = fake_telemetry_tick,
+};
+
 static const settings_store_t s_settings_store = {
     .load = fake_settings_load,
     .save = fake_settings_save,
@@ -288,6 +309,7 @@ static app_controller_core_t make_core(fake_env_t *env)
         .wifi_service = &s_wifi_service,
         .display_service = &s_display_service,
         .ota_service = &s_ota_service,
+        .telemetry_service = &s_telemetry_service,
         .settings_store = &s_settings_store,
         .monotonic_ms = fake_monotonic_ms,
         .monotonic_ctx = NULL,
@@ -323,6 +345,7 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_FALSE(env.audio_ascending_enabled);
     EXPECT_EQ_INT(1, env.wifi_init_calls);
     EXPECT_EQ_INT(1, env.ota_init_calls);
+    EXPECT_EQ_INT(1, env.telemetry_init_calls);
     EXPECT_EQ_INT(timezone_id_from_legacy_offset(2), env.applied_timezone);
     EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
     EXPECT_EQ_INT(env.stored_settings.last_synced_epoch, env.set_epoch_value);
@@ -388,6 +411,7 @@ static int test_tick_and_save_debounce(void)
 
     env.monotonic_ms = 1500;
     app_controller_core_tick(&core);
+    EXPECT_EQ_INT(1, env.telemetry_tick_calls);
     EXPECT_EQ_INT(1, env.audio_start_alarm_calls);
     EXPECT_EQ_INT(0, env.save_calls);
     EXPECT_EQ_INT(env.now, core.state.settings.last_synced_epoch);
@@ -398,6 +422,7 @@ static int test_tick_and_save_debounce(void)
 
     env.monotonic_ms = 2600;
     app_controller_core_tick(&core);
+    EXPECT_EQ_INT(2, env.telemetry_tick_calls);
     EXPECT_EQ_INT(1, env.save_calls);
     EXPECT_EQ_INT(env.now, env.stored_settings.last_synced_epoch);
     return 0;

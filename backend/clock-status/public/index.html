@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Touch Clock Status</title>
+    <style>
+      :root {
+        color: #1b160f;
+        background: #f4efe5;
+        font-family: ui-rounded, "Avenir Next", "Segoe UI", sans-serif;
+      }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at top left, rgba(255, 199, 112, 0.45), transparent 30rem),
+          linear-gradient(135deg, #fff8eb 0%, #e7dcc9 100%);
+      }
+      main {
+        max-width: 1120px;
+        margin: 0 auto;
+        padding: 40px 20px;
+      }
+      header {
+        display: flex;
+        align-items: end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 28px;
+      }
+      h1 {
+        font-size: clamp(2.4rem, 6vw, 5rem);
+        line-height: 0.9;
+        margin: 0;
+        letter-spacing: -0.08em;
+      }
+      .toolbar {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      input,
+      button {
+        border: 1px solid rgba(27, 22, 15, 0.18);
+        border-radius: 999px;
+        padding: 12px 16px;
+        background: rgba(255, 255, 255, 0.55);
+        color: inherit;
+      }
+      button {
+        cursor: pointer;
+        background: #1b160f;
+        color: #fff8eb;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 16px;
+      }
+      .card {
+        border: 1px solid rgba(27, 22, 15, 0.14);
+        border-radius: 28px;
+        padding: 20px;
+        background: rgba(255, 252, 246, 0.72);
+        box-shadow: 0 20px 80px rgba(45, 34, 17, 0.12);
+      }
+      .name {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 1.3rem;
+        font-weight: 750;
+      }
+      .dot {
+        width: 12px;
+        height: 12px;
+        margin-top: 8px;
+        border-radius: 50%;
+        background: #b6402d;
+        box-shadow: 0 0 0 6px rgba(182, 64, 45, 0.12);
+      }
+      .online .dot {
+        background: #26875d;
+        box-shadow: 0 0 0 6px rgba(38, 135, 93, 0.14);
+      }
+      dl {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 8px 14px;
+        margin: 20px 0 0;
+      }
+      dt {
+        color: rgba(27, 22, 15, 0.58);
+      }
+      dd {
+        margin: 0;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+      .empty {
+        padding: 32px;
+        border: 1px dashed rgba(27, 22, 15, 0.24);
+        border-radius: 28px;
+      }
+      @media (max-width: 700px) {
+        header {
+          align-items: stretch;
+          flex-direction: column;
+        }
+        .toolbar {
+          flex-direction: column;
+          align-items: stretch;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <header>
+        <h1>Clock<br />Status</h1>
+        <div class="toolbar">
+          <input id="token" placeholder="Dashboard token" autocomplete="off" />
+          <button id="refresh">Refresh</button>
+        </div>
+      </header>
+      <section id="content" class="empty">Loading clocks...</section>
+    </main>
+    <script>
+      const content = document.querySelector("#content");
+      const tokenInput = document.querySelector("#token");
+      const refreshButton = document.querySelector("#refresh");
+      tokenInput.value = localStorage.getItem("clockStatusToken") || "";
+
+      function ageLabel(seconds) {
+        if (seconds < 90) return `${seconds}s ago`;
+        if (seconds < 5400) return `${Math.round(seconds / 60)}m ago`;
+        return `${Math.round(seconds / 3600)}h ago`;
+      }
+
+      function html(value) {
+        return String(value ?? "").replace(/[&<>"']/g, (char) => ({
+          "&": "&amp;",
+          "<": "&lt;",
+          ">": "&gt;",
+          '"': "&quot;",
+          "'": "&#39;",
+        })[char]);
+      }
+
+      function render(clocks) {
+        if (!clocks.length) {
+          content.className = "empty";
+          content.textContent = "No clock heartbeats yet.";
+          return;
+        }
+        content.className = "grid";
+        content.innerHTML = clocks.map((clock) => `
+          <article class="card ${clock.online ? "online" : ""}">
+            <div class="name"><span>${html(clock.label)}</span><span class="dot"></span></div>
+            <dl>
+              <dt>Status</dt><dd>${clock.online ? "Online" : "Offline"} (${ageLabel(clock.age_sec)})</dd>
+              <dt>Firmware</dt><dd>${html(clock.firmware || "unknown")}</dd>
+              <dt>OTA slot</dt><dd>${html(clock.ota_partition || "unknown")}</dd>
+              <dt>Wi-Fi</dt><dd>${clock.wifi_rssi ?? "n/a"} dBm</dd>
+              <dt>IP</dt><dd>${html(clock.ip || "n/a")}</dd>
+              <dt>Time sync</dt><dd>${clock.time_synced ? "yes" : "no"}</dd>
+              <dt>Uptime</dt><dd>${clock.uptime_sec ? Math.round(clock.uptime_sec / 3600) + "h" : "n/a"}</dd>
+            </dl>
+          </article>
+        `).join("");
+      }
+
+      async function refresh() {
+        const token = tokenInput.value.trim();
+        localStorage.setItem("clockStatusToken", token);
+        const query = token ? `?token=${encodeURIComponent(token)}` : "";
+        const response = await fetch(`/api/clocks${query}`, { cache: "no-store" });
+        if (!response.ok) {
+          content.className = "empty";
+          content.textContent = response.status === 401 ? "Unauthorized. Enter the dashboard token." : "Failed to load clocks.";
+          return;
+        }
+        const data = await response.json();
+        render(data.clocks || []);
+      }
+
+      refreshButton.addEventListener("click", refresh);
+      refresh();
+      setInterval(refresh, 30000);
+    </script>
+  </body>
+</html>

@@ -9,6 +9,7 @@
 #include "bsp/esp-bsp.h"
 #include "esp_err.h"
 #include "ota_update.h"
+#include "telemetry_update.h"
 #include "wifi_time.h"
 
 static time_t esp_clock_now(void)
@@ -143,6 +144,18 @@ static int esp_ota_request_install(void)
     return ota_update_request_install();
 }
 
+static int esp_telemetry_init_service(void)
+{
+    return telemetry_update_init();
+}
+
+static void esp_telemetry_tick_service(const app_runtime_state_t *runtime,
+                                       const app_settings_t *settings,
+                                       time_t now)
+{
+    telemetry_update_tick(runtime, settings, now);
+}
+
 static int esp_settings_load(app_settings_t *settings)
 {
     return app_settings_load(settings);
@@ -192,6 +205,11 @@ static const ota_service_t s_ota_service = {
     .request_install = esp_ota_request_install,
 };
 
+static const telemetry_service_t s_telemetry_service = {
+    .init = esp_telemetry_init_service,
+    .tick = esp_telemetry_tick_service,
+};
+
 static const settings_store_t s_settings_store = {
     .load = esp_settings_load,
     .save = esp_settings_save,
@@ -220,6 +238,11 @@ const display_service_t *platform_esp_display_service(void)
 const ota_service_t *platform_esp_ota_service(void)
 {
     return &s_ota_service;
+}
+
+const telemetry_service_t *platform_esp_telemetry_service(void)
+{
+    return &s_telemetry_service;
 }
 
 const settings_store_t *platform_esp_settings_store(void)

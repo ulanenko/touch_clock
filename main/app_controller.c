@@ -415,6 +415,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .wifi_service = platform_esp_wifi_service(),
         .display_service = platform_esp_display_service(),
         .ota_service = platform_esp_ota_service(),
+        .telemetry_service = platform_esp_telemetry_service(),
         .settings_store = platform_esp_settings_store(),
         .monotonic_ms = monotonic_ms,
         .monotonic_ctx = NULL,
