@@ -7,7 +7,7 @@
 */
 
 /* [Render Options] */
-part_to_render = "body"; // ["all": "Full Assembly", "body": "Clock Body Only", "stand": "Assembled Stand Only", "stand_base": "Base Plate Only", "stand_stem": "Stem Only", "stand_top": "Top Plate Only", "stand_print": "Stand Print Layout"]
+part_to_render = "stand_base"; // ["all": "Full Assembly", "body": "Clock Body Only", "stand": "Assembled Stand Only", "stand_base": "Base Plate Only", "stand_stem": "Stem Only", "stand_top": "Top Plate Only", "stand_print": "Stand Print Layout"]
 quality_profile = "final"; // ["preview": "Browser Preview", "final": "Export / Print"]
 
 /* [Hardware / Connection Parameters] */
@@ -51,12 +51,15 @@ stand_base_diameter = 95;
 stand_base_thickness = 9;
 stand_top_diameter = 78;
 stand_top_thickness = 2.5;
+stand_top_extra_thickness = 1;
+stand_top_stem_socket_depth = 6;
+stand_top_stem_clearance = 0.25;
 anti_rotation_hole_d = 1.8;
 anti_rotation_hole_radius = 14;
 anti_rotation_hole_angle = 0;
 anti_rotation_hole_depth = 7;
 anti_rotation_hole_offset_x = 0;
-anti_rotation_hole_offset_y = -4.0;
+anti_rotation_hole_offset_y = -3.0;
 anti_rotation_hole_offset_z = 0;
 stem_diameter = 22;
 stem_height = stand_height - stand_base_thickness - stand_top_thickness;
@@ -65,7 +68,7 @@ stem_height = stand_height - stand_base_thickness - stand_top_thickness;
 joint_depth = 12;
 joint_bottom_d = 16;
 joint_top_d = 14;
-fit_tolerance = 0.3;
+fit_tolerance = 0.4;
 
 /* [Access Slot Parameters] */
 access_slot_outer_r = 30;
@@ -117,6 +120,11 @@ function sphere_radius_at_z(sphere_d, z) =
 function rear_surface_y(sphere_d, z) = -sphere_radius_at_z(sphere_d, z);
 function stand_top_body_curve_depth(r) =
     sqrt(max(0, pow(sphere_radius(body_d), 2) - pow(r, 2))) - bottom_cut_dist;
+function stand_top_stem_socket_top_z() =
+    stand_top_body_curve_depth(0)
+    + stand_top_extra_thickness;
+function stand_top_stem_socket_floor_z() =
+    stand_top_stem_socket_top_z() - stand_top_stem_socket_depth;
 function screen_ledge_inner_r() = (display_d - screen_ledge_margin_d) / 2;
 function screen_ear_pad_d() = screen_ear_hole_d + (screen_ear_margin * 2);
 function screen_ear_center_y() = screen_ledge_inner_r() - (screen_ear_pad_d() / 2) + screen_ear_overlap;
@@ -145,6 +153,13 @@ module validate_parameters() {
     assert(body_wall_thickness > 0 && body_wall_thickness < sphere_radius(body_d), "body_wall_thickness is out of range");
     assert(stand_base_thickness > 0, "stand_base_thickness must be greater than zero");
     assert(stand_top_thickness > 0, "stand_top_thickness must be greater than zero");
+    assert(stand_top_extra_thickness >= 0, "stand_top_extra_thickness must be non-negative");
+    assert(stand_top_stem_clearance >= 0, "stand_top_stem_clearance must be non-negative");
+    assert(
+        stand_top_stem_socket_depth > 0 &&
+        stand_top_stem_socket_depth < stand_top_stem_socket_top_z(),
+        "stand_top_stem_socket_depth must fit within the stand top dome"
+    );
     assert(anti_rotation_hole_d > 0, "anti_rotation_hole_d must be greater than zero");
     assert(anti_rotation_hole_radius > (joint_bottom_d / 2) + (anti_rotation_hole_d / 2), "anti_rotation_hole_radius must clear the center joint");
     assert(anti_rotation_hole_radius < (stand_top_diameter / 2) - (anti_rotation_hole_d / 2), "anti_rotation_hole_radius must stay inside the stand top");
@@ -299,7 +314,7 @@ module top_piece_profile() {
             let(
                 t = i / curve_steps,
                 r = outer_r * t,
-                z = stand_top_body_curve_depth(r)
+                z = stand_top_body_curve_depth(r) + stand_top_extra_thickness
             )
             [r, z]
         ]
@@ -319,19 +334,17 @@ module anti_rotation_hole_positions() {
 
 module top_piece() {
     difference() {
-        union() {
-            rotate_extrude()
-                top_piece_profile();
-
-            translate([0, 0, stand_top_thickness])
-                cylinder(h=joint_depth, d1=joint_bottom_d, d2=joint_top_d, $fn=6);
-        }
+        rotate_extrude()
+            top_piece_profile();
 
         translate([0, 0, stand_ceiling_thickness])
             cylinder(d=m3_bolt_head_access_d, h=stand_top_thickness + joint_depth + 2);
 
         translate([0, 0, -1])
             cylinder(d=m3_hole_d, h=stand_ceiling_thickness + 2);
+
+        translate([0, 0, stand_top_stem_socket_top_z() - stand_top_stem_socket_depth])
+            stand_top_stem_socket_shape(stand_top_stem_socket_depth + 0.1);
 
         anti_rotation_hole_positions()
             translate([0, 0, -0.1])
@@ -362,6 +375,24 @@ module stem_piece() {
 
         translate([0, 0, -1])
             cylinder(d=m3_bolt_head_access_d, h=stem_height + 2);
+    }
+}
+
+module stand_top_stem_socket_shape(depth) {
+    difference() {
+        cylinder(d=stem_diameter + (stand_top_stem_clearance * 2), h=depth);
+
+        translate([0, 0, depth + 0.1])
+            rotate([180, 0, 0])
+                cylinder(
+                    h=joint_depth + 0.5,
+                    d1=joint_top_d + fit_tolerance,
+                    d2=joint_bottom_d + fit_tolerance,
+                    $fn=6
+                );
+
+        translate([0, 0, -1])
+            cylinder(d=m3_bolt_head_access_d, h=depth + 2);
     }
 }
 

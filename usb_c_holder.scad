@@ -16,6 +16,8 @@ flange_thickness = 1.8;
 // Hardware & Screw Holes
 screw_spacing = 20.0;
 screw_diameter = 1.8;
+flange_screw_boss_diameter = 6.0;
+flange_screw_boss_clearance = 0.1;
 
 // Assembly Ears (To clamp the two halves together)
 assembly_ear_width = 2.0;
@@ -76,11 +78,6 @@ module usb_c_holder() {
             }
         }
 
-        translate([-screw_spacing / 2, 0, -1])
-            cylinder(d=screw_diameter, h=flange_thickness + 2);
-        translate([screw_spacing / 2, 0, -1])
-            cylinder(d=screw_diameter, h=flange_thickness + 2);
-
         translate([-body_width / 2 - assembly_ear_width + (assembly_ear_length / 2), body_height / 2 + 1, assembly_ear_offset + assembly_ear_length / 2])
             rotate([90, 0, 0])
                 cylinder(d=screw_diameter, h=body_height + 2);
@@ -105,18 +102,44 @@ module usb_c_holder() {
 }
 
 module top_half() {
-    intersection() {
-        usb_c_holder();
-        translate([-50, 0, -10])
-            cube([100, 50, 100]);
+    difference() {
+        union() {
+            intersection() {
+                usb_c_holder();
+                translate([-50, 0, -10])
+                    cube([100, 50, 100]);
+            }
+
+            flange_screw_bosses(0);
+        }
+
+        flange_screw_holes(0, screw_diameter);
     }
 }
 
 module bottom_half() {
-    intersection() {
-        usb_c_holder();
-        translate([-50, -50, -10])
-            cube([100, 50, 100]);
+    difference() {
+        intersection() {
+            usb_c_holder();
+            translate([-50, -50, -10])
+                cube([100, 50, 100]);
+        }
+
+        flange_screw_holes(0, flange_screw_boss_diameter + (flange_screw_boss_clearance * 2));
+    }
+}
+
+module flange_screw_bosses(y_offset) {
+    for (x = [-screw_spacing / 2, screw_spacing / 2]) {
+        translate([x, y_offset, 0])
+            cylinder(d=flange_screw_boss_diameter, h=flange_thickness);
+    }
+}
+
+module flange_screw_holes(y_offset, diameter) {
+    for (x = [-screw_spacing / 2, screw_spacing / 2]) {
+        translate([x, y_offset, -1])
+            cylinder(d=diameter, h=flange_thickness + 2);
     }
 }
 
