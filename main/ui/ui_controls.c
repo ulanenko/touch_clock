@@ -2,6 +2,8 @@
 
 #include <stdint.h>
 
+#include "assets/seven_segment_font.h"
+
 void ui_play_click_feedback(void);
 
 typedef struct {
@@ -106,12 +108,12 @@ static void style_dropdown_list(lv_obj_t *list)
     lv_obj_set_style_border_width(list, 0, LV_PART_MAIN);
     lv_obj_set_style_radius(list, 22, LV_PART_MAIN);
     lv_obj_set_style_pad_all(list, 12, LV_PART_MAIN);
-    lv_obj_set_style_text_font(list, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(list, &ui_i18n_24, LV_PART_MAIN);
     lv_obj_set_style_text_color(list, lv_color_hex(0xD8DDE3), LV_PART_MAIN);
     lv_obj_set_style_bg_color(list, lv_color_hex(0xD8DDE3), LV_PART_SELECTED);
     lv_obj_set_style_bg_opa(list, LV_OPA_COVER, LV_PART_SELECTED);
     lv_obj_set_style_radius(list, 14, LV_PART_SELECTED);
-    lv_obj_set_style_text_font(list, &lv_font_montserrat_24, LV_PART_SELECTED);
+    lv_obj_set_style_text_font(list, &ui_i18n_24, LV_PART_SELECTED);
     lv_obj_set_style_text_color(list, lv_color_black(), LV_PART_SELECTED);
 }
 
@@ -209,7 +211,7 @@ lv_obj_t *create_labeled_trailing_control_row(lv_obj_t *parent,
     lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
 
     label = lv_label_create(text_col);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0x7A7A7A), LV_STATE_DISABLED);
     lv_label_set_text(label, title != NULL ? title : "");
@@ -246,7 +248,7 @@ lv_obj_t *create_action_button(lv_obj_t *parent, const char *text, lv_event_cb_t
     lv_obj_set_style_pad_right(button, 18, 0);
     lv_obj_set_style_pad_top(button, 10, 0);
     lv_obj_set_style_pad_bottom(button, 10, 0);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
     lv_label_set_text(label, text);
     lv_obj_center(label);
 
@@ -471,11 +473,13 @@ lv_obj_t *create_dropdown(lv_obj_t *parent, const char *options, uint32_t width)
     lv_obj_t *dd = lv_dropdown_create(parent);
 
     lv_dropdown_set_options(dd, options);
+    lv_dropdown_set_symbol(dd, LV_SYMBOL_DOWN);
     lv_obj_set_width(dd, width);
     lv_obj_set_height(dd, 64);
     lv_obj_set_style_bg_color(dd, lv_color_hex(0x232323), LV_PART_MAIN);
     lv_obj_set_style_bg_opa(dd, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_text_font(dd, &lv_font_montserrat_24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(dd, &ui_i18n_24, LV_PART_MAIN);
+    lv_obj_set_style_text_font(dd, &lv_font_montserrat_24, LV_PART_INDICATOR);
     lv_obj_set_style_text_color(dd, lv_color_white(), LV_PART_MAIN);
     lv_obj_set_style_text_color(dd, lv_color_white(), LV_PART_INDICATOR);
     lv_obj_set_style_border_width(dd, 0, LV_PART_MAIN);

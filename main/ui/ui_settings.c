@@ -15,6 +15,71 @@ static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_colo
     }
 }
 
+static const char *settings_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id)
+{
+    return l10n_text(ctx->settings->language, text_id);
+}
+
+static void settings_apply_i18n_font(lv_obj_t *label)
+{
+    const lv_font_t *font;
+
+    if (label == NULL) {
+        return;
+    }
+
+    font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
+    if (font == &lv_font_montserrat_20) {
+        lv_obj_set_style_text_font(label, &ui_i18n_20, 0);
+        return;
+    }
+
+    if (font == &lv_font_montserrat_24 || font == NULL) {
+        lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
+        return;
+    }
+
+    if (font == LV_FONT_DEFAULT) {
+        lv_obj_set_style_text_font(label, &ui_i18n_20, 0);
+    }
+}
+
+static void settings_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
+{
+    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
+        return;
+    }
+
+    settings_apply_i18n_font(label);
+    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
+    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
+    ctx->l10n_binding_count++;
+    lv_label_set_text(label, settings_text(ctx, text_id));
+}
+
+static void settings_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id)
+{
+    settings_bind_label(ctx, lv_obj_get_child(button, 0), text_id);
+}
+
+static void settings_apply_l10n(clock_ui_context_t *ctx)
+{
+    for (uint16_t i = 0; i < ctx->l10n_binding_count; ++i) {
+        if (ctx->l10n_bindings[i].label != NULL) {
+            lv_label_set_text(ctx->l10n_bindings[i].label,
+                              settings_text(ctx, ctx->l10n_bindings[i].text_id));
+        }
+    }
+
+    if (ctx->settings_ui.other_language_dropdown != NULL) {
+        lv_dropdown_set_options(ctx->settings_ui.other_language_dropdown, l10n_language_options());
+    }
+    if (ctx->settings_ui.wifi_password_ta != NULL) {
+        lv_textarea_set_placeholder_text(ctx->settings_ui.wifi_password_ta,
+                                         settings_text(ctx, L10N_PASSWORD));
+    }
+}
+
 static void close_wifi_dialog(clock_ui_context_t *ctx);
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text);
 static void settings_set_slider_value_if_changed(lv_obj_t *slider, int32_t value);
@@ -27,6 +92,10 @@ static void close_night_face_picker(clock_ui_context_t *ctx);
 static void close_night_schedule_editor(clock_ui_context_t *ctx);
 static void ota_check_event_cb(lv_event_t *event);
 static void ota_install_event_cb(lv_event_t *event);
+static void create_localized_section_title(clock_ui_context_t *ctx,
+                                           lv_obj_t *parent,
+                                           l10n_text_id_t title,
+                                           l10n_text_id_t subtitle);
 void sync_wifi_controls(clock_ui_context_t *ctx);
 void sync_other_controls(clock_ui_context_t *ctx);
 static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked);
@@ -65,6 +134,7 @@ static void invalidate_settings_ui_cache(clock_ui_context_t *ctx)
     ctx->settings_ui.night_cache_valid = false;
     ctx->settings_ui.cached_ui_click_sound_enabled = !ctx->settings->ui_click_sound_enabled;
     ctx->settings_ui.cached_ui_click_volume = (uint8_t)(ctx->settings->ui_click_volume + 1U);
+    ctx->cached_language = (clock_language_t)CLOCK_LANGUAGE_COUNT;
 }
 
 static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -118,9 +188,16 @@ static void settings_set_clickable_enabled(lv_obj_t *obj, bool enabled)
     }
 }
 
-static void settings_format_time_mode_label(char *buffer, size_t size, time_sync_mode_t mode)
+static void settings_format_time_mode_label(const clock_ui_context_t *ctx,
+                                            char *buffer,
+                                            size_t size,
+                                            time_sync_mode_t mode)
 {
-    snprintf(buffer, size, "%s", mode == TIME_SYNC_MODE_MANUAL ? "Manual time" : "Auto sync");
+    snprintf(buffer,
+             size,
+             "%s",
+             mode == TIME_SYNC_MODE_MANUAL ? settings_text(ctx, L10N_MANUAL_TIME)
+                                           : settings_text(ctx, L10N_AUTO_SYNC));
 }
 
 static void settings_format_face_label(char *buffer, size_t size, clock_face_id_t face)
@@ -128,7 +205,7 @@ static void settings_format_face_label(char *buffer, size_t size, clock_face_id_
     snprintf(buffer, size, "%s", clock_face_name(face));
 }
 
-static void create_about_info_row(lv_obj_t *parent, const char *title, const char *value)
+static void create_about_info_row(clock_ui_context_t *ctx, lv_obj_t *parent, l10n_text_id_t title, const char *value)
 {
     lv_obj_t *row = create_row(parent);
     lv_obj_t *label;
@@ -139,7 +216,7 @@ static void create_about_info_row(lv_obj_t *parent, const char *title, const cha
     lv_obj_set_width(label, 190);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(label, title);
+    settings_bind_label(ctx, label, title);
 
     label = lv_label_create(row);
     lv_obj_set_width(label, 280);
@@ -150,7 +227,7 @@ static void create_about_info_row(lv_obj_t *parent, const char *title, const cha
     lv_label_set_text(label, value);
 }
 
-static void create_about_device_card(lv_obj_t *parent)
+static void create_about_device_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     lv_obj_t *card = create_card(parent);
     char build[40];
@@ -159,18 +236,18 @@ static void create_about_device_card(lv_obj_t *parent)
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 12, 0);
-    create_section_title(card, "About this device", "Firmware and hardware details");
+    create_localized_section_title(ctx, card, L10N_ABOUT_DEVICE, L10N_ABOUT_DEVICE_SUBTITLE);
 
-    create_about_info_row(card, "Device", "Touch Clock");
+    create_about_info_row(ctx, card, L10N_DEVICE, "Touch Clock");
     telemetry_update_get_device_id(device_id, sizeof(device_id));
-    create_about_info_row(card, "Device ID", device_id);
-    create_about_info_row(card, "Version", TOUCH_CLOCK_FIRMWARE_VERSION);
+    create_about_info_row(ctx, card, L10N_DEVICE_ID, device_id);
+    create_about_info_row(ctx, card, L10N_VERSION, TOUCH_CLOCK_FIRMWARE_VERSION);
     snprintf(build, sizeof(build), "%s %s", __DATE__, __TIME__);
-    create_about_info_row(card, "Build", build);
-    create_about_info_row(card, "Target", CONFIG_IDF_TARGET);
-    create_about_info_row(card, "Flash", CONFIG_ESPTOOLPY_FLASHSIZE);
-    create_about_info_row(card, "ESP-IDF", esp_get_idf_version());
-    create_about_info_row(card, "Updates", "Wi-Fi OTA capable");
+    create_about_info_row(ctx, card, L10N_BUILD, build);
+    create_about_info_row(ctx, card, L10N_TARGET, CONFIG_IDF_TARGET);
+    create_about_info_row(ctx, card, L10N_FLASH, CONFIG_ESPTOOLPY_FLASHSIZE);
+    create_about_info_row(ctx, card, L10N_ESP_IDF, esp_get_idf_version());
+    create_about_info_row(ctx, card, L10N_UPDATES, settings_text(ctx, L10N_WIFI_OTA_CAPABLE));
 }
 
 static void create_update_card(clock_ui_context_t *ctx, lv_obj_t *parent)
@@ -182,30 +259,40 @@ static void create_update_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 12, 0);
-    create_section_title(card, "Software update", "Check and install firmware over Wi-Fi");
+    create_localized_section_title(ctx, card, L10N_SOFTWARE_UPDATE, L10N_SOFTWARE_UPDATE_SUBTITLE);
 
     ctx->settings_ui.other_update_available_label = lv_label_create(card);
     lv_obj_set_width(ctx->settings_ui.other_update_available_label, lv_pct(100));
     lv_obj_set_style_text_font(ctx->settings_ui.other_update_available_label, &lv_font_montserrat_20, 0);
+    settings_apply_i18n_font(ctx->settings_ui.other_update_available_label);
     lv_obj_set_style_text_color(ctx->settings_ui.other_update_available_label, lv_color_white(), 0);
-    lv_label_set_text(ctx->settings_ui.other_update_available_label, "Current: " TOUCH_CLOCK_FIRMWARE_VERSION);
+    lv_label_set_text_fmt(ctx->settings_ui.other_update_available_label,
+                          "%s: %s",
+                          settings_text(ctx, L10N_CURRENT),
+                          TOUCH_CLOCK_FIRMWARE_VERSION);
 
     ctx->settings_ui.other_update_status_label = lv_label_create(card);
     lv_obj_set_width(ctx->settings_ui.other_update_status_label, lv_pct(100));
     lv_obj_set_style_text_font(ctx->settings_ui.other_update_status_label, &lv_font_montserrat_20, 0);
+    settings_apply_i18n_font(ctx->settings_ui.other_update_status_label);
     lv_obj_set_style_text_color(ctx->settings_ui.other_update_status_label, lv_color_hex(0xA8A8A8), 0);
     lv_label_set_long_mode(ctx->settings_ui.other_update_status_label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(ctx->settings_ui.other_update_status_label, "OTA status unavailable");
+    lv_label_set_text(ctx->settings_ui.other_update_status_label, settings_text(ctx, L10N_OTA_STATUS_UNAVAILABLE));
 
     ctx->settings_ui.other_update_progress_label = lv_label_create(card);
     lv_obj_set_width(ctx->settings_ui.other_update_progress_label, lv_pct(100));
+    lv_obj_set_style_text_font(ctx->settings_ui.other_update_progress_label, &ui_i18n_20, 0);
     lv_obj_set_style_text_color(ctx->settings_ui.other_update_progress_label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(ctx->settings_ui.other_update_progress_label, "Manifest: not configured");
+    lv_label_set_text(ctx->settings_ui.other_update_progress_label, settings_text(ctx, L10N_MANIFEST_NOT_CONFIGURED));
 
     row = create_row(card);
     center_row(row);
-    ctx->settings_ui.other_update_check_btn = create_action_button(row, "Check", ota_check_event_cb, ctx);
-    ctx->settings_ui.other_update_install_btn = create_action_button(row, "Install", ota_install_event_cb, ctx);
+    ctx->settings_ui.other_update_check_btn =
+        create_action_button(row, settings_text(ctx, L10N_CHECK), ota_check_event_cb, ctx);
+    settings_bind_button_label(ctx, ctx->settings_ui.other_update_check_btn, L10N_CHECK);
+    ctx->settings_ui.other_update_install_btn =
+        create_action_button(row, settings_text(ctx, L10N_INSTALL), ota_install_event_cb, ctx);
+    settings_bind_button_label(ctx, ctx->settings_ui.other_update_install_btn, L10N_INSTALL);
 }
 
 void sync_other_controls(clock_ui_context_t *ctx)
@@ -224,6 +311,10 @@ void sync_other_controls(clock_ui_context_t *ctx)
 
     sound_enabled = ctx->settings->ui_click_sound_enabled;
     ctx->suppress_events = true;
+    if (ctx->settings_ui.other_language_dropdown != NULL) {
+        lv_dropdown_set_selected(ctx->settings_ui.other_language_dropdown,
+                                 (uint16_t)l10n_sanitize_language(ctx->settings->language));
+    }
     settings_set_switch_checked_if_changed(ctx->settings_ui.other_sound_sw,
                                            sound_enabled);
     settings_set_slider_value_if_changed(ctx->settings_ui.other_sound_volume_slider,
@@ -241,24 +332,36 @@ void sync_other_controls(clock_ui_context_t *ctx)
     if (ctx->settings_ui.other_update_status_label != NULL) {
         settings_set_label_text_if_changed(ctx->settings_ui.other_update_status_label,
                                            ctx->runtime->ota_status[0] != '\0'
-                                               ? ctx->runtime->ota_status
-                                               : "OTA status unavailable");
+                                               ? l10n_runtime_status(ctx->settings->language, ctx->runtime->ota_status)
+                                               : settings_text(ctx, L10N_OTA_STATUS_UNAVAILABLE));
     }
     if (ctx->settings_ui.other_update_progress_label != NULL) {
         if (ctx->runtime->ota_busy) {
-            snprintf(progress_label, sizeof(progress_label), "Progress: %u%%", ctx->runtime->ota_progress);
+            snprintf(progress_label,
+                     sizeof(progress_label),
+                     "%s: %u%%",
+                     settings_text(ctx, L10N_PROGRESS),
+                     ctx->runtime->ota_progress);
         } else if (ctx->runtime->ota_configured) {
-            snprintf(progress_label, sizeof(progress_label), "Manifest: configured");
+            snprintf(progress_label, sizeof(progress_label), "%s", settings_text(ctx, L10N_MANIFEST_CONFIGURED));
         } else {
-            snprintf(progress_label, sizeof(progress_label), "Manifest: not configured");
+            snprintf(progress_label, sizeof(progress_label), "%s", settings_text(ctx, L10N_MANIFEST_NOT_CONFIGURED));
         }
         settings_set_label_text_if_changed(ctx->settings_ui.other_update_progress_label, progress_label);
     }
     if (ctx->settings_ui.other_update_available_label != NULL) {
         if (ctx->runtime->ota_update_available && ctx->runtime->ota_available_version[0] != '\0') {
-            snprintf(available_label, sizeof(available_label), "Available: %s", ctx->runtime->ota_available_version);
+            snprintf(available_label,
+                     sizeof(available_label),
+                     "%s: %s",
+                     settings_text(ctx, L10N_AVAILABLE),
+                     ctx->runtime->ota_available_version);
         } else {
-            snprintf(available_label, sizeof(available_label), "Current: %s", TOUCH_CLOCK_FIRMWARE_VERSION);
+            snprintf(available_label,
+                     sizeof(available_label),
+                     "%s: %s",
+                     settings_text(ctx, L10N_CURRENT),
+                     TOUCH_CLOCK_FIRMWARE_VERSION);
         }
         settings_set_label_text_if_changed(ctx->settings_ui.other_update_available_label, available_label);
     }
@@ -274,6 +377,7 @@ void sync_other_controls(clock_ui_context_t *ctx)
 
     ctx->settings_ui.cached_ui_click_sound_enabled = sound_enabled;
     ctx->settings_ui.cached_ui_click_volume = ctx->settings->ui_click_volume;
+    ctx->cached_language = ctx->settings->language;
 }
 
 static void settings_format_night_schedule_label(const clock_ui_context_t *ctx, char *buffer, size_t size)
@@ -484,12 +588,32 @@ static ui_edge_ctx_t *settings_edge_ctx(clock_ui_context_t *ctx, ui_surface_edge
     return &ctx->settings_ui.close_edge_ctx[edge];
 }
 
-static void create_centered_card_title(lv_obj_t *parent, const char *title)
+static void create_localized_centered_card_title(clock_ui_context_t *ctx, lv_obj_t *parent, l10n_text_id_t title)
 {
     lv_obj_t *label = lv_label_create(parent);
 
     style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
-    lv_label_set_text(label, title);
+    settings_bind_label(ctx, label, title);
+}
+
+static void create_localized_section_title(clock_ui_context_t *ctx,
+                                           lv_obj_t *parent,
+                                           l10n_text_id_t title,
+                                           l10n_text_id_t subtitle)
+{
+    lv_obj_t *heading = lv_label_create(parent);
+
+    lv_obj_set_style_text_font(heading, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_color(heading, lv_color_white(), 0);
+    lv_obj_set_style_text_color(heading, lv_color_hex(0x7A7A7A), LV_STATE_DISABLED);
+    settings_bind_label(ctx, heading, title);
+
+    if (subtitle < L10N_COUNT) {
+        lv_obj_t *desc = lv_label_create(parent);
+        lv_obj_set_style_text_color(desc, lv_color_hex(0xA8A8A8), 0);
+        lv_obj_set_style_text_color(desc, lv_color_hex(0x686868), LV_STATE_DISABLED);
+        settings_bind_label(ctx, desc, subtitle);
+    }
 }
 
 static void center_card_children(lv_obj_t *card)
@@ -548,7 +672,7 @@ static void sync_wifi_list(clock_ui_context_t *ctx)
         lv_obj_t *label = lv_label_create(ctx->settings_ui.wifi_network_list);
 
         style_centered_label(label, NULL, lv_color_hex(0xA8A8A8));
-        lv_label_set_text(label, "No networks yet");
+        lv_label_set_text(label, settings_text(ctx, L10N_NO_NETWORKS));
         return;
     }
 
@@ -612,7 +736,7 @@ void sync_night_controls(clock_ui_context_t *ctx)
         }
     }
 
-    brightness_ui = ctx->settings->night_mode.brightness;
+    brightness_ui = brightness_hw_to_ui(ctx->settings->night_mode.brightness);
     snprintf(brightness_label, sizeof(brightness_label), "%u%%", brightness_ui);
     settings_set_label_text_if_changed(ctx->settings_ui.night_brightness_dd, brightness_label);
     if (ctx->settings_ui.night_brightness_slider != NULL) {
@@ -635,7 +759,7 @@ void sync_night_controls(clock_ui_context_t *ctx)
     settings_set_enabled_state(ctx->settings_ui.night_sunrise_sw, night_enabled);
     if (ctx->settings_ui.night_status_label != NULL) {
         settings_set_label_text_if_changed(ctx->settings_ui.night_status_label,
-                                           "Turn on Night mode to edit schedule, face, brightness, and sunrise ramp.");
+                                           settings_text(ctx, L10N_NIGHT_DISABLED_HINT));
         if (night_enabled) {
             lv_obj_add_flag(ctx->settings_ui.night_status_label, LV_OBJ_FLAG_HIDDEN);
         } else {
@@ -681,7 +805,7 @@ void sync_wifi_controls(clock_ui_context_t *ctx)
     lv_dropdown_set_selected(ctx->settings_ui.wifi_timezone_dd,
                              timezone_picker_index_from_id(ctx->settings->wifi.timezone_id));
     ctx->suppress_events = false;
-    settings_format_time_mode_label(mode_label, sizeof(mode_label), ctx->settings->wifi.time_sync_mode);
+    settings_format_time_mode_label(ctx, mode_label, sizeof(mode_label), ctx->settings->wifi.time_sync_mode);
     settings_set_label_text_if_changed(ctx->settings_ui.time_mode_label, mode_label);
     if (ctx->settings_ui.manual_time_card != NULL) {
         if (ctx->settings->wifi.time_sync_mode == TIME_SYNC_MODE_MANUAL) {
@@ -692,12 +816,14 @@ void sync_wifi_controls(clock_ui_context_t *ctx)
     }
 
     settings_set_label_text_if_changed(ctx->settings_ui.wifi_status_label,
-                                       ctx->runtime->wifi_status[0] ? ctx->runtime->wifi_status : "Wi-Fi idle");
+                                       ctx->runtime->wifi_status[0]
+                                           ? l10n_runtime_status(ctx->settings->language, ctx->runtime->wifi_status)
+                                           : settings_text(ctx, L10N_WIFI_IDLE));
 
     if (ctx->settings->wifi.ssid[0] != '\0') {
-        snprintf(saved, sizeof(saved), "Saved: %s", ctx->settings->wifi.ssid);
+        snprintf(saved, sizeof(saved), "%s: %s", settings_text(ctx, L10N_SAVED), ctx->settings->wifi.ssid);
     } else {
-        snprintf(saved, sizeof(saved), "Saved: none");
+        snprintf(saved, sizeof(saved), "%s", settings_text(ctx, L10N_SAVED_NONE));
     }
     settings_set_label_text_if_changed(ctx->settings_ui.wifi_saved_label, saved);
 
@@ -733,6 +859,9 @@ void sync_wifi_controls(clock_ui_context_t *ctx)
 
 void refresh_settings_controls(clock_ui_context_t *ctx)
 {
+    if (ctx->cached_language != ctx->settings->language) {
+        settings_apply_l10n(ctx);
+    }
     sync_other_controls(ctx);
     sync_night_controls(ctx);
 }
@@ -933,7 +1062,10 @@ static void wifi_network_btn_event_cb(lv_event_t *event)
              sizeof(ctx->settings_ui.pending_ssid),
              "%s",
              results[network_ctx->network_index].ssid);
-    lv_label_set_text_fmt(ctx->settings_ui.wifi_dialog_title, "Join %s", ctx->settings_ui.pending_ssid);
+    lv_label_set_text_fmt(ctx->settings_ui.wifi_dialog_title,
+                          "%s %s",
+                          settings_text(ctx, L10N_CONNECT),
+                          ctx->settings_ui.pending_ssid);
     lv_textarea_set_text(ctx->settings_ui.wifi_password_ta, "");
     lv_keyboard_set_textarea(ctx->settings_ui.wifi_keyboard, ctx->settings_ui.wifi_password_ta);
     lv_obj_clear_flag(ctx->settings_ui.wifi_dialog_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -1025,8 +1157,8 @@ static void close_wifi_dialog(clock_ui_context_t *ctx)
 
 static lv_obj_t *create_settings_menu_entry(lv_obj_t *parent,
                                             const char *symbol,
-                                            const char *title_text,
-                                            const char *subtitle_text,
+                                            l10n_text_id_t title_text,
+                                            l10n_text_id_t subtitle_text,
                                             lv_event_cb_t cb,
                                             clock_ui_context_t *ctx)
 {
@@ -1095,12 +1227,12 @@ static lv_obj_t *create_settings_menu_entry(lv_obj_t *parent,
     lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, title_text);
+    settings_bind_label(ctx, label, title_text);
 
     label = lv_label_create(text_col);
     lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_set_style_text_color(label, lv_color_hex(0xAFAFAF), 0);
-    lv_label_set_text(label, subtitle_text);
+    settings_bind_label(ctx, label, subtitle_text);
 
     label = lv_label_create(row);
     lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -1585,7 +1717,7 @@ static void night_brightness_slider_event_cb(lv_event_t *event)
     ui_value = lv_slider_get_value(lv_event_get_target(event));
     snprintf(brightness_label, sizeof(brightness_label), "%d%%", ui_value);
     settings_set_label_text_if_changed(ctx->settings_ui.night_brightness_dd, brightness_label);
-    request_set_night_brightness(ctx, (uint8_t)ui_value);
+    request_set_night_brightness(ctx, brightness_ui_to_hw(ui_value));
 }
 
 static void night_sunrise_enabled_event_cb(lv_event_t *event)
@@ -1629,6 +1761,23 @@ static void other_sound_volume_event_cb(lv_event_t *event)
     snprintf(volume_label, sizeof(volume_label), "%d%%", volume);
     settings_set_label_text_if_changed(ctx->settings_ui.other_sound_volume_label, volume_label);
     request_set_ui_click_volume(ctx, (uint8_t)volume);
+}
+
+static void language_dropdown_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    clock_language_t language;
+
+    if (ctx->suppress_events) {
+        return;
+    }
+
+    language = (clock_language_t)lv_dropdown_get_selected(lv_event_get_target(event));
+    request_set_language(ctx, language);
+    settings_apply_l10n(ctx);
+    sync_other_controls(ctx);
+    sync_wifi_controls(ctx);
+    sync_night_controls(ctx);
 }
 
 static void ota_check_event_cb(lv_event_t *event)
@@ -1724,24 +1873,32 @@ static void create_wifi_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 
     ctx->settings_ui.wifi_status_label = lv_label_create(ctx->settings_ui.wifi_card);
     style_centered_label(ctx->settings_ui.wifi_status_label, &lv_font_montserrat_20, lv_color_white());
-    lv_label_set_text(ctx->settings_ui.wifi_status_label, "Wi-Fi idle");
+    settings_apply_i18n_font(ctx->settings_ui.wifi_status_label);
+    lv_label_set_text(ctx->settings_ui.wifi_status_label, settings_text(ctx, L10N_WIFI_IDLE));
 
     ctx->settings_ui.wifi_saved_label = lv_label_create(ctx->settings_ui.wifi_card);
     style_centered_label(ctx->settings_ui.wifi_saved_label, NULL, lv_color_hex(0xA8A8A8));
-    lv_label_set_text(ctx->settings_ui.wifi_saved_label, "Saved: none");
+    settings_apply_i18n_font(ctx->settings_ui.wifi_saved_label);
+    lv_label_set_text(ctx->settings_ui.wifi_saved_label, settings_text(ctx, L10N_SAVED_NONE));
 
     row = create_row(ctx->settings_ui.wifi_card);
     center_row(row);
-    create_action_button(row, "Scan", wifi_scan_event_cb, ctx);
-    create_action_button(row, "Sync time", wifi_sync_event_cb, ctx);
-    create_action_button(row, "Forget", wifi_forget_event_cb, ctx);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_SCAN), wifi_scan_event_cb, ctx),
+                               L10N_SCAN);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_SYNC_TIME), wifi_sync_event_cb, ctx),
+                               L10N_SYNC_TIME);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_FORGET), wifi_forget_event_cb, ctx),
+                               L10N_FORGET);
 }
 
 static void create_timezone_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     ctx->settings_ui.timezone_card = create_card(parent);
     center_card_children(ctx->settings_ui.timezone_card);
-    create_centered_card_title(ctx->settings_ui.timezone_card, "Time zone");
+    create_localized_centered_card_title(ctx, ctx->settings_ui.timezone_card, L10N_TIME_ZONE);
 
     ctx->settings_ui.wifi_timezone_dd = create_dropdown(ctx->settings_ui.timezone_card,
                                                         ctx->timezone_options,
@@ -1758,7 +1915,7 @@ static void create_time_mode_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 
     ctx->settings_ui.time_mode_card = create_card(parent);
     center_card_children(ctx->settings_ui.time_mode_card);
-    create_centered_card_title(ctx->settings_ui.time_mode_card, "Clock");
+    create_localized_centered_card_title(ctx, ctx->settings_ui.time_mode_card, L10N_CLOCK);
 
     row = create_step_selector(ctx->settings_ui.time_mode_card,
                                260,
@@ -1768,6 +1925,7 @@ static void create_time_mode_card(clock_ui_context_t *ctx, lv_obj_t *parent)
                                ctx,
                                time_mode_next_event_cb,
                                ctx);
+    settings_apply_i18n_font(ctx->settings_ui.time_mode_label);
     center_row(row);
 }
 
@@ -1785,7 +1943,7 @@ static void create_manual_time_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 16, 0);
     center_card_children(card);
-    create_centered_card_title(card, "Set manually");
+    create_localized_centered_card_title(ctx, card, L10N_SET_MANUALLY);
 
     row = create_row(card);
     center_row(row);
@@ -1806,13 +1964,15 @@ static void create_manual_time_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 
     row = create_row(card);
     center_row(row);
-    create_action_button(row, "Set time", manual_time_apply_event_cb, ctx);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_SET_TIME), manual_time_apply_event_cb, ctx),
+                               L10N_SET_TIME);
 }
 
 static void create_networks_card(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     ctx->settings_ui.networks_card = create_card(parent);
-    create_centered_card_title(ctx->settings_ui.networks_card, "Networks");
+    create_localized_centered_card_title(ctx, ctx->settings_ui.networks_card, L10N_NETWORKS);
 
     ctx->settings_ui.wifi_network_list = lv_obj_create(ctx->settings_ui.networks_card);
     lv_obj_set_width(ctx->settings_ui.wifi_network_list, lv_pct(100));
@@ -1844,7 +2004,7 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     label = lv_label_create(row);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, "Enabled");
+    settings_bind_label(ctx, label, L10N_ENABLED);
     ctx->settings_ui.night_enabled_sw = lv_switch_create(row);
     style_settings_switch(ctx->settings_ui.night_enabled_sw);
     bind_night_control(ctx->settings_ui.night_enabled_sw,
@@ -1856,6 +2016,7 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     ctx->settings_ui.night_status_label = lv_label_create(ctx->settings_ui.night_card);
     lv_obj_set_width(ctx->settings_ui.night_status_label, lv_pct(100));
     lv_obj_set_style_text_font(ctx->settings_ui.night_status_label, &lv_font_montserrat_20, 0);
+    settings_apply_i18n_font(ctx->settings_ui.night_status_label);
     lv_obj_set_style_text_color(ctx->settings_ui.night_status_label, lv_color_hex(0xA8A8A8), 0);
     lv_obj_set_style_text_align(ctx->settings_ui.night_status_label, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(ctx->settings_ui.night_status_label, LV_LABEL_LONG_WRAP);
@@ -1868,7 +2029,7 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 10, 0);
     style_night_detail_card(card);
-    create_section_title(card, "Schedule", "Tap to edit");
+    create_localized_section_title(ctx, card, L10N_SCHEDULE, L10N_TAP_TO_EDIT);
     ctx->settings_ui.night_schedule_button = lv_button_create(card);
     lv_obj_set_width(ctx->settings_ui.night_schedule_button, lv_pct(100));
     lv_obj_set_height(ctx->settings_ui.night_schedule_button, LV_SIZE_CONTENT);
@@ -1899,7 +2060,7 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 16, 0);
     style_night_detail_card(card);
-    create_section_title(card, "Night face", "Tap to choose from previews");
+    create_localized_section_title(ctx, card, L10N_NIGHT_FACE, L10N_TAP_TO_CHOOSE_PREVIEWS);
     ctx->settings_ui.night_face_button = lv_button_create(card);
     lv_obj_set_width(ctx->settings_ui.night_face_button, lv_pct(100));
     lv_obj_set_height(ctx->settings_ui.night_face_button, LV_SIZE_CONTENT);
@@ -1976,7 +2137,7 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 14, 0);
     style_night_detail_card(card);
-    create_section_title(card, "Brightness", "Matches the main slider interaction");
+    create_localized_section_title(ctx, card, L10N_BRIGHTNESS, L10N_MAIN_SLIDER_MATCH);
 
     row = create_row(card);
     center_row(row);
@@ -2014,10 +2175,12 @@ static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_pad_row(card, 14, 0);
     style_night_detail_card(card);
     row = create_labeled_trailing_control_row(card,
-                                              "Sunrise ramp",
-                                              "Brighten during the pre-alarm sunrise",
+                                              settings_text(ctx, L10N_SUNRISE_RAMP),
+                                              settings_text(ctx, L10N_SUNRISE_RAMP_SUBTITLE),
                                               360,
                                               NULL);
+    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 0), L10N_SUNRISE_RAMP);
+    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 1), L10N_SUNRISE_RAMP_SUBTITLE);
 
     ctx->settings_ui.night_sunrise_sw = lv_switch_create(row);
     style_settings_switch(ctx->settings_ui.night_sunrise_sw);
@@ -2041,13 +2204,14 @@ static void create_night_face_picker_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Choose night face",
+                                 settings_text(ctx, L10N_CHOOSE_NIGHT_FACE),
                                  night_face_picker_overlay_event_cb,
                                  night_face_picker_close_event_cb,
                                  ctx);
     ctx->settings_ui.night_face_picker_overlay = surface.overlay;
     ctx->settings_ui.night_face_picker_content = surface.content;
     title = surface.title;
+    settings_bind_label(ctx, title, L10N_CHOOSE_NIGHT_FACE);
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
@@ -2148,13 +2312,14 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Night schedule",
+                                 settings_text(ctx, L10N_NIGHT_SCHEDULE),
                                  night_schedule_editor_overlay_event_cb,
                                  night_schedule_editor_close_event_cb,
                                  ctx);
     ctx->settings_ui.night_schedule_overlay = surface.overlay;
     ctx->settings_ui.night_schedule_content = surface.content;
     title = surface.title;
+    settings_bind_label(ctx, title, L10N_NIGHT_SCHEDULE);
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -2166,7 +2331,7 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_pad_row(card, 16, 0);
 
     create_time_picker_section(card,
-                               "Start",
+                               settings_text(ctx, L10N_START),
                                ctx->hour_options,
                                ctx->minute_options,
                                164,
@@ -2176,9 +2341,10 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
                                ctx,
                                &ctx->settings_ui.night_start_hour_dd,
                                &ctx->settings_ui.night_start_min_dd);
+    settings_bind_label(ctx, lv_obj_get_child(card, 0), L10N_START);
 
     create_time_picker_section(card,
-                               "End",
+                               settings_text(ctx, L10N_END),
                                ctx->hour_options,
                                ctx->minute_options,
                                164,
@@ -2188,10 +2354,13 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
                                ctx,
                                &ctx->settings_ui.night_end_hour_dd,
                                &ctx->settings_ui.night_end_min_dd);
+    settings_bind_label(ctx, lv_obj_get_child(card, 2), L10N_END);
 
     row = create_row(card);
     center_row(row);
-    create_action_button(row, "Done", night_schedule_editor_close_event_cb, ctx);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_DONE), night_schedule_editor_close_event_cb, ctx),
+                               L10N_DONE);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.night_schedule_overlay,
                                   &sensor,
@@ -2250,7 +2419,7 @@ static void create_wifi_dialog(clock_ui_context_t *ctx)
 
     ctx->settings_ui.wifi_dialog_title = lv_label_create(panel);
     style_centered_label(ctx->settings_ui.wifi_dialog_title, &lv_font_montserrat_24, lv_color_white());
-    lv_label_set_text(ctx->settings_ui.wifi_dialog_title, "Join network");
+    lv_label_set_text(ctx->settings_ui.wifi_dialog_title, settings_text(ctx, L10N_JOIN_NETWORK));
 
     ctx->settings_ui.wifi_password_ta = lv_textarea_create(panel);
     lv_obj_set_width(ctx->settings_ui.wifi_password_ta, lv_pct(100));
@@ -2260,15 +2429,19 @@ static void create_wifi_dialog(clock_ui_context_t *ctx)
     lv_obj_set_style_text_color(ctx->settings_ui.wifi_password_ta, lv_color_hex(0x8E8E8E), LV_PART_TEXTAREA_PLACEHOLDER);
     lv_obj_set_style_border_width(ctx->settings_ui.wifi_password_ta, 0, 0);
     lv_obj_set_style_radius(ctx->settings_ui.wifi_password_ta, 16, 0);
-    lv_textarea_set_placeholder_text(ctx->settings_ui.wifi_password_ta, "Password");
+    lv_textarea_set_placeholder_text(ctx->settings_ui.wifi_password_ta, settings_text(ctx, L10N_PASSWORD));
     lv_textarea_set_password_mode(ctx->settings_ui.wifi_password_ta, true);
     lv_textarea_set_one_line(ctx->settings_ui.wifi_password_ta, true);
     lv_obj_add_event_cb(ctx->settings_ui.wifi_password_ta, wifi_ta_focus_event_cb, LV_EVENT_FOCUSED, ctx);
 
     row = create_row(panel);
     center_row(row);
-    create_action_button(row, "Cancel", wifi_dialog_close_event_cb, ctx);
-    create_action_button(row, "Connect", wifi_dialog_connect_event_cb, ctx);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_CANCEL), wifi_dialog_close_event_cb, ctx),
+                               L10N_CANCEL);
+    settings_bind_button_label(ctx,
+                               create_action_button(row, settings_text(ctx, L10N_CONNECT), wifi_dialog_connect_event_cb, ctx),
+                               L10N_CONNECT);
 
     ctx->settings_ui.wifi_keyboard = lv_keyboard_create(ctx->settings_ui.wifi_dialog_overlay);
     lv_obj_set_size(ctx->settings_ui.wifi_keyboard, KEYBOARD_WIDTH, KEYBOARD_HEIGHT);
@@ -2293,7 +2466,7 @@ static void create_wifi_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Wi-Fi",
+                                 settings_text(ctx, L10N_WIFI),
                                  settings_detail_overlay_event_cb,
                                  settings_back_event_cb,
                                  ctx);
@@ -2303,6 +2476,7 @@ static void create_wifi_overlay(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL, ctx);
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
     title = surface.title;
+    settings_bind_label(ctx, title, L10N_WIFI);
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -2351,13 +2525,14 @@ static void create_other_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Other",
+                                 settings_text(ctx, L10N_OTHER),
                                  settings_detail_overlay_event_cb,
                                  settings_back_event_cb,
                                  ctx);
     ctx->settings_ui.other_overlay = surface.overlay;
     ctx->settings_ui.other_content = surface.content;
     title = surface.title;
+    settings_bind_label(ctx, title, L10N_OTHER);
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -2367,15 +2542,31 @@ static void create_other_overlay(clock_ui_context_t *ctx)
     create_timezone_card(ctx, surface.content);
 
     card = create_card(surface.content);
+    lv_obj_set_width(card, 540);
+    lv_obj_set_style_pad_all(card, 24, 0);
+    lv_obj_set_style_pad_row(card, 14, 0);
+    create_localized_section_title(ctx, card, L10N_LANGUAGE, L10N_LANGUAGE_SUBTITLE);
+    ctx->settings_ui.other_language_dropdown = create_dropdown(card, l10n_language_options(), 492);
+    lv_obj_set_style_text_align(ctx->settings_ui.other_language_dropdown, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
+    lv_dropdown_set_selected(ctx->settings_ui.other_language_dropdown,
+                             (uint16_t)l10n_sanitize_language(ctx->settings->language));
+    lv_obj_add_event_cb(ctx->settings_ui.other_language_dropdown,
+                        language_dropdown_event_cb,
+                        LV_EVENT_VALUE_CHANGED,
+                        ctx);
+
+    card = create_card(surface.content);
     ctx->settings_ui.other_sound_card = card;
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 14, 0);
     row = create_labeled_trailing_control_row(card,
-                                              "Touch sound",
-                                              "Button and control clicks",
+                                              settings_text(ctx, L10N_TOUCH_SOUND),
+                                              settings_text(ctx, L10N_TOUCH_SOUND_SUBTITLE),
                                               360,
                                               NULL);
+    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 0), L10N_TOUCH_SOUND);
+    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 1), L10N_TOUCH_SOUND_SUBTITLE);
 
     ctx->settings_ui.other_sound_sw = lv_switch_create(row);
     style_settings_switch(ctx->settings_ui.other_sound_sw);
@@ -2390,7 +2581,7 @@ static void create_other_overlay(clock_ui_context_t *ctx)
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, 14, 0);
-    create_section_title(card, "Touch sound volume", "Adjust the click loudness separately");
+    create_localized_section_title(ctx, card, L10N_TOUCH_SOUND_VOLUME, L10N_TOUCH_SOUND_VOLUME_SUBTITLE);
 
     row = create_row(card);
     center_row(row);
@@ -2429,7 +2620,7 @@ static void create_other_overlay(clock_ui_context_t *ctx)
     ui_attach_click_feedback(ctx->settings_ui.other_sound_volume_slider, LV_EVENT_VALUE_CHANGED);
 
     create_update_card(ctx, surface.content);
-    create_about_device_card(surface.content);
+    create_about_device_card(ctx, surface.content);
 
     ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
                                   &ctx->settings_ui.other_top_sensor,
@@ -2468,7 +2659,7 @@ static void create_night_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Night mode",
+                                 settings_text(ctx, L10N_NIGHT_MODE),
                                  settings_detail_overlay_event_cb,
                                  settings_back_event_cb,
                                  ctx);
@@ -2481,6 +2672,7 @@ static void create_night_overlay(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL, ctx);
     lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
     title = surface.title;
+    settings_bind_label(ctx, title, L10N_NIGHT_MODE);
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
 
@@ -2523,6 +2715,9 @@ void create_settings_overlay(clock_ui_context_t *ctx)
         UI_SURFACE_EDGE_RIGHT,
     };
 
+    ctx->l10n_binding_count = 0;
+    ctx->cached_language = (clock_language_t)CLOCK_LANGUAGE_COUNT;
+
     for (size_t i = 0; i < (sizeof(s_edges) / sizeof(s_edges[0])); ++i) {
         ctx->settings_ui.close_edge_ctx[s_edges[i]].ui = ctx;
         ctx->settings_ui.close_edge_ctx[s_edges[i]].edge = s_edges[i];
@@ -2534,7 +2729,7 @@ void create_settings_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Settings",
+                                 settings_text(ctx, L10N_SETTINGS),
                                  settings_overlay_event_cb,
                                  settings_close_event_cb,
                                  ctx);
@@ -2542,6 +2737,7 @@ void create_settings_overlay(clock_ui_context_t *ctx)
     ctx->settings_ui.panel = surface.panel;
     ctx->settings_ui.content = surface.content;
     title = surface.title;
+    settings_bind_label(ctx, title, L10N_SETTINGS);
     lv_obj_set_width(title, lv_pct(100));
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
     lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -2549,20 +2745,20 @@ void create_settings_overlay(clock_ui_context_t *ctx)
 
     create_settings_menu_entry(surface.content,
                                LV_SYMBOL_WIFI,
-                               "Wi-Fi",
-                               "Networks and clock sync",
+                               L10N_WIFI,
+                               L10N_WIFI_SUBTITLE,
                                settings_wifi_entry_event_cb,
                                ctx);
     create_settings_menu_entry(surface.content,
                                LV_SYMBOL_SETTINGS,
-                               "Night mode",
-                               "Schedule and night face",
+                               L10N_NIGHT_MODE,
+                               L10N_NIGHT_SUBTITLE,
                                settings_night_entry_event_cb,
                                ctx);
     create_settings_menu_entry(surface.content,
                                LV_SYMBOL_SETTINGS,
-                               "Other",
-                               "Sound and device info",
+                               L10N_OTHER,
+                               L10N_OTHER_SUBTITLE,
                                settings_other_entry_event_cb,
                                ctx);
 

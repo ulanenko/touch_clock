@@ -11,7 +11,7 @@
 #include "nvs.h"
 
 #define SETTINGS_NAMESPACE "clock"
-#define SETTINGS_VERSION_V5 5U
+#define SETTINGS_VERSION_V11 11U
 
 static esp_err_t storage_get_u32(void *ctx, const char *key, uint32_t *value)
 {
@@ -104,7 +104,7 @@ static const app_settings_storage_t s_nvs_storage = {
 void app_settings_set_defaults(app_settings_t *settings)
 {
     settings_policy_set_defaults(settings);
-    settings->version = SETTINGS_VERSION_V5;
+    settings->version = SETTINGS_VERSION_V11;
 }
 
 esp_err_t app_settings_load(app_settings_t *settings)

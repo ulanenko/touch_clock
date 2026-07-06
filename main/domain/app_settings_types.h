@@ -21,4 +21,5 @@ typedef struct {
     time_t skipped_alarm_epoch;
     int8_t skipped_alarm_index;
     uint8_t ui_click_volume;
+    clock_language_t language;
 } app_settings_t;

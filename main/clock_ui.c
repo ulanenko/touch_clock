@@ -393,6 +393,13 @@ void request_set_ui_click_volume(clock_ui_context_t *ctx, uint8_t volume)
     }
 }
 
+void request_set_language(clock_ui_context_t *ctx, clock_language_t language)
+{
+    if (ctx->callbacks.on_set_language != NULL) {
+        ctx->callbacks.on_set_language(ctx->user_ctx, language);
+    }
+}
+
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled)
 {
     if (ctx->callbacks.on_set_night_mode_enabled != NULL) {

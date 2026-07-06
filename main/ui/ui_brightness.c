@@ -2,6 +2,19 @@
 
 static void brightness_overlay_hide(clock_ui_context_t *ctx);
 
+static void brightness_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
+{
+    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
+        return;
+    }
+
+    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
+    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
+    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
+    ctx->l10n_binding_count++;
+    lv_label_set_text(label, l10n_text(ctx->settings->language, text_id));
+}
+
 static void affordance_opa_anim_cb(void *obj, int32_t value)
 {
     lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)value, 0);
@@ -208,21 +221,23 @@ void update_brightness_ui(clock_ui_context_t *ctx)
 {
     char buffer[32];
     uint8_t target_brightness;
+    uint8_t ui_percent;
 
     if (ctx->brightness.value == NULL || ctx->brightness.slider == NULL) {
         return;
     }
 
     target_brightness = brightness_ui_get_target_hw(ctx);
-    if (!ctx->brightness.ui_synced || ctx->brightness.last_ui_percent != target_brightness) {
-        snprintf(buffer, sizeof(buffer), "%u%%", target_brightness);
+    ui_percent = brightness_hw_to_ui(target_brightness);
+    if (!ctx->brightness.ui_synced || ctx->brightness.last_ui_percent != ui_percent) {
+        snprintf(buffer, sizeof(buffer), "%u%%", ui_percent);
         lv_label_set_text(ctx->brightness.value, buffer);
 
         ctx->suppress_events = true;
-        lv_slider_set_value(ctx->brightness.slider, target_brightness, LV_ANIM_OFF);
+        lv_slider_set_value(ctx->brightness.slider, ui_percent, LV_ANIM_OFF);
         ctx->suppress_events = false;
 
-        ctx->brightness.last_ui_percent = target_brightness;
+        ctx->brightness.last_ui_percent = ui_percent;
         ctx->brightness.ui_synced = true;
     }
 }
@@ -385,6 +400,7 @@ void brightness_panel_hide(clock_ui_context_t *ctx)
 static void brightness_slider_event_cb(lv_event_t *event)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    int ui_percent;
     uint8_t target_brightness;
 
     if (ctx->suppress_events) {
@@ -392,7 +408,8 @@ static void brightness_slider_event_cb(lv_event_t *event)
     }
 
     brightness_panel_auto_close_reset(ctx);
-    target_brightness = (uint8_t)lv_slider_get_value(lv_event_get_target(event));
+    ui_percent = lv_slider_get_value(lv_event_get_target(event));
+    target_brightness = brightness_ui_to_hw(ui_percent);
     if (ctx->runtime != NULL && ctx->runtime->in_night_mode) {
         request_set_runtime_night_brightness(ctx, target_brightness);
     } else {
@@ -408,6 +425,9 @@ static void brightness_panel_show(clock_ui_context_t *ctx)
         return;
     }
 
+    if (ctx->brightness.title != NULL) {
+        lv_label_set_text(ctx->brightness.title, l10n_text(ctx->settings->language, L10N_BRIGHTNESS_PANEL));
+    }
     update_brightness_ui(ctx);
     quick_actions_auto_close_pause(ctx);
     lv_obj_clear_flag(ctx->brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
@@ -787,9 +807,10 @@ void create_brightness_panel(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(panel, brightness_panel_activity_event_cb, LV_EVENT_RELEASED, ctx);
 
     title = lv_label_create(panel);
+    ctx->brightness.title = title;
     lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_label_set_text(title, "Brightness");
+    brightness_bind_label(ctx, title, L10N_BRIGHTNESS_PANEL);
 
     ctx->brightness.slider = lv_slider_create(panel);
     lv_obj_set_width(ctx->brightness.slider, lv_pct(100));

@@ -196,6 +196,23 @@ app_action_result_t app_action_set_ui_click_volume(app_state_t *state, uint8_t v
     return result;
 }
 
+app_action_result_t app_action_set_language(app_state_t *state, clock_language_t language)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    if (language >= CLOCK_LANGUAGE_COUNT) {
+        language = CLOCK_LANGUAGE_ENGLISH;
+    }
+    if (state->settings.language == language) {
+        return result;
+    }
+
+    state->settings.language = language;
+    emit_settings_changed(&result);
+    return result;
+}
+
 app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_id_t face)
 {
     app_action_result_t result;

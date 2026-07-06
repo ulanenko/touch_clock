@@ -23,12 +23,14 @@
 #define SETTINGS_VERSION_V8 8U
 #define SETTINGS_VERSION_V9 9U
 #define SETTINGS_VERSION_V10 10U
+#define SETTINGS_VERSION_V11 11U
 #define SETTINGS_KEY_LEGACY_BLOB "settings"
 #define SETTINGS_KEY_VERSION "ver"
 #define SETTINGS_KEY_BASE_BRIGHTNESS "base_bri"
 #define SETTINGS_KEY_ALARM_VOLUME "alarm_vol"
 #define SETTINGS_KEY_UI_CLICK_SOUND "ui_click"
 #define SETTINGS_KEY_UI_CLICK_VOLUME "ui_clk_vol"
+#define SETTINGS_KEY_LANGUAGE "lang"
 #define SETTINGS_KEY_ASCENDING_ALARM "alarm_ramp"
 #define SETTINGS_KEY_SNOOZE "snooze"
 #define SETTINGS_KEY_CURRENT_FACE "face"
@@ -93,6 +95,11 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .key = SETTINGS_KEY_UI_CLICK_VOLUME,
         .kind = SETTINGS_FIELD_U8,
         .offset = offsetof(app_settings_t, ui_click_volume),
+    },
+    {
+        .key = SETTINGS_KEY_LANGUAGE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, language),
     },
     {
         .key = SETTINGS_KEY_ASCENDING_ALARM,
@@ -196,7 +203,7 @@ static const settings_field_descriptor_t s_settings_fields[] = {
 static void set_defaults(app_settings_t *settings)
 {
     settings_policy_set_defaults(settings);
-    settings->version = SETTINGS_VERSION_V10;
+    settings->version = SETTINGS_VERSION_V11;
 }
 
 static void *field_ptr(void *base, size_t offset)
@@ -334,7 +341,7 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
     }
 
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V10;
+    settings->version = SETTINGS_VERSION_V11;
     return ESP_OK;
 }
 
@@ -366,10 +373,11 @@ static esp_err_t load_legacy_v4_settings(const app_settings_storage_t *storage, 
     settings->night_mode.sunrise_brightness_enabled = true;
     settings->ui_click_sound_enabled = true;
     settings->ui_click_volume = 70;
+    settings->language = CLOCK_LANGUAGE_ENGLISH;
     settings->wifi.timezone_id = timezone_id_from_legacy_offset(settings->wifi.timezone_offset_hours);
     settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
     settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V10;
+    settings->version = SETTINGS_VERSION_V11;
     return ESP_OK;
 }
 
@@ -409,9 +417,9 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
     }
 
     settings_policy_sanitize(&copy);
-    copy.version = SETTINGS_VERSION_V10;
+    copy.version = SETTINGS_VERSION_V11;
 
-    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V10);
+    err = storage->set_u32(storage->ctx, SETTINGS_KEY_VERSION, SETTINGS_VERSION_V11);
     for (size_t i = 0;
          err == ESP_OK && i < sizeof(s_settings_fields) / sizeof(s_settings_fields[0]);
          ++i) {

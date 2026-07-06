@@ -18,6 +18,101 @@ static lv_obj_t *create_alarm_math_keypad_button(lv_obj_t *parent,
 #define ALARM_MATH_MAX_INPUT_LEN 2U
 #define ALARM_BANNER_MIN_BRIGHTNESS_UI_PERCENT 10
 
+static const char *alarm_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id)
+{
+    return l10n_text(ctx->settings->language, text_id);
+}
+
+static void alarm_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
+{
+    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
+        return;
+    }
+
+    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
+    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
+    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
+    ctx->l10n_binding_count++;
+    lv_label_set_text(label, alarm_text(ctx, text_id));
+}
+
+static void alarm_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id)
+{
+    if (button != NULL) {
+        alarm_bind_label(ctx, lv_obj_get_child(button, 0), text_id);
+    }
+}
+
+static void alarm_format_snooze(clock_ui_context_t *ctx, char *buffer, size_t size)
+{
+    snprintf(buffer,
+             size,
+             "%s %u %s",
+             alarm_text(ctx, L10N_SNOOZE),
+             ctx->settings->snooze_minutes,
+             alarm_text(ctx, L10N_MINUTE_ABBR));
+}
+
+static l10n_text_id_t alarm_repeat_preset_text_id(uint8_t preset)
+{
+    switch (preset) {
+    case ALARM_REPEAT_PRESET_EVERY_DAY:
+        return L10N_EVERY_DAY;
+    case ALARM_REPEAT_PRESET_WEEKDAYS:
+        return L10N_WEEKDAYS;
+    case ALARM_REPEAT_PRESET_WEEKENDS:
+        return L10N_WEEKENDS;
+    case ALARM_REPEAT_PRESET_ONCE:
+    default:
+        return L10N_ONE_TIME;
+    }
+}
+
+static void alarm_format_repeat_summary(clock_ui_context_t *ctx,
+                                        char *buffer,
+                                        size_t size,
+                                        const alarm_config_t *alarm)
+{
+    static const uint8_t s_day_display_order[7] = {1, 2, 3, 4, 5, 6, 0};
+    size_t pos = 0;
+
+    if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {
+        snprintf(buffer, size, "%s", alarm_text(ctx, L10N_ONE_TIME));
+        return;
+    }
+
+    if (alarm->days_mask == 0x7F) {
+        snprintf(buffer, size, "%s", alarm_text(ctx, L10N_EVERY_DAY));
+        return;
+    }
+
+    if (alarm->days_mask == 0x3E) {
+        snprintf(buffer, size, "%s", alarm_text(ctx, L10N_WEEKDAYS));
+        return;
+    }
+
+    if (alarm->days_mask == 0x41) {
+        snprintf(buffer, size, "%s", alarm_text(ctx, L10N_WEEKENDS));
+        return;
+    }
+
+    buffer[0] = '\0';
+    for (int idx = 0; idx < 7; ++idx) {
+        int day = s_day_display_order[idx];
+
+        if ((alarm->days_mask & (1U << day)) == 0) {
+            continue;
+        }
+
+        if (buffer[0] != '\0' && pos < size) {
+            pos += snprintf(buffer + pos, size - pos, " ");
+        }
+        if (pos < size) {
+            pos += snprintf(buffer + pos, size - pos, "%s", l10n_day_short(ctx->settings->language, day));
+        }
+    }
+}
+
 static void alarm_banner_set_visible(clock_ui_context_t *ctx, bool visible)
 {
     if (ctx->alarms.banner == NULL) {
@@ -86,9 +181,12 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now)
         if (minutes_left < 1) {
             minutes_left = 1;
         }
-        snprintf(text, sizeof(text), "Waking up again in %d minute%s",
+        snprintf(text,
+                 sizeof(text),
+                 "%s %d %s",
+                 alarm_text(ctx, L10N_WAKING_AGAIN_IN),
                  minutes_left,
-                 (minutes_left == 1) ? "" : "s");
+                 alarm_text(ctx, L10N_MINUTE_ABBR));
         alarm_set_label_text_if_changed(ctx->alarms.banner_label, text);
         alarm_banner_set_visible(ctx, true);
         return;
@@ -102,9 +200,12 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now)
         if (minutes_left < 1) {
             minutes_left = 1;
         }
-        snprintf(text, sizeof(text), "Waking you up in %d minute%s",
+        snprintf(text,
+                 sizeof(text),
+                 "%s %d %s",
+                 alarm_text(ctx, L10N_WAKING_IN),
                  minutes_left,
-                 (minutes_left == 1) ? "" : "s");
+                 alarm_text(ctx, L10N_MINUTE_ABBR));
         alarm_set_label_text_if_changed(ctx->alarms.banner_label, text);
         alarm_banner_set_visible(ctx, true);
         return;
@@ -132,12 +233,12 @@ void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now)
     requires_math = active_alarm_requires_math(ctx);
 
     char snooze_text[32];
-    snprintf(snooze_text, sizeof(snooze_text), "Snooze %u min", ctx->settings->snooze_minutes);
+    alarm_format_snooze(ctx, snooze_text, sizeof(snooze_text));
     set_action_button_text(ctx->alarms.snooze_btn, snooze_text);
     if (ctx->alarms.overlay_math_snooze_btn != NULL) {
         set_action_button_text(ctx->alarms.overlay_math_snooze_btn, snooze_text);
     }
-    set_action_button_text(ctx->alarms.stop_btn, "Off");
+    set_action_button_text(ctx->alarms.stop_btn, alarm_text(ctx, L10N_OFF));
     if (ctx->alarms.overlay_label != NULL) {
         lv_obj_add_flag(ctx->alarms.overlay_label, LV_OBJ_FLAG_HIDDEN);
     }
@@ -643,7 +744,7 @@ static void alarm_overlay_submit_math_answer(clock_ui_context_t *ctx)
     }
 
     alarm_overlay_reset_math_input(ctx);
-    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_error, "Wrong answer. Try again.");
+    alarm_set_label_text_if_changed(ctx->alarms.overlay_math_error, alarm_text(ctx, L10N_WRONG_ANSWER));
 }
 
 static void alarm_overlay_append_math_digit(clock_ui_context_t *ctx, uint8_t digit)
@@ -665,18 +766,18 @@ static void alarm_overlay_append_math_digit(clock_ui_context_t *ctx, uint8_t dig
     }
 }
 
-static void format_alarm_editor_summary(char *buffer, size_t size, const alarm_config_t *alarm)
+static void format_alarm_editor_summary(clock_ui_context_t *ctx, char *buffer, size_t size, const alarm_config_t *alarm)
 {
     if (buffer == NULL || size == 0 || alarm == NULL) {
         return;
     }
 
-    format_alarm_repeat_summary(buffer, size, alarm);
+    alarm_format_repeat_summary(ctx, buffer, size, alarm);
     if (!alarm->enabled) {
         size_t len = strlen(buffer);
 
         if (len < size) {
-            snprintf(buffer + len, size - len, "  Off");
+            snprintf(buffer + len, size - len, "  %s", alarm_text(ctx, L10N_OFF));
         }
     }
 }
@@ -783,7 +884,7 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
     if (ctx->alarms.manage_snooze_btn != NULL) {
         char snooze_text[32];
 
-        snprintf(snooze_text, sizeof(snooze_text), "Snooze %u min", ctx->settings->snooze_minutes);
+        alarm_format_snooze(ctx, snooze_text, sizeof(snooze_text));
         alarm_set_button_text_if_changed(ctx->alarms.manage_snooze_btn, snooze_text);
     }
 
@@ -805,13 +906,17 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
     }
     if (ctx->alarms.manage_test_btn != NULL) {
         alarm_set_button_text_if_changed(ctx->alarms.manage_test_btn,
-                                         ctx->runtime->alarm_test_active ? "Stop test" : "Test sound");
+                                         ctx->runtime->alarm_test_active ? alarm_text(ctx, L10N_STOP_TEST)
+                                                                         : alarm_text(ctx, L10N_TEST_SOUND));
     }
     if (ctx->alarms.management_settings_summary != NULL) {
         char wake_summary[64];
 
-        snprintf(wake_summary, sizeof(wake_summary), "Snooze %u min  Volume %u%%",
+        snprintf(wake_summary, sizeof(wake_summary), "%s %u %s  %s %u%%",
+                 alarm_text(ctx, L10N_SNOOZE),
                  ctx->settings->snooze_minutes,
+                 alarm_text(ctx, L10N_MINUTE_ABBR),
+                 alarm_text(ctx, L10N_VOLUME),
                  ctx->settings->alarm_volume);
         alarm_set_label_text_if_changed(ctx->alarms.management_settings_summary, wake_summary);
     }
@@ -819,27 +924,37 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
     if (management_visible) {
         enabled_count = count_enabled_alarms(ctx);
         if (ctx->runtime->alarm_ringing) {
-            snprintf(status, sizeof(status), "Alarm is ringing now");
+            snprintf(status, sizeof(status), "%s", alarm_text(ctx, L10N_ALARM_RINGING_NOW));
         } else if (ctx->runtime->alarm_test_active) {
-            snprintf(status, sizeof(status), "Testing alarm sound");
+            snprintf(status, sizeof(status), "%s", alarm_text(ctx, L10N_TESTING_ALARM_SOUND));
         } else if (ctx->runtime->snooze_active) {
             struct tm snooze_tm;
             char time_text[24];
 
             localtime_r(&ctx->runtime->snooze_deadline, &snooze_tm);
             format_alarm_time(time_text, sizeof(time_text), snooze_tm.tm_hour, snooze_tm.tm_min);
-            snprintf(status, sizeof(status), "Snoozed until %s", time_text);
+            snprintf(status, sizeof(status), "%s %s", alarm_text(ctx, L10N_SNOOZED_UNTIL), time_text);
         } else if (ctx->runtime->next_alarm_epoch > 0) {
             struct tm next_tm;
             char time_text[24];
 
             localtime_r(&ctx->runtime->next_alarm_epoch, &next_tm);
             format_alarm_time(time_text, sizeof(time_text), next_tm.tm_hour, next_tm.tm_min);
-            snprintf(status, sizeof(status), "Next up %s %s", s_day_short[next_tm.tm_wday], time_text);
+            snprintf(status,
+                     sizeof(status),
+                     "%s %s %s",
+                     alarm_text(ctx, L10N_NEXT_UP),
+                     l10n_day_short(ctx->settings->language, next_tm.tm_wday),
+                     time_text);
         } else if (enabled_count > 0) {
-            snprintf(status, sizeof(status), "%d alarm%s active", enabled_count, (enabled_count == 1) ? "" : "s");
+            snprintf(status,
+                     sizeof(status),
+                     "%d %s %s",
+                     enabled_count,
+                     alarm_text(ctx, L10N_ALARMS),
+                     alarm_text(ctx, L10N_ACTIVE));
         } else {
-            snprintf(status, sizeof(status), "No alarms scheduled");
+            snprintf(status, sizeof(status), "%s", alarm_text(ctx, L10N_NO_ALARMS_SCHEDULED));
         }
 
         alarm_set_label_text_if_changed(ctx->alarms.management_status, status);
@@ -862,12 +977,12 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
             lv_obj_clear_flag(ctx->alarms.list_card[i], LV_OBJ_FLAG_HIDDEN);
 
             format_alarm_time(time_text, sizeof(time_text), alarm->hour, alarm->minute);
-            format_alarm_repeat_summary(meta, sizeof(meta), alarm);
+            alarm_format_repeat_summary(ctx, meta, sizeof(meta), alarm);
             if (!alarm->enabled) {
                 size_t meta_len = strlen(meta);
 
                 if (meta_len < sizeof(meta)) {
-                    snprintf(meta + meta_len, sizeof(meta) - meta_len, "  Off");
+                    snprintf(meta + meta_len, sizeof(meta) - meta_len, "  %s", alarm_text(ctx, L10N_OFF));
                 }
             }
 
@@ -881,13 +996,13 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
             if (ctx->runtime->next_alarm_index == i &&
                 ctx->runtime->next_alarm_epoch > now &&
                 !ctx->runtime->alarm_ringing) {
-                alarm_set_label_text_if_changed(ctx->alarms.list_badge_label[i], "Next");
+                alarm_set_label_text_if_changed(ctx->alarms.list_badge_label[i], alarm_text(ctx, L10N_NEXT));
                 lv_obj_clear_flag(ctx->alarms.list_badge[i], LV_OBJ_FLAG_HIDDEN);
             } else if (!alarm->enabled) {
-                alarm_set_label_text_if_changed(ctx->alarms.list_badge_label[i], "Off");
+                alarm_set_label_text_if_changed(ctx->alarms.list_badge_label[i], alarm_text(ctx, L10N_OFF));
                 lv_obj_clear_flag(ctx->alarms.list_badge[i], LV_OBJ_FLAG_HIDDEN);
             } else if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {
-                alarm_set_label_text_if_changed(ctx->alarms.list_badge_label[i], "Once");
+                alarm_set_label_text_if_changed(ctx->alarms.list_badge_label[i], alarm_text(ctx, L10N_ONCE));
                 lv_obj_clear_flag(ctx->alarms.list_badge[i], LV_OBJ_FLAG_HIDDEN);
             } else {
                 lv_obj_add_flag(ctx->alarms.list_badge[i], LV_OBJ_FLAG_HIDDEN);
@@ -915,10 +1030,14 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
         alarm_set_roller_selected_if_changed(ctx->alarms.editor_minute_roller, ctx->alarms.editor_draft.minute);
         ctx->suppress_events = false;
         for (int i = 0; i < 4; ++i) {
+            alarm_set_button_text_if_changed(ctx->alarms.editor_repeat_btn[i],
+                                             alarm_text(ctx, alarm_repeat_preset_text_id(i)));
             alarm_set_checkable_state_if_changed(ctx->alarms.editor_repeat_btn[i], preset == i);
         }
 
         for (int day = 0; day < 7; ++day) {
+            alarm_set_button_text_if_changed(ctx->alarms.editor_day_btn[day],
+                                             l10n_day_short(ctx->settings->language, day));
             alarm_set_checkable_state_if_changed(ctx->alarms.editor_day_btn[day],
                                                  (ctx->alarms.editor_draft.days_mask & (1U << day)) != 0);
         }
@@ -926,13 +1045,14 @@ void sync_alarm_controls(clock_ui_context_t *ctx)
         format_alarm_time(editor_time, sizeof(editor_time),
                           ctx->alarms.editor_draft.hour,
                           ctx->alarms.editor_draft.minute);
-        format_alarm_editor_summary(summary, sizeof(summary), &ctx->alarms.editor_draft);
+        format_alarm_editor_summary(ctx, summary, sizeof(summary), &ctx->alarms.editor_draft);
 
         alarm_set_label_text_if_changed(ctx->alarms.editor_time_label, editor_time);
         alarm_set_label_text_if_changed(ctx->alarms.editor_summary_label, summary);
         if (ctx->alarms.editor_save_btn != NULL) {
             alarm_set_button_text_if_changed(ctx->alarms.editor_save_btn,
-                                             ctx->alarms.editor_is_new ? "Add" : "Save");
+                                             ctx->alarms.editor_is_new ? alarm_text(ctx, L10N_ADD)
+                                                                       : alarm_text(ctx, L10N_SAVE));
         }
         if (ctx->alarms.editor_delete_btn != NULL) {
             if (ctx->alarms.editor_is_new) {
@@ -1050,7 +1170,8 @@ static void alarm_banner_event_cb(lv_event_t *event)
         ctx->alarms.banner_feedback_revertible = false;
         snprintf(ctx->alarms.banner_feedback_text,
                  sizeof(ctx->alarms.banner_feedback_text),
-                 "Restored");
+                 "%s",
+                 alarm_text(ctx, L10N_RESTORED));
         update_alarm_banner(ctx, now);
         return;
     }
@@ -1064,7 +1185,8 @@ static void alarm_banner_event_cb(lv_event_t *event)
     ctx->alarms.banner_feedback_revertible = true;
     snprintf(ctx->alarms.banner_feedback_text,
              sizeof(ctx->alarms.banner_feedback_text),
-             "Cancelled");
+             "%s",
+             alarm_text(ctx, L10N_CANCELLED));
     update_alarm_banner(ctx, now);
 }
 
@@ -1085,7 +1207,7 @@ void create_alarm_banner(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(ctx->alarms.banner, alarm_banner_event_cb, LV_EVENT_CLICKED, ctx);
 
     ctx->alarms.banner_label = lv_label_create(ctx->alarms.banner);
-    lv_obj_set_style_text_font(ctx->alarms.banner_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(ctx->alarms.banner_label, &ui_i18n_24, 0);
     lv_obj_set_style_text_color(ctx->alarms.banner_label, lv_color_hex(UI_ACCENT_COL), 0);
     lv_obj_set_style_text_letter_space(ctx->alarms.banner_label, 1, 0);
     lv_obj_set_style_text_line_space(ctx->alarms.banner_label, 3, 0);
@@ -1120,18 +1242,18 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     lv_obj_add_flag(ctx->alarms.overlay, LV_OBJ_FLAG_HIDDEN);
 
     ctx->alarms.overlay_label = lv_label_create(ctx->alarms.overlay);
-    lv_obj_set_style_text_font(ctx->alarms.overlay_label, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_font(ctx->alarms.overlay_label, &ui_i18n_24, 0);
     lv_obj_set_style_text_color(ctx->alarms.overlay_label, lv_color_white(), 0);
     lv_obj_align(ctx->alarms.overlay_label, LV_ALIGN_TOP_MID, 0, 74);
-    lv_label_set_text(ctx->alarms.overlay_label, "Alarm");
+    alarm_bind_label(ctx, ctx->alarms.overlay_label, L10N_ALARM);
 
     ctx->alarms.overlay_subtitle = lv_label_create(ctx->alarms.overlay);
     lv_obj_set_width(ctx->alarms.overlay_subtitle, 520);
-    lv_obj_set_style_text_font(ctx->alarms.overlay_subtitle, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(ctx->alarms.overlay_subtitle, &ui_i18n_24, 0);
     lv_obj_set_style_text_color(ctx->alarms.overlay_subtitle, lv_color_hex(0xB9BDC2), 0);
     lv_obj_set_style_text_align(ctx->alarms.overlay_subtitle, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(ctx->alarms.overlay_subtitle, LV_ALIGN_TOP_MID, 0, 132);
-    lv_label_set_text(ctx->alarms.overlay_subtitle, "Snooze it or turn it off");
+    alarm_bind_label(ctx, ctx->alarms.overlay_subtitle, L10N_ALARM_OVERLAY_SUBTITLE);
 
     actions = create_row(ctx->alarms.overlay);
     ctx->alarms.overlay_actions = actions;
@@ -1143,12 +1265,12 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     lv_obj_align(actions, LV_ALIGN_CENTER, 0, 24);
 
     ctx->alarms.snooze_btn = create_big_action_button(actions,
-                                                      "Snooze 10 min",
+                                                      alarm_text(ctx, L10N_SNOOZE),
                                                       lv_color_hex(0x535A6B),
                                                       alarm_snooze_event_cb,
                                                       ctx);
     ctx->alarms.stop_btn = create_big_action_button(actions,
-                                                    "Off",
+                                                    alarm_text(ctx, L10N_OFF),
                                                     lv_color_hex(0xB54B3D),
                                                     alarm_stop_event_cb,
                                                     ctx);
@@ -1160,7 +1282,7 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     label = lv_obj_get_child(ctx->alarms.snooze_btn, 0);
     if (label != NULL) {
         lv_obj_set_width(label, 184);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_36, 0);
+        lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
         lv_obj_center(label);
@@ -1173,7 +1295,7 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     label = lv_obj_get_child(ctx->alarms.stop_btn, 0);
     if (label != NULL) {
         lv_obj_set_width(label, 184);
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_36, 0);
+        lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
         lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
         lv_obj_center(label);
@@ -1208,7 +1330,7 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
 
     ctx->alarms.overlay_math_error = lv_label_create(math_card);
     lv_obj_set_width(ctx->alarms.overlay_math_error, lv_pct(100));
-    lv_obj_set_style_text_font(ctx->alarms.overlay_math_error, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(ctx->alarms.overlay_math_error, &ui_i18n_20, 0);
     lv_obj_set_style_text_color(ctx->alarms.overlay_math_error, lv_color_hex(0xE28D84), 0);
     lv_obj_set_style_text_align(ctx->alarms.overlay_math_error, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_text(ctx->alarms.overlay_math_error, "");
@@ -1240,7 +1362,7 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     row = create_row(math_card);
     center_row(row);
     ctx->alarms.overlay_math_snooze_btn =
-        create_action_button(row, "Snooze 10 min", alarm_snooze_event_cb, ctx);
+        create_action_button(row, alarm_text(ctx, L10N_SNOOZE), alarm_snooze_event_cb, ctx);
     lv_obj_set_size(ctx->alarms.overlay_math_snooze_btn, 320, 64);
     lv_obj_set_style_radius(ctx->alarms.overlay_math_snooze_btn, 22, 0);
     lv_obj_set_style_bg_color(ctx->alarms.overlay_math_snooze_btn, lv_color_hex(0x3E4552), 0);
@@ -1266,6 +1388,7 @@ static lv_obj_t *create_filter_chip(lv_obj_t *parent, const char *text, lv_event
     lv_obj_set_style_pad_right(button, 20, 0);
     lv_obj_set_style_pad_top(button, 14, 0);
     lv_obj_set_style_pad_bottom(button, 14, 0);
+    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
     lv_label_set_text(label, text);
     lv_obj_center(label);
 
@@ -1910,7 +2033,7 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0B0B0B),
                                  92,
-                                 "Alarms",
+                                 alarm_text(ctx, L10N_ALARMS),
                                  alarm_management_overlay_event_cb,
                                  alarm_management_close_event_cb,
                                  ctx);
@@ -1922,15 +2045,16 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
     lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
+    alarm_bind_label(ctx, title, L10N_ALARMS);
 
     ctx->alarms.management_status = lv_label_create(header);
     lv_obj_set_width(ctx->alarms.management_status, 520);
-    lv_obj_set_style_text_font(ctx->alarms.management_status, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(ctx->alarms.management_status, &ui_i18n_20, 0);
     lv_obj_set_style_text_color(ctx->alarms.management_status, lv_color_hex(0xB1B1B1), 0);
     lv_obj_set_style_text_align(ctx->alarms.management_status, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_set_style_text_line_space(ctx->alarms.management_status, 3, 0);
     lv_label_set_long_mode(ctx->alarms.management_status, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(ctx->alarms.management_status, "No alarms scheduled");
+    lv_label_set_text(ctx->alarms.management_status, alarm_text(ctx, L10N_NO_ALARMS_SCHEDULED));
     lv_obj_align(ctx->alarms.management_status, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_pad_bottom(content, 28, 0);
     ctx->alarms.management_card_count = 0;
@@ -2039,8 +2163,8 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
         ctx->alarms.list_meta_label[i] = lv_label_create(meta_row);
         lv_obj_add_flag(ctx->alarms.list_meta_label[i], LV_OBJ_FLAG_EVENT_BUBBLE);
         lv_obj_set_style_text_color(ctx->alarms.list_meta_label[i], lv_color_hex(0xB7B7B7), 0);
-        lv_obj_set_style_text_font(ctx->alarms.list_meta_label[i], &lv_font_montserrat_24, 0);
-        lv_label_set_text(ctx->alarms.list_meta_label[i], "Weekdays");
+        lv_obj_set_style_text_font(ctx->alarms.list_meta_label[i], &ui_i18n_24, 0);
+        lv_label_set_text(ctx->alarms.list_meta_label[i], alarm_text(ctx, L10N_WEEKDAYS));
 
         badge = lv_obj_create(meta_row);
         lv_obj_add_flag(badge, LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -2057,8 +2181,8 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
         lv_obj_add_flag(badge, LV_OBJ_FLAG_HIDDEN);
         ctx->alarms.list_badge_label[i] = lv_label_create(badge);
         lv_obj_add_flag(ctx->alarms.list_badge_label[i], LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_obj_set_style_text_font(ctx->alarms.list_badge_label[i], &lv_font_montserrat_20, 0);
-        lv_label_set_text(ctx->alarms.list_badge_label[i], "Next");
+        lv_obj_set_style_text_font(ctx->alarms.list_badge_label[i], &ui_i18n_20, 0);
+        lv_label_set_text(ctx->alarms.list_badge_label[i], alarm_text(ctx, L10N_NEXT));
     }
 
     card = create_card(content);
@@ -2150,12 +2274,13 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_80,
                                  lv_color_hex(0x0B0B0B),
                                  92,
-                                 "Wake settings",
+                                 alarm_text(ctx, L10N_WAKE_SETTINGS),
                                  alarm_settings_overlay_event_cb,
                                  alarm_settings_close_event_cb,
                                  ctx);
     ctx->alarms.settings_overlay = surface.overlay;
     content = surface.content;
+    alarm_bind_label(ctx, surface.title, L10N_WAKE_SETTINGS);
     lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
 
     card = create_card(content);
@@ -2166,13 +2291,13 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     label = lv_label_create(card);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(label, "Snooze duration");
+    alarm_bind_label(ctx, label, L10N_SNOOZE_DURATION);
 
     row = create_row(card);
     center_row(row);
     lv_obj_set_style_pad_column(row, 18, 0);
     create_alarm_settings_round_button(row, "-", alarm_manage_snooze_decrease_event_cb, ctx);
-    ctx->alarms.manage_snooze_btn = create_action_button(row, "Snooze 10 min", alarm_manage_snooze_event_cb, ctx);
+    ctx->alarms.manage_snooze_btn = create_action_button(row, alarm_text(ctx, L10N_SNOOZE), alarm_manage_snooze_event_cb, ctx);
     lv_obj_set_size(ctx->alarms.manage_snooze_btn, 280, 86);
     lv_obj_set_style_radius(ctx->alarms.manage_snooze_btn, 28, 0);
     lv_obj_set_style_bg_color(ctx->alarms.manage_snooze_btn, lv_color_hex(UI_ACCENT_COL), 0);
@@ -2193,7 +2318,7 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     label = lv_label_create(row);
     lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
     lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(label, "Alarm sound");
+    alarm_bind_label(ctx, label, L10N_ALARM_SOUND);
 
     ctx->alarms.manage_volume_label = lv_label_create(row);
     lv_obj_set_style_text_font(ctx->alarms.manage_volume_label, &lv_font_montserrat_36, 0);
@@ -2215,7 +2340,7 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
 
     row = create_row(card);
     center_row(row);
-    ctx->alarms.manage_test_btn = create_action_button(row, "Test sound", alarm_manage_test_event_cb, ctx);
+    ctx->alarms.manage_test_btn = create_action_button(row, alarm_text(ctx, L10N_TEST_SOUND), alarm_manage_test_event_cb, ctx);
     lv_obj_set_size(ctx->alarms.manage_test_btn, 340, 74);
     lv_obj_set_style_radius(ctx->alarms.manage_test_btn, 26, 0);
     lv_obj_set_style_bg_color(ctx->alarms.manage_test_btn, lv_color_hex(0x2D2D2D), 0);
@@ -2228,7 +2353,13 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     lv_obj_set_width(card, 540);
     lv_obj_set_style_pad_all(card, 24, 0);
 
-    row = create_labeled_trailing_control_row(card, "Ascending alarm", "Ramp up", 360, NULL);
+    row = create_labeled_trailing_control_row(card,
+                                              alarm_text(ctx, L10N_ASCENDING_ALARM),
+                                              alarm_text(ctx, L10N_RAMP_UP),
+                                              360,
+                                              NULL);
+    alarm_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 0), L10N_ASCENDING_ALARM);
+    alarm_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 1), L10N_RAMP_UP);
 
     ctx->alarms.manage_ascending_sw = lv_switch_create(row);
     style_alarm_switch(ctx->alarms.manage_ascending_sw);
@@ -2263,7 +2394,6 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
 
 void create_alarm_editor_overlay(clock_ui_context_t *ctx)
 {
-    static const char *repeat_labels[4] = {"One time", "Every day", "Weekdays", "Weekends"};
     static const uint8_t display_day_order[7] = {1, 2, 3, 4, 5, 6, 0};
     ui_surface_t surface;
     lv_obj_t *title;
@@ -2280,7 +2410,7 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_80,
                                  lv_color_hex(0x0B0B0B),
                                  92,
-                                 "Edit alarm",
+                                 alarm_text(ctx, L10N_EDIT_ALARM),
                                  alarm_editor_overlay_event_cb,
                                  alarm_editor_close_event_cb,
                                  ctx);
@@ -2290,6 +2420,7 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     content = surface.content;
 
     lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 2);
+    alarm_bind_label(ctx, title, L10N_EDIT_ALARM);
 
     card = create_card(content);
     ctx->alarms.editor_time_label = lv_label_create(card);
@@ -2306,9 +2437,9 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     ctx->alarms.editor_summary_label = lv_label_create(card);
     lv_obj_set_width(ctx->alarms.editor_summary_label, lv_pct(100));
     lv_obj_set_style_text_color(ctx->alarms.editor_summary_label, lv_color_hex(0xB7B7B7), 0);
-    lv_obj_set_style_text_font(ctx->alarms.editor_summary_label, &lv_font_montserrat_24, 0);
+    lv_obj_set_style_text_font(ctx->alarms.editor_summary_label, &ui_i18n_24, 0);
     lv_obj_set_style_text_align(ctx->alarms.editor_summary_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(ctx->alarms.editor_summary_label, "Every day");
+    lv_label_set_text(ctx->alarms.editor_summary_label, alarm_text(ctx, L10N_EVERY_DAY));
     lv_obj_add_flag(ctx->alarms.editor_summary_label, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(ctx->alarms.editor_summary_label,
                         alarm_editor_scroll_to_section_event_cb,
@@ -2317,14 +2448,19 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
 
     card = create_card(content);
     ctx->alarms.editor_repeat_card = card;
-    create_section_title(card, "Repeat schedule", "Choose how often it rings");
+    create_section_title(card,
+                         alarm_text(ctx, L10N_REPEAT_SCHEDULE),
+                         alarm_text(ctx, L10N_REPEAT_SCHEDULE_SUBTITLE));
+    alarm_bind_label(ctx, lv_obj_get_child(card, 0), L10N_REPEAT_SCHEDULE);
+    alarm_bind_label(ctx, lv_obj_get_child(card, 1), L10N_REPEAT_SCHEDULE_SUBTITLE);
     row = create_row(card);
     center_row(row);
     for (int i = 0; i < 4; ++i) {
         ctx->alarms.editor_repeat_btn[i] = create_filter_chip(row,
-                                                             repeat_labels[i],
+                                                             alarm_text(ctx, alarm_repeat_preset_text_id((uint8_t)i)),
                                                              alarm_editor_repeat_event_cb,
                                                              ctx);
+        alarm_bind_button_label(ctx, ctx->alarms.editor_repeat_btn[i], alarm_repeat_preset_text_id((uint8_t)i));
     }
 
     row = create_row(card);
@@ -2336,7 +2472,7 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
         ctx->alarms.alarm_day_ctx[0][day].alarm_index = 0;
         ctx->alarms.alarm_day_ctx[0][day].day_index = (uint8_t)day;
         ctx->alarms.editor_day_btn[day] = create_filter_chip(row,
-                                                            s_day_short[day],
+                                                            l10n_day_short(ctx->settings->language, day),
                                                             alarm_editor_day_event_cb,
                                                             &ctx->alarms.alarm_day_ctx[0][day]);
     }
@@ -2344,7 +2480,7 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     card = create_card(content);
     ctx->alarms.editor_time_card = card;
     create_time_picker_section(card,
-                               "Set time",
+                               alarm_text(ctx, L10N_SET_TIME),
                                ctx->hour_options,
                                ctx->minute_options,
                                224,
@@ -2354,14 +2490,17 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
                                ctx,
                                &ctx->alarms.editor_hour_roller,
                                &ctx->alarms.editor_minute_roller);
+    alarm_bind_label(ctx, lv_obj_get_child(card, 0), L10N_SET_TIME);
 
     card = create_card(content);
     ctx->alarms.editor_math_card = card;
     row = create_labeled_trailing_control_row(card,
-                                              "Math to turn off",
-                                              "Solve a quick sum before the alarm stops",
+                                              alarm_text(ctx, L10N_MATH_TO_TURN_OFF),
+                                              alarm_text(ctx, L10N_MATH_TO_TURN_OFF_SUBTITLE),
                                               360,
                                               NULL);
+    alarm_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 0), L10N_MATH_TO_TURN_OFF);
+    alarm_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 1), L10N_MATH_TO_TURN_OFF_SUBTITLE);
     ctx->alarms.editor_math_sw = lv_switch_create(row);
     style_alarm_switch(ctx->alarms.editor_math_sw);
     lv_obj_add_event_cb(ctx->alarms.editor_math_sw, alarm_editor_math_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
@@ -2380,10 +2519,11 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     lv_obj_set_style_pad_column(actions, 16, 0);
     center_row(actions);
 
-    ctx->alarms.editor_delete_btn = create_action_button(actions, "Delete", alarm_editor_delete_event_cb, ctx);
+    ctx->alarms.editor_delete_btn = create_action_button(actions, alarm_text(ctx, L10N_DELETE), alarm_editor_delete_event_cb, ctx);
+    alarm_bind_button_label(ctx, ctx->alarms.editor_delete_btn, L10N_DELETE);
     lv_obj_set_width(ctx->alarms.editor_delete_btn, 170);
     lv_obj_set_style_bg_color(ctx->alarms.editor_delete_btn, lv_color_hex(0x3B1C1C), 0);
-    save_btn = create_action_button(actions, "Save", alarm_editor_save_event_cb, ctx);
+    save_btn = create_action_button(actions, alarm_text(ctx, L10N_SAVE), alarm_editor_save_event_cb, ctx);
     ctx->alarms.editor_save_btn = save_btn;
     lv_obj_set_width(save_btn, 200);
     lv_obj_set_style_bg_color(save_btn, lv_color_hex(UI_ACCENT_COL), 0);

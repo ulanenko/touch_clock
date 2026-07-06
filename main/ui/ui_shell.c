@@ -21,6 +21,24 @@ static void face_reveal_anim_ready_cb(lv_anim_t *anim);
 static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face);
 static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face);
 
+static void shell_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
+{
+    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
+        return;
+    }
+
+    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
+    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
+    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
+    ctx->l10n_binding_count++;
+    lv_label_set_text(label, l10n_text(ctx->settings->language, text_id));
+}
+
+static l10n_text_id_t face_theme_text_id(uint8_t theme)
+{
+    return theme == 2U ? L10N_THEME_3 : (theme == 1U ? L10N_THEME_2 : L10N_THEME_1);
+}
+
 static void face_reveal_anim_cb(void *var, int32_t value)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)var;
@@ -231,68 +249,6 @@ static void face_theme_auto_close_timer_cb(lv_timer_t *timer)
     }
 
     face_theme_overlay_close(ctx);
-}
-
-static const char *face_theme_name(clock_face_id_t face, uint8_t theme)
-{
-    switch (face) {
-    case CLOCK_FACE_DIGITAL:
-        switch (theme) {
-        case 1U:
-            return "Ice Blue";
-        case 2U:
-            return "Amber";
-        default:
-            return "Emerald";
-        }
-    case CLOCK_FACE_MATRIX:
-        switch (theme) {
-        case 1U:
-            return "Amber Grid";
-        case 2U:
-            return "Blue Grid";
-        default:
-            return "Green Grid";
-        }
-    case CLOCK_FACE_WHARTON:
-        switch (theme) {
-        case 1U:
-            return "Ruby Ring";
-        case 2U:
-            return "Polar Ring";
-        default:
-            return "Brass Ring";
-        }
-    case CLOCK_FACE_STERNGLAS:
-        switch (theme) {
-        case 1U:
-            return "Copper Hands";
-        case 2U:
-            return "Night Dial";
-        default:
-            return "Blue Hands";
-        }
-    case CLOCK_FACE_AVENIR:
-        switch (theme) {
-        case 1U:
-            return "Navy";
-        case 2U:
-            return "Forest Dial";
-        default:
-            return "Charcoal";
-        }
-    case CLOCK_FACE_MODERN_SILVER:
-        switch (theme) {
-        case 1U:
-            return "Crimson Accent";
-        case 2U:
-            return "Graphite Dial";
-        default:
-            return "Azure Accent";
-        }
-    default:
-        return (theme == 2U) ? "Theme 3" : ((theme == 1U) ? "Theme 2" : "Theme 1");
-    }
 }
 
 static void face_theme_update_visual_state(clock_ui_context_t *ctx, int32_t panel_y)
@@ -592,7 +548,6 @@ void face_theme_overlay_close(clock_ui_context_t *ctx)
 
 static void sync_face_theme_overlay(clock_ui_context_t *ctx)
 {
-    char title[64];
     clock_face_id_t face;
     uint8_t selected_theme;
 
@@ -602,8 +557,7 @@ static void sync_face_theme_overlay(clock_ui_context_t *ctx)
 
     face = sanitize_enabled_face(ctx->face_theme.picker_face);
     selected_theme = face_theme_value(ctx, face);
-    snprintf(title, sizeof(title), "Themes");
-    lv_label_set_text(ctx->face_theme.title, title);
+    lv_label_set_text(ctx->face_theme.title, l10n_text(ctx->settings->language, L10N_THEMES));
 
     for (uint8_t theme = 0; theme < CLOCK_FACE_THEME_COUNT; ++theme) {
         uint32_t swatches[3];
@@ -612,7 +566,8 @@ static void sync_face_theme_overlay(clock_ui_context_t *ctx)
         ctx->face_theme.option_ctx[theme].ui = ctx;
         ctx->face_theme.option_ctx[theme].face = face;
         ctx->face_theme.option_ctx[theme].theme = theme;
-        lv_label_set_text(ctx->face_theme.option_title[theme], face_theme_name(face, theme));
+        lv_label_set_text(ctx->face_theme.option_title[theme],
+                          l10n_text(ctx->settings->language, face_theme_text_id(theme)));
         face_theme_preview_colors(face, theme, swatches);
         for (int swatch = 0; swatch < 3; ++swatch) {
             lv_obj_set_style_bg_color(ctx->face_theme.option_swatches[theme][swatch],
@@ -1206,7 +1161,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 "Face themes",
+                                 l10n_text(ctx->settings->language, L10N_FACE_THEMES),
                                  face_theme_overlay_event_cb,
                                  face_theme_close_event_cb,
                                  ctx);
@@ -1215,6 +1170,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     ctx->face_theme.snapshot_img = lv_image_create(surface.overlay);
     ctx->face_theme.title = surface.title;
     ctx->face_theme.content = surface.content;
+    shell_bind_label(ctx, surface.title, L10N_FACE_THEMES);
     lv_obj_set_user_data(surface.panel, ctx);
     lv_obj_add_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
     lv_obj_clear_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
@@ -1222,7 +1178,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     lv_obj_align(surface.panel, LV_ALIGN_TOP_MID, 0, FACE_THEME_SHEET_CLOSED_Y);
     lv_obj_set_style_radius(surface.panel, 0, 0);
     lv_obj_set_style_bg_opa(surface.overlay, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_text_font(surface.title, &lv_font_montserrat_36, 0);
+    lv_obj_set_style_text_font(surface.title, &ui_i18n_24, 0);
     lv_obj_set_width(surface.title, 440);
     lv_obj_align(surface.title, LV_ALIGN_TOP_MID, 0, 18);
     ctx->face_theme.grabber = lv_obj_create(surface.panel);
@@ -1283,7 +1239,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
         ctx->face_theme.option_title[theme] = lv_label_create(card);
         lv_obj_set_style_text_font(ctx->face_theme.option_title[theme], &lv_font_montserrat_24, 0);
         lv_obj_set_style_text_color(ctx->face_theme.option_title[theme], lv_color_white(), 0);
-        lv_label_set_text(ctx->face_theme.option_title[theme], "");
+        shell_bind_label(ctx, ctx->face_theme.option_title[theme], face_theme_text_id(theme));
         lv_obj_add_flag(ctx->face_theme.option_title[theme], LV_OBJ_FLAG_EVENT_BUBBLE);
 
         row = create_row(card);

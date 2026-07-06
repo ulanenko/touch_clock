@@ -206,6 +206,14 @@ static void on_set_ui_click_volume(void *user_ctx, uint8_t volume)
     app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
+static void on_set_language(void *user_ctx, clock_language_t language)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_language(&app->core.state, language);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
 static void on_set_night_mode_enabled(void *user_ctx, bool enabled)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -391,6 +399,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_ui_click_feedback = on_ui_click_feedback,
         .on_set_ui_click_sound_enabled = on_set_ui_click_sound_enabled,
         .on_set_ui_click_volume = on_set_ui_click_volume,
+        .on_set_language = on_set_language,
         .on_set_night_mode_enabled = on_set_night_mode_enabled,
         .on_set_night_schedule = on_set_night_schedule,
         .on_set_night_brightness = on_set_night_brightness,

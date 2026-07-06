@@ -14,6 +14,7 @@
 #include "domain/brightness_policy.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "localization.h"
 #include "lvgl.h"
 #include "others/snapshot/lv_snapshot.h"
 #include "ui/ui_controls.h"
@@ -51,6 +52,7 @@
 #define FACE_THEME_SCRIM_OPA LV_OPA_70
 #define FACE_THEME_SHEET_SHOW_MS 140
 #define FACE_THEME_SHEET_HIDE_MS 110
+#define UI_L10N_BINDING_MAX 220
 
 #define SETTINGS_PANEL_MARGIN 32
 #define SETTINGS_HEADER_HEIGHT 76
@@ -129,6 +131,11 @@ typedef struct {
 } ui_edge_ctx_t;
 
 typedef struct {
+    lv_obj_t *label;
+    l10n_text_id_t text_id;
+} ui_l10n_binding_t;
+
+typedef struct {
     lv_obj_t *overlay;
     lv_obj_t *title;
     lv_obj_t *subtitle;
@@ -152,6 +159,7 @@ typedef struct {
     lv_obj_t *panel;
     lv_obj_t *slider;
     lv_obj_t *value;
+    lv_obj_t *title;
     lv_timer_t *overlay_auto_close_timer;
     lv_timer_t *auto_close_timer;
     lv_obj_t *edge_sensor;
@@ -217,6 +225,7 @@ typedef struct {
     lv_obj_t *other_sound_volume_card;
     lv_obj_t *other_sound_volume_slider;
     lv_obj_t *other_sound_volume_label;
+    lv_obj_t *other_language_dropdown;
     lv_obj_t *other_update_card;
     lv_obj_t *other_update_status_label;
     lv_obj_t *other_update_progress_label;
@@ -524,6 +533,9 @@ typedef struct clock_ui_state_t {
     char year_options[64];
     char timezone_options[1024];
     char face_options[96];
+    ui_l10n_binding_t l10n_bindings[UI_L10N_BINDING_MAX];
+    uint16_t l10n_binding_count;
+    clock_language_t cached_language;
     lv_timer_t *affordance_hide_timer;
     lv_obj_t *screen;
     lv_obj_t *tileview;

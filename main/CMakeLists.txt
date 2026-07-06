@@ -10,6 +10,7 @@ idf_component_register(
         app_settings.c
         clock_ui.c
         clock_model.c
+        localization.c
         domain/alarm_scheduler.c
         domain/brightness_policy.c
         domain/face_catalog.c
@@ -40,6 +41,8 @@ idf_component_register(
         assets/helvetica_neue_6.c
         assets/montserrat_digits_56.c
         assets/montserrat_math_72.c
+        assets/ui_i18n_20.c
+        assets/ui_i18n_24.c
         ui/ui_alarms.c
         ui/ui_brightness.c
         ui/ui_controls.c

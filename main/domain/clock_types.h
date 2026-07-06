@@ -6,7 +6,7 @@
 #include <time.h>
 
 #define MAX_ALARMS 5
-#define DISPLAY_BRIGHTNESS_MIN_PERCENT 19
+#define DISPLAY_BRIGHTNESS_MIN_PERCENT 22
 #define DISPLAY_BRIGHTNESS_MAX_PERCENT 100
 #define CLOCK_WIFI_SCAN_RESULT_MAX 16
 #define CLOCK_FACE_THEME_COUNT 3
@@ -34,6 +34,15 @@ typedef enum {
     TIME_SYNC_MODE_AUTO = 0,
     TIME_SYNC_MODE_MANUAL = 1,
 } time_sync_mode_t;
+
+typedef enum {
+    CLOCK_LANGUAGE_ENGLISH = 0,
+    CLOCK_LANGUAGE_POLISH = 1,
+    CLOCK_LANGUAGE_UKRAINIAN = 2,
+    CLOCK_LANGUAGE_RUSSIAN = 3,
+    CLOCK_LANGUAGE_DUTCH = 4,
+    CLOCK_LANGUAGE_COUNT = 5,
+} clock_language_t;
 
 typedef struct {
     bool enabled;
