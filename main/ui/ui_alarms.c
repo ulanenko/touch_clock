@@ -20,27 +20,17 @@ static lv_obj_t *create_alarm_math_keypad_button(lv_obj_t *parent,
 
 static const char *alarm_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id)
 {
-    return l10n_text(ctx->settings->language, text_id);
+    return ui_l10n_text(ctx, text_id);
 }
 
 static void alarm_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
 {
-    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
-        return;
-    }
-
-    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
-    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
-    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
-    ctx->l10n_binding_count++;
-    lv_label_set_text(label, alarm_text(ctx, text_id));
+    ui_l10n_bind_label_with_font(ctx, label, text_id, &ui_i18n_24);
 }
 
 static void alarm_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id)
 {
-    if (button != NULL) {
-        alarm_bind_label(ctx, lv_obj_get_child(button, 0), text_id);
-    }
+    alarm_bind_label(ctx, button != NULL ? lv_obj_get_child(button, 0) : NULL, text_id);
 }
 
 static void alarm_format_snooze(clock_ui_context_t *ctx, char *buffer, size_t size)

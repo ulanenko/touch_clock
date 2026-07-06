@@ -4,15 +4,7 @@ static void brightness_overlay_hide(clock_ui_context_t *ctx);
 
 static void brightness_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
 {
-    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
-        return;
-    }
-
-    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
-    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
-    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
-    ctx->l10n_binding_count++;
-    lv_label_set_text(label, l10n_text(ctx->settings->language, text_id));
+    ui_l10n_bind_label_with_font(ctx, label, text_id, &ui_i18n_24);
 }
 
 static void affordance_opa_anim_cb(void *obj, int32_t value)
@@ -426,7 +418,7 @@ static void brightness_panel_show(clock_ui_context_t *ctx)
     }
 
     if (ctx->brightness.title != NULL) {
-        lv_label_set_text(ctx->brightness.title, l10n_text(ctx->settings->language, L10N_BRIGHTNESS_PANEL));
+        lv_label_set_text(ctx->brightness.title, ui_l10n_text(ctx, L10N_BRIGHTNESS_PANEL));
     }
     update_brightness_ui(ctx);
     quick_actions_auto_close_pause(ctx);

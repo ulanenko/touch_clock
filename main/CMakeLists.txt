@@ -47,6 +47,7 @@ idf_component_register(
         ui/ui_brightness.c
         ui/ui_controls.c
         ui/ui_faces.c
+        ui/ui_l10n.c
         ui/ui_settings.c
         ui/ui_shell.c
         ui/ui_surface.c

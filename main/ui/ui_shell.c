@@ -23,15 +23,7 @@ static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face);
 
 static void shell_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
 {
-    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
-        return;
-    }
-
-    lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
-    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
-    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
-    ctx->l10n_binding_count++;
-    lv_label_set_text(label, l10n_text(ctx->settings->language, text_id));
+    ui_l10n_bind_label_with_font(ctx, label, text_id, &ui_i18n_24);
 }
 
 static l10n_text_id_t face_theme_text_id(uint8_t theme)
@@ -557,7 +549,7 @@ static void sync_face_theme_overlay(clock_ui_context_t *ctx)
 
     face = sanitize_enabled_face(ctx->face_theme.picker_face);
     selected_theme = face_theme_value(ctx, face);
-    lv_label_set_text(ctx->face_theme.title, l10n_text(ctx->settings->language, L10N_THEMES));
+    lv_label_set_text(ctx->face_theme.title, ui_l10n_text(ctx, L10N_THEMES));
 
     for (uint8_t theme = 0; theme < CLOCK_FACE_THEME_COUNT; ++theme) {
         uint32_t swatches[3];
@@ -567,7 +559,7 @@ static void sync_face_theme_overlay(clock_ui_context_t *ctx)
         ctx->face_theme.option_ctx[theme].face = face;
         ctx->face_theme.option_ctx[theme].theme = theme;
         lv_label_set_text(ctx->face_theme.option_title[theme],
-                          l10n_text(ctx->settings->language, face_theme_text_id(theme)));
+                          ui_l10n_text(ctx, face_theme_text_id(theme)));
         face_theme_preview_colors(face, theme, swatches);
         for (int swatch = 0; swatch < 3; ++swatch) {
             lv_obj_set_style_bg_color(ctx->face_theme.option_swatches[theme][swatch],
@@ -767,11 +759,14 @@ void sync_update_button(clock_ui_context_t *ctx)
     }
 
     if (ctx->update_button_label != NULL) {
+        char label[96];
+
         if (ctx->runtime->ota_busy) {
-            lv_label_set_text(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " Updating");
+            snprintf(label, sizeof(label), LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_UPDATING));
         } else {
-            lv_label_set_text(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " Install update");
+            snprintf(label, sizeof(label), LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_INSTALL_UPDATE));
         }
+        lv_label_set_text(ctx->update_button_label, label);
     }
     if (ctx->runtime->ota_busy) {
         lv_obj_add_state(ctx->update_button, LV_STATE_DISABLED);
@@ -1123,9 +1118,9 @@ void create_update_button(clock_ui_context_t *ctx)
     ui_attach_click_feedback(ctx->update_button, LV_EVENT_CLICKED);
 
     ctx->update_button_label = lv_label_create(ctx->update_button);
-    lv_obj_set_style_text_font(ctx->update_button_label, &lv_font_montserrat_20, 0);
+    lv_obj_set_style_text_font(ctx->update_button_label, &ui_i18n_20, 0);
     lv_obj_set_style_text_color(ctx->update_button_label, lv_color_hex(0x15110A), 0);
-    lv_label_set_text(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " Install update");
+    lv_label_set_text_fmt(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_INSTALL_UPDATE));
     lv_obj_center(ctx->update_button_label);
 }
 
@@ -1161,7 +1156,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
                                  SETTINGS_HEADER_HEIGHT,
-                                 l10n_text(ctx->settings->language, L10N_FACE_THEMES),
+                                 ui_l10n_text(ctx, L10N_THEMES),
                                  face_theme_overlay_event_cb,
                                  face_theme_close_event_cb,
                                  ctx);
@@ -1170,7 +1165,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     ctx->face_theme.snapshot_img = lv_image_create(surface.overlay);
     ctx->face_theme.title = surface.title;
     ctx->face_theme.content = surface.content;
-    shell_bind_label(ctx, surface.title, L10N_FACE_THEMES);
+    shell_bind_label(ctx, surface.title, L10N_THEMES);
     lv_obj_set_user_data(surface.panel, ctx);
     lv_obj_add_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
     lv_obj_clear_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
@@ -1268,6 +1263,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
 
 void build_root_ui(clock_ui_context_t *ctx)
 {
+    ui_l10n_reset(ctx);
     ctx->screen = lv_screen_active();
     lv_obj_set_style_bg_color(ctx->screen, lv_color_black(), 0);
     lv_obj_set_style_pad_all(ctx->screen, 0, 0);

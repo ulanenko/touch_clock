@@ -17,7 +17,7 @@ static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_colo
 
 static const char *settings_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id)
 {
-    return l10n_text(ctx->settings->language, text_id);
+    return ui_l10n_text(ctx, text_id);
 }
 
 static void settings_apply_i18n_font(lv_obj_t *label)
@@ -46,30 +46,18 @@ static void settings_apply_i18n_font(lv_obj_t *label)
 
 static void settings_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
 {
-    if (ctx == NULL || label == NULL || ctx->l10n_binding_count >= UI_L10N_BINDING_MAX) {
-        return;
-    }
-
     settings_apply_i18n_font(label);
-    ctx->l10n_bindings[ctx->l10n_binding_count].label = label;
-    ctx->l10n_bindings[ctx->l10n_binding_count].text_id = text_id;
-    ctx->l10n_binding_count++;
-    lv_label_set_text(label, settings_text(ctx, text_id));
+    ui_l10n_bind_label(ctx, label, text_id);
 }
 
 static void settings_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id)
 {
-    settings_bind_label(ctx, lv_obj_get_child(button, 0), text_id);
+    ui_l10n_bind_button_label(ctx, button, text_id);
 }
 
 static void settings_apply_l10n(clock_ui_context_t *ctx)
 {
-    for (uint16_t i = 0; i < ctx->l10n_binding_count; ++i) {
-        if (ctx->l10n_bindings[i].label != NULL) {
-            lv_label_set_text(ctx->l10n_bindings[i].label,
-                              settings_text(ctx, ctx->l10n_bindings[i].text_id));
-        }
-    }
+    ui_l10n_apply(ctx);
 
     if (ctx->settings_ui.other_language_dropdown != NULL) {
         lv_dropdown_set_options(ctx->settings_ui.other_language_dropdown, l10n_language_options());
@@ -691,7 +679,7 @@ static void sync_wifi_list(clock_ui_context_t *ctx)
         lv_obj_t *label = lv_label_create(ctx->settings_ui.wifi_network_list);
 
         style_centered_label(label, NULL, lv_color_hex(0x8F8F8F));
-        lv_label_set_text_fmt(label, "Showing %u of %u networks",
+        lv_label_set_text_fmt(label, settings_text(ctx, L10N_SHOWING_NETWORKS),
                               (unsigned)visible_count,
                               (unsigned)count);
     }
@@ -2714,9 +2702,6 @@ void create_settings_overlay(clock_ui_context_t *ctx)
         UI_SURFACE_EDGE_LEFT,
         UI_SURFACE_EDGE_RIGHT,
     };
-
-    ctx->l10n_binding_count = 0;
-    ctx->cached_language = (clock_language_t)CLOCK_LANGUAGE_COUNT;
 
     for (size_t i = 0; i < (sizeof(s_edges) / sizeof(s_edges[0])); ++i) {
         ctx->settings_ui.close_edge_ctx[s_edges[i]].ui = ctx;

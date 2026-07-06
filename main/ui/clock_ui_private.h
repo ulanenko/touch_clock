@@ -10,8 +10,6 @@ extern const uint8_t s_wharton_font[10][WH_DIGIT_ROWS];
 extern const uint8_t s_matrix_digit_col[4];
 extern const uint8_t s_matrix_colon_col;
 extern const uint8_t s_matrix_digit_row0;
-extern const char *s_day_short[7];
-extern const char *s_month_short[12];
 
 enum {
     ALARM_REPEAT_PRESET_ONCE = 0,
@@ -87,6 +85,15 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now);
 void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now);
 bool alarm_controls_need_sync(const clock_ui_context_t *ctx);
 void build_root_ui(clock_ui_context_t *ctx);
+void ui_l10n_reset(clock_ui_context_t *ctx);
+const char *ui_l10n_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id);
+void ui_l10n_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id);
+void ui_l10n_bind_label_with_font(clock_ui_context_t *ctx,
+                                  lv_obj_t *label,
+                                  l10n_text_id_t text_id,
+                                  const lv_font_t *font);
+void ui_l10n_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id);
+void ui_l10n_apply(clock_ui_context_t *ctx);
 void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face);
 void settings_button_event_cb(lv_event_t *event);
 bool face_theme_overlay_is_open(const clock_ui_context_t *ctx);
@@ -123,7 +130,6 @@ uint8_t brightness_ui_to_hw(int ui_percent);
 uint8_t brightness_hw_to_ui(int hw_percent);
 bool alarm_surface_is_open(const clock_ui_context_t *ctx);
 void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute);
-void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm);
 int count_enabled_alarms(const clock_ui_context_t *ctx);
 int find_alarm_slot_for_new_alarm(const clock_ui_context_t *ctx);
 uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm);

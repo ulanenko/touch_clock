@@ -36,12 +36,6 @@ const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
 const uint8_t s_matrix_digit_col[4] = {3, 9, 19, 25};
 const uint8_t s_matrix_colon_col = 16;
 const uint8_t s_matrix_digit_row0 = (MTX_GRID_Y - MTX_DIGIT_H) / 2;
-const char *s_day_short[7] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-const char *s_month_short[12] = {
-    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-};
-
 static void boot_overlay_apply_phase(clock_ui_context_t *ctx, uint8_t phase, const char *subtitle)
 {
     uint8_t active = phase % BOOT_SPINNER_DOT_COUNT;
@@ -600,48 +594,6 @@ bool alarm_surface_is_open(const clock_ui_context_t *ctx)
 void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
 {
     snprintf(buffer, size, "%02u:%02u", hour, minute);
-}
-
-void format_alarm_repeat_summary(char *buffer, size_t size, const alarm_config_t *alarm)
-{
-    static const uint8_t s_day_display_order[7] = {1, 2, 3, 4, 5, 6, 0};
-    size_t pos = 0;
-
-    if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {
-        snprintf(buffer, size, "One time");
-        return;
-    }
-
-    if (alarm->days_mask == 0x7F) {
-        snprintf(buffer, size, "Every day");
-        return;
-    }
-
-    if (alarm->days_mask == 0x3E) {
-        snprintf(buffer, size, "Weekdays");
-        return;
-    }
-
-    if (alarm->days_mask == 0x41) {
-        snprintf(buffer, size, "Weekends");
-        return;
-    }
-
-    buffer[0] = '\0';
-    for (int idx = 0; idx < 7; ++idx) {
-        int day = s_day_display_order[idx];
-
-        if ((alarm->days_mask & (1U << day)) == 0) {
-            continue;
-        }
-
-        if (buffer[0] != '\0' && pos < size) {
-            pos += snprintf(buffer + pos, size - pos, " ");
-        }
-        if (pos < size) {
-            pos += snprintf(buffer + pos, size - pos, "%s", s_day_short[day]);
-        }
-    }
 }
 
 int count_enabled_alarms(const clock_ui_context_t *ctx)
