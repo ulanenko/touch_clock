@@ -55,6 +55,9 @@ FONTS = {
     "it_mono_22": ("plexmono-regular", {}, [], 22, TEXT),
     "it_mono_18": ("plexmono-regular", {}, [], 18, TEXT),
     "it_mono_medium_18": ("plexmono-medium", {}, [], 18, TEXT),
+    # Kit: selected segment label, roller rows next to the selected time.
+    "it_medium_22": ("intertight", {"wght": 500}, [], 22, TEXT),
+    "it_light_34": ("intertight", {"wght": 300}, ["tnum"], 34, DIGITS),
     # Orbit: Inter with tabular figures for times.
     "or_semibold_168": ("inter", {"wght": 600, "opsz": 32}, ["tnum"], 168, DIGITS),
     "or_semibold_112": ("inter", {"wght": 600, "opsz": 32}, ["tnum"], 112, DIGITS),

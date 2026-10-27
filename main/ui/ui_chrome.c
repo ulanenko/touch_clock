@@ -3,6 +3,7 @@
 #include <string.h>
 
 #include "ui/clock_ui_private.h"
+#include "ui/kit/ui_kit.h"
 #include "ui/kit/ui_skin.h"
 
 #define UI_DEBUG_CALL_MAX 64
@@ -49,6 +50,7 @@ void ui_chrome_build(clock_ui_context_t *ctx)
     ui_alarms_create(ctx);
     ui_settings_create(ctx);
     ui_face_chrome_create_top(ctx);
+    ui_debug_register("kit_specimen", ui_kit_specimen_show);
 }
 
 void ui_chrome_refresh(clock_ui_context_t *ctx)

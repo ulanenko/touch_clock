@@ -104,6 +104,10 @@ void ui_l10n_bind_label_with_font(clock_ui_context_t *ctx,
                                   const lv_font_t *font);
 void ui_l10n_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id);
 void ui_l10n_apply(clock_ui_context_t *ctx);
+const char *ui_l10n_str(const clock_ui_context_t *ctx, const ui_l10n_str_t *str);
+/* Bind a kit label (kit_label) to a text, keeping the label's font and capitalisation. */
+void ui_l10n_bind_kit(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id);
+void ui_l10n_bind_kit_str(clock_ui_context_t *ctx, lv_obj_t *label, const ui_l10n_str_t *str);
 void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face);
 void settings_button_event_cb(lv_event_t *event);
 bool face_theme_overlay_is_open(const clock_ui_context_t *ctx);

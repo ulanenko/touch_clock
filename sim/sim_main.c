@@ -12,7 +12,13 @@
  *   drag <x0> <y0> <x1> <y1> <ms>  press, move linearly, release
  *   press <x> <y> | move <x> <y> | release
  *   call <name>                    run a named debug call (ui_debug_register in the areas)
- *   set <key> <value>              change settings or runtime state (see apply_set)
+ *   set <key> <value>              change settings or runtime state; keys: style (0 Instrument,
+ *                                  1 Orbit, 2 Atelier), face, language (0 en 1 pl 2 uk 3 ru 4 nl),
+ *                                  night_active, alarm_ringing, alarm_math, ota_available,
+ *                                  ota_progress, ota_configured, wifi_connected, wifi_scanning,
+ *                                  wifi_ssid_empty, time_synced, time_sync_manual, brightness,
+ *                                  night_enabled, snooze_minutes_left, next_alarm_minutes,
+ *                                  click_sound, alarm_test, sunrise_active
  *   shot <name>                    write <output-dir>/<name>.png
  *   clock <HH:MM:SS>               set the wall clock (date stays Tue 27 Oct 2026)
  */
@@ -390,6 +396,34 @@ static bool apply_set(const char *key, const char *value)
         s_runtime.effective_brightness = (uint8_t)v;
     } else if (strcmp(key, "night_enabled") == 0) {
         s_settings.night_mode.enabled = v != 0;
+    } else if (strcmp(key, "ota_progress") == 0) {
+        s_runtime.ota_busy = v > 0 && v < 100;
+        s_runtime.ota_progress = (uint8_t)v;
+    } else if (strcmp(key, "ota_configured") == 0) {
+        s_runtime.ota_configured = v != 0;
+    } else if (strcmp(key, "snooze_minutes_left") == 0) {
+        s_runtime.snooze_active = v > 0;
+        s_runtime.snooze_deadline = s_now + v * 60;
+    } else if (strcmp(key, "next_alarm_minutes") == 0) {
+        s_runtime.next_alarm_index = v > 0 ? 0 : -1;
+        s_runtime.next_alarm_epoch = v > 0 ? s_now + v * 60 : 0;
+    } else if (strcmp(key, "wifi_scanning") == 0) {
+        s_runtime.wifi_scanning = v != 0;
+    } else if (strcmp(key, "wifi_ssid_empty") == 0) {
+        if (v != 0) {
+            s_settings.wifi.ssid[0] = '\0';
+            s_runtime.wifi_connected = false;
+        }
+    } else if (strcmp(key, "time_synced") == 0) {
+        s_runtime.time_synced = v != 0;
+    } else if (strcmp(key, "click_sound") == 0) {
+        s_settings.ui_click_sound_enabled = v != 0;
+    } else if (strcmp(key, "alarm_test") == 0) {
+        s_runtime.alarm_test_active = v != 0;
+    } else if (strcmp(key, "sunrise_active") == 0) {
+        s_runtime.sunrise_active = v != 0;
+    } else if (strcmp(key, "time_sync_manual") == 0) {
+        s_settings.wifi.time_sync_mode = v != 0 ? TIME_SYNC_MODE_MANUAL : TIME_SYNC_MODE_AUTO;
     } else {
         return false;
     }

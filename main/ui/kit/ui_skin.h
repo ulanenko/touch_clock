@@ -21,7 +21,8 @@ typedef struct {
     /* Surfaces, from the deepest to the most raised. */
     lv_color_t bg;          /* screen ground of full pages */
     lv_color_t well;        /* recesses: slider tracks, fields, switch tracks */
-    lv_color_t surface;     /* sheets, dialogs, cards */
+    lv_color_t surface;     /* dialogs, cards, Orbit platters */
+    lv_color_t sheet;       /* sheets pulled over the face (Atelier: the page ink, not a card) */
     lv_color_t raised;      /* keys, platters, pressed rows */
     lv_color_t line;        /* 1 px hairlines and row separators */
     lv_color_t line_strong; /* rules, key edges, inactive ticks */
@@ -30,6 +31,9 @@ typedef struct {
     lv_color_t text;   /* primary */
     lv_color_t text_2; /* secondary: subtitles, values */
     lv_color_t text_3; /* tertiary: hints, inactive marks */
+    lv_color_t label;  /* small labels, eyebrows, section heads (Atelier brass) */
+    lv_color_t value;  /* trailing row values (Atelier champagne) */
+    lv_color_t icon_fg; /* row and key icons on a neutral ground (Atelier champagne) */
 
     /* Accent: Instrument signal orange, Orbit system blue, Atelier gilt. */
     lv_color_t accent;
@@ -38,6 +42,7 @@ typedef struct {
     lv_color_t accent_deep;  /* darker shade: key skirt, gradient end, pressed */
     lv_color_t danger;
     lv_color_t danger_text;  /* destructive text on the surface */
+    lv_color_t danger_soft;  /* flat tinted wash behind destructive content */
     lv_color_t night;        /* night-mode overlay text and marks */
 
     /* Per-area tints (Orbit). Instrument and Atelier map them to the accent. */
@@ -65,12 +70,15 @@ typedef struct {
     bool label_caps;               /* labels and eyebrows are set in capitals */
     bool button_caps;              /* button labels are set in capitals */
     int8_t label_letter_space;     /* tracking for caps labels, px */
+    int8_t button_letter_space;    /* tracking for caps button labels, px */
 
     /* Metrics (px, device coordinates). */
     int16_t content_x;       /* left edge of the page content column */
     int16_t content_w;       /* width of the page content column */
     int16_t page_top;        /* y of the back/close button */
-    int16_t title_y;         /* y of the page title */
+    int16_t nav_x;           /* x of the back/close button (the action key mirrors it) */
+    int16_t title_y;         /* y of the page title label (top of its line box) */
+    int16_t eyebrow_y;       /* y of the page eyebrow label (Orbit: below the title) */
     int16_t content_top;     /* y where page content starts */
     int16_t row_h;           /* single-line row height */
     int16_t row_h_2;         /* two-line row height */

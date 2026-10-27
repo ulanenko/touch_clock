@@ -52,7 +52,7 @@
 #define FACE_THEME_SCRIM_OPA LV_OPA_70
 #define FACE_THEME_SHEET_SHOW_MS 140
 #define FACE_THEME_SHEET_HIDE_MS 110
-#define UI_L10N_BINDING_MAX 220
+#define UI_L10N_BINDING_MAX 400
 #define UI_CHROME_TIMER_MAX 24
 
 #define SETTINGS_PANEL_MARGIN 32
@@ -131,9 +131,19 @@ typedef struct {
     ui_surface_edge_t edge;
 } ui_edge_ctx_t;
 
+/* A UI string in every language, in clock_language_t order (en, pl, uk, ru, nl). Areas
+ * declare their own strings inline with UI_L10N_STR instead of growing localization.c. */
+typedef struct {
+    const char *text[CLOCK_LANGUAGE_COUNT];
+} ui_l10n_str_t;
+
+#define UI_L10N_STR(en, pl, uk, ru, nl) {{(en), (pl), (uk), (ru), (nl)}}
+
 typedef struct {
     lv_obj_t *label;
     l10n_text_id_t text_id;
+    const ui_l10n_str_t *str; /* used instead of text_id when set */
+    bool kit;                 /* kit label: keep its font and capitalisation */
 } ui_l10n_binding_t;
 
 typedef struct {
