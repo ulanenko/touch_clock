@@ -305,7 +305,7 @@ static void segment_reset(const char *name_in)
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
     char name[PERF_SEG_NAME_MAX];
 
-    snprintf(name, sizeof(name), "%s.%s", s_style_names[s_loop % CLOCK_UI_STYLE_COUNT], name_in);
+    snprintf(name, sizeof(name), "%s.%s", s_style_names[(s_loop + CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST) % CLOCK_UI_STYLE_COUNT], name_in);
 #else
     const char *name = name_in;
 #endif
@@ -524,7 +524,7 @@ static void dump_thumbnail(const char *name_in)
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
     char name[48];
 
-    snprintf(name, sizeof(name), "%s_%s", s_style_names[s_loop % CLOCK_UI_STYLE_COUNT], name_in);
+    snprintf(name, sizeof(name), "%s_%s", s_style_names[(s_loop + CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST) % CLOCK_UI_STYLE_COUNT], name_in);
 #else
     const char *name = name_in;
 #endif
@@ -616,7 +616,7 @@ static void perf_restore_user_state(void)
 static void perf_begin_loop(void)
 {
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
-    clock_ui_style_t style = (clock_ui_style_t)(s_loop % CLOCK_UI_STYLE_COUNT);
+    clock_ui_style_t style = (clock_ui_style_t)((s_loop + CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST) % CLOCK_UI_STYLE_COUNT);
 
     printf("PERF style loop=%d style=%s\n", s_loop, s_style_names[style]);
     request_set_ui_style(s_ctx, style);
