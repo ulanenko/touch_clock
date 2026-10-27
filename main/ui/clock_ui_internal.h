@@ -237,6 +237,10 @@ typedef struct {
     lv_obj_t *modern_silver_hands_canvas;
     void *modern_silver_hands_buf;
     bool matrix_on[MTX_GRID_X][MTX_GRID_Y];
+    /* What the canvas shows, so a tick redraws only the dots that changed. */
+    bool matrix_drawn;
+    uint32_t matrix_drawn_colors[3]; /* bg, off, on */
+    bool matrix_drawn_on[MTX_GRID_X][MTX_GRID_Y];
     int matrix_x0;
     int matrix_y0;
     void *matrix_face_buf;
