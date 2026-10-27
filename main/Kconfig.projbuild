@@ -74,6 +74,14 @@ config TOUCH_CLOCK_PERF_TOUR_THUMB_STEP
         range 1 8
         default 4
 
+config TOUCH_CLOCK_PERF_TOUR_PROFILE_SEGMENTS
+        string "Steps to profile with the LVGL builtin profiler (comma separated)"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default ""
+        help
+            Needs LV_USE_PROFILER and LV_USE_PROFILER_BUILTIN. The first frames of each
+            listed step are traced and printed as "PROF" lines.
+
 config TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
         bool "Capture full-resolution screenshots of every face instead of the tour"
         depends on TOUCH_CLOCK_PERF_TOUR_THUMBNAILS

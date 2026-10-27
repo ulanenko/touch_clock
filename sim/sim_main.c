@@ -20,6 +20,10 @@
  *                                  night_enabled, snooze_minutes_left, next_alarm_minutes,
  *                                  click_sound, alarm_test, sunrise_active
  *   shot <name>                    write <output-dir>/<name>.png
+ *   alarms                         print the saved alarms
+ *   bench <name> [n]               time n full-screen renders (default 20) and print the average
+ *   benchdrag <name> <x0> <y0> <x1> <y1> <ms>
+ *                                  drag and time the UI work (events, layout, render) per step
  *   clock <HH:MM:SS>               set the wall clock (date stays Tue 27 Oct 2026)
  */
 #include <ctype.h>
@@ -431,6 +435,44 @@ static bool apply_set(const char *key, const char *value)
     return true;
 }
 
+static double now_ms(void)
+{
+    struct timespec t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return t.tv_sec * 1e3 + t.tv_nsec / 1e6;
+}
+
+static void bench_drag(const char *name, int32_t x0, int32_t y0, int32_t x1, int32_t y1, uint32_t ms)
+{
+    double total = 0;
+    double worst = 0;
+    int steps = 0;
+
+    s_pointer.x = x0;
+    s_pointer.y = y0;
+    s_pointer.pressed = true;
+    step(30);
+    for (uint32_t t = SIM_STEP_MS * 3; t <= ms; t += SIM_STEP_MS * 3) {
+        double start;
+        double spent;
+
+        s_pointer.x = x0 + (x1 - x0) * (int32_t)t / (int32_t)ms;
+        s_pointer.y = y0 + (y1 - y0) * (int32_t)t / (int32_t)ms;
+        start = now_ms();
+        step(SIM_STEP_MS * 3);
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(NULL);
+        spent = now_ms() - start;
+        total += spent;
+        worst = spent > worst ? spent : worst;
+        steps++;
+    }
+    s_pointer.pressed = false;
+    step(300);
+    printf("benchdrag %s avg %.2f ms max %.2f ms (%d steps)\n", name, total / steps, worst, steps);
+}
+
 static int run_scenario(FILE *f)
 {
     char line[256];
@@ -485,6 +527,30 @@ static int run_scenario(FILE *f)
             s_now = make_time(x0, y0, x1);
             clock_ui_tick(s_now);
             step(SIM_STEP_MS);
+        } else if (strcmp(cmd, "benchdrag") == 0 &&
+                   sscanf(line, "%*s %63s %d %d %d %d %d", a, &x0, &y0, &x1, &y1, &ms) == 6) {
+            bench_drag(a, x0, y0, x1, y1, (uint32_t)ms);
+        } else if (strcmp(cmd, "alarms") == 0) {
+            for (int i = 0; i < MAX_ALARMS; i++) {
+                const alarm_config_t *al = &s_settings.alarms[i];
+
+                printf("alarm %d: %s %02u:%02u days=0x%02x repeat=%u math=%d\n", i, al->enabled ? "on " : "off",
+                       al->hour, al->minute, al->days_mask, al->repeat_mode, al->math_unlock_enabled);
+            }
+        } else if (strcmp(cmd, "bench") == 0 && sscanf(line, "%*s %63s", a) == 1) {
+            int n = 20;
+            struct timespec t0, t1;
+
+            sscanf(line, "%*s %*s %d", &n);
+            lv_refr_now(NULL);
+            clock_gettime(CLOCK_MONOTONIC, &t0);
+            for (int i = 0; i < n; i++) {
+                lv_obj_invalidate(lv_screen_active());
+                lv_refr_now(NULL);
+            }
+            clock_gettime(CLOCK_MONOTONIC, &t1);
+            printf("bench %s %.2f ms\n", a,
+                   ((t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6) / n);
         } else if (strcmp(cmd, "shot") == 0 && sscanf(line, "%*s %63s", a) == 1) {
             write_png(a);
         } else {

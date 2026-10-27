@@ -12,6 +12,12 @@
 #include "freertos/task.h"
 
 #include "clock_ui_private.h"
+
+#if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
+#include "src/misc/lv_profiler_builtin.h"
+#include "src/misc/lv_profiler_builtin_private.h"
+#define PERF_PROFILE_FRAMES 3
+#endif
 #include "ui/ui_areas.h"
 
 #define PERF_SEG_NAME_MAX 40
@@ -84,6 +90,11 @@ static perf_gesture_state_t s_gesture;
 static perf_segment_t s_seg;
 static int s_step = -1;
 static int s_loop;
+static alarm_config_t s_saved_alarms[MAX_ALARMS];
+static uint8_t s_saved_style;
+#if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
+static int s_profile_frames_left;
+#endif
 static uint32_t s_hold_until;
 static uint32_t s_step_start;
 static bool s_step_started;
@@ -204,6 +215,74 @@ static const perf_step_t s_steps[] = {
 
 #define PERF_STEP_COUNT ((int)(sizeof(s_steps) / sizeof(s_steps[0])))
 
+#if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
+static uint64_t profile_tick(void)
+{
+    return (uint64_t)esp_timer_get_time();
+}
+
+static void profile_flush(const char *buf)
+{
+    printf("PROF %s", buf);
+}
+
+static int profile_tid(void)
+{
+    return (int)(((uintptr_t)xTaskGetCurrentTaskHandle() >> 4) & 0xFFFF);
+}
+
+static int profile_cpu(void)
+{
+    return (int)xPortGetCoreID();
+}
+
+static void profile_init(void)
+{
+    lv_profiler_builtin_config_t config;
+
+    lv_profiler_builtin_uninit();
+    lv_profiler_builtin_config_init(&config);
+    config.buf_size = 512 * 1024;
+    config.tick_per_sec = 1000000;
+    config.tick_get_cb = profile_tick;
+    config.flush_cb = profile_flush;
+    config.tid_get_cb = profile_tid;
+    config.cpu_get_cb = profile_cpu;
+    lv_profiler_builtin_init(&config);
+    lv_profiler_builtin_set_enable(false);
+}
+
+static bool profile_wanted(const char *raw)
+{
+    const char *list = CONFIG_TOUCH_CLOCK_PERF_TOUR_PROFILE_SEGMENTS;
+    size_t len = strlen(raw);
+
+    while (*list != '\0') {
+        const char *end = strchr(list, ',');
+        size_t item = end != NULL ? (size_t)(end - list) : strlen(list);
+
+        if (item == len && strncmp(list, raw, len) == 0) {
+            return true;
+        }
+        if (end == NULL) {
+            break;
+        }
+        list = end + 1;
+    }
+    return false;
+}
+
+static void profile_stop(void)
+{
+    if (s_profile_frames_left > 0) {
+        s_profile_frames_left = 0;
+        lv_profiler_builtin_set_enable(false);
+        printf("PROF_END\n");
+        lv_profiler_builtin_flush();
+    }
+}
+#endif
+
 static void segment_reset(const char *name_in)
 {
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
@@ -216,6 +295,14 @@ static void segment_reset(const char *name_in)
     memset(&s_seg, 0, sizeof(s_seg));
     snprintf(s_seg.name, sizeof(s_seg.name), "%s", name);
     snprintf(s_seg.raw, sizeof(s_seg.raw), "%s", name_in);
+#if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
+    profile_stop();
+    if (profile_wanted(name_in)) {
+        printf("PROF_BEGIN %s\n", name);
+        s_profile_frames_left = PERF_PROFILE_FRAMES;
+        lv_profiler_builtin_set_enable(true);
+    }
+#endif
     s_seg.internal_free_min = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     s_last_refr_start = 0;
 }
@@ -348,6 +435,12 @@ static void display_event_cb(lv_event_t *event)
         int64_t render;
         int64_t pre;
 
+#if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
+        if (s_profile_frames_left > 0 && --s_profile_frames_left == 0) {
+            s_profile_frames_left = 1;
+            profile_stop();
+        }
+#endif
         if (s_render_start == 0 || s_seg.name[0] == '\0') {
             return;
         }
@@ -479,6 +572,28 @@ static void start_step(const perf_step_t *step)
     }
 }
 
+/* The tour taps and drags through real screens, which can change real settings (an alarm
+ * saved from the editor, the UI style). Put the user's alarms and style back at the end. */
+static void perf_save_user_state(void)
+{
+    memcpy(s_saved_alarms, s_ctx->settings->alarms, sizeof(s_saved_alarms));
+    s_saved_style = s_ctx->settings->ui_style;
+}
+
+static void perf_restore_user_state(void)
+{
+    for (uint8_t i = 0; i < MAX_ALARMS; i++) {
+        if (memcmp(&s_ctx->settings->alarms[i], &s_saved_alarms[i], sizeof(alarm_config_t)) != 0) {
+            printf("PERF restore alarm %u\n", i);
+            request_save_alarm(s_ctx, i, &s_saved_alarms[i]);
+        }
+    }
+    if (s_ctx->settings->ui_style != s_saved_style) {
+        request_set_ui_style(s_ctx, (clock_ui_style_t)s_saved_style);
+    }
+    clock_ui_refresh();
+}
+
 /* With TOUCH_CLOCK_PERF_TOUR_STYLES each loop runs in the next UI style; the chrome rebuild
  * gets a moment to settle before the first step. */
 static void perf_begin_loop(void)
@@ -533,6 +648,7 @@ static void tour_timer_cb(lv_timer_t *timer)
         s_loop++;
         if (s_loop >= CONFIG_TOUCH_CLOCK_PERF_TOUR_LOOPS) {
             printf("PERF tour_done loops=%d\n", s_loop);
+            perf_restore_user_state();
             s_manual = true;
             s_manual_start = lv_tick_get();
             segment_reset("manual");
@@ -568,6 +684,10 @@ void ui_perf_tour_start(clock_ui_context_t *ctx)
     lv_display_t *disp = lv_display_get_default();
 
     s_ctx = ctx;
+    perf_save_user_state();
+#if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
+    profile_init();
+#endif
     ui_ppa_blend_benchmark();
     s_indev = lv_indev_create();
     lv_indev_set_type(s_indev, LV_INDEV_TYPE_POINTER);

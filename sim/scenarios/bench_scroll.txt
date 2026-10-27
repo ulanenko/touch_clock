@@ -1,0 +1,45 @@
+# UI work per drag step while scrolling the main pages, per style.
+set style 0
+wait 300
+call open_other
+wait 400
+benchdrag instrument.other 360 600 360 200 600
+call open_night
+wait 400
+benchdrag instrument.night 360 600 360 200 600
+call open_wifi
+wait 400
+benchdrag instrument.wifi 360 600 360 200 600
+call close_settings
+call open_alarms
+wait 400
+benchdrag instrument.alarms 360 600 360 200 600
+call close_alarms
+set style 1
+wait 300
+call open_other
+wait 400
+benchdrag orbit.other 360 600 360 200 600
+call open_wifi
+wait 400
+benchdrag orbit.wifi 360 600 360 200 600
+call close_settings
+call open_alarms
+wait 400
+benchdrag orbit.alarms 360 600 360 200 600
+call close_alarms
+set style 2
+wait 300
+call open_other
+wait 400
+benchdrag atelier.other 360 600 360 200 600
+call open_night
+wait 400
+benchdrag atelier.night 360 600 360 200 600
+call open_wifi
+wait 400
+benchdrag atelier.wifi 360 600 360 200 600
+call close_settings
+call open_alarms
+wait 400
+benchdrag atelier.alarms 360 600 360 200 600

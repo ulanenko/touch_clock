@@ -1,0 +1,85 @@
+# The perf tour's Orbit loop, with render benches between steps, to find what stays slow.
+set style 1
+wait 2500
+bench 00_idle
+tap 360 300
+wait 1500
+bench 01_after_tap
+drag 600 280 120 280 220
+wait 1200
+drag 600 280 120 280 220
+wait 1200
+drag 120 280 600 280 220
+wait 1200
+drag 120 280 600 280 220
+wait 1200
+bench 02_after_swipes
+drag 360 140 360 560 400
+wait 900
+call close_theme
+wait 900
+drag 360 140 360 300 300
+wait 900
+drag 360 140 360 560 250
+wait 900
+call close_theme
+wait 900
+bench 03_after_theme
+drag 360 700 360 260 450
+wait 1000
+call close_quick
+wait 900
+tap 360 300
+wait 500
+bench 04_after_quick
+alarms
+call open_settings
+wait 1200
+call open_wifi
+wait 1200
+drag 360 620 360 220 140
+wait 700
+drag 360 220 360 620 140
+wait 700
+call open_night
+wait 1200
+drag 360 620 360 220 140
+wait 700
+call open_other
+wait 1200
+drag 360 620 360 220 140
+wait 700
+bench 05_other
+call join_dialog
+wait 1500
+call settings_back
+wait 800
+call style_picker
+wait 1200
+call night_face_picker
+wait 2500
+bench 06_night_faces
+call close_settings
+wait 1200
+bench 07_after_settings_close
+alarms
+call open_settings
+wait 1200
+call close_settings
+wait 1200
+call open_alarms
+wait 1200
+drag 360 620 360 220 140
+wait 700
+alarms
+call new_alarm
+wait 1500
+alarms
+call close_alarm_editor
+wait 1200
+call close_alarms
+wait 1200
+bench 08_end
+alarms
+wait 5000
+bench 09_end_idle
