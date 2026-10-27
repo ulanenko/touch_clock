@@ -48,9 +48,10 @@ idf_component_register(
         ui/ui_controls.c
         ui/ui_faces.c
         ui/ui_l10n.c
+        ui/ui_ppa_blend.c
         ui/ui_settings.c
         ui/ui_shell.c
         ui/ui_surface.c
     INCLUDE_DIRS .
     REQUIRES esp_wifi
-    PRIV_REQUIRES app_update esp_http_client esp_hw_support esp_timer mbedtls nvs_flash)
+    PRIV_REQUIRES app_update esp_driver_ppa esp_http_client esp_hw_support esp_mm esp_timer mbedtls nvs_flash)

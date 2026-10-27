@@ -1,5 +1,7 @@
 #include "ui/clock_ui_private.h"
 
+#include <string.h>
+
 #include "domain/face_catalog.h"
 
 #define FACE_REVEAL_START_SIZE 48
@@ -34,14 +36,57 @@ static l10n_text_id_t face_theme_text_id(uint8_t theme)
 static void face_reveal_anim_cb(void *var, int32_t value)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)var;
+    int32_t visible;
 
     if (ctx == NULL || ctx->faces.face_reveal_shell == NULL) {
         return;
     }
 
-    lv_obj_set_size(ctx->faces.face_reveal_shell, value, value);
-    lv_obj_set_style_radius(ctx->faces.face_reveal_shell, LV_RADIUS_CIRCLE, 0);
+    /* Keep the view a multiple of 4 px so the cropped buffer stays 4-byte aligned. */
+    visible = LV_CLAMP(4, value, SCREEN_SIZE) & ~3;
+    ctx->faces.face_reveal_size = value;
+    lv_obj_set_size(ctx->faces.face_reveal_shell, visible, visible);
     lv_obj_center(ctx->faces.face_reveal_shell);
+    lv_obj_invalidate(ctx->faces.face_reveal_shell);
+}
+
+/* Draws the centre of the target face snapshot clipped to the growing circle. Cropping the
+ * snapshot to the circle's box lets clip_radius do the masking without the full-screen ARGB
+ * layers that clip_corner on a parent object would allocate every frame. */
+static void face_reveal_draw_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    lv_draw_buf_t *src = ctx->faces.face_reveal_buf;
+    lv_draw_buf_t *view = &ctx->faces.face_reveal_view;
+    lv_draw_image_dsc_t dsc;
+    lv_area_t area;
+    int32_t visible;
+    int32_t x0;
+    int32_t y0;
+
+    if (src == NULL || src->data == NULL) {
+        return;
+    }
+
+    lv_obj_get_coords(ctx->faces.face_reveal_shell, &area);
+    visible = lv_area_get_width(&area);
+    x0 = ((int32_t)src->header.w - visible) / 2;
+    y0 = ((int32_t)src->header.h - visible) / 2;
+    if (x0 < 0 || y0 < 0) {
+        return;
+    }
+
+    *view = *src;
+    view->header.w = visible;
+    view->header.h = visible;
+    view->data = src->data + (size_t)y0 * src->header.stride + (size_t)x0 * 2;
+    view->data_size = (uint32_t)src->header.stride * visible;
+
+    lv_draw_image_dsc_init(&dsc);
+    dsc.src = view;
+    dsc.image_area = area;
+    dsc.clip_radius = ctx->faces.face_reveal_size < SCREEN_SIZE ? visible / 2 : 0;
+    lv_draw_image(lv_event_get_layer(event), &dsc, &area);
 }
 
 static void face_reveal_anim_ready_cb(lv_anim_t *anim)
@@ -63,8 +108,7 @@ static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face)
 
     if (ctx == NULL ||
         ctx->faces.face_reveal_render == NULL ||
-        ctx->faces.face_reveal_shell == NULL ||
-        ctx->faces.face_reveal_img == NULL) {
+        ctx->faces.face_reveal_shell == NULL) {
         return false;
     }
 
@@ -97,8 +141,6 @@ static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face)
     }
 
     ctx->faces.face_reveal_target = face;
-    lv_image_set_src(ctx->faces.face_reveal_img, ctx->faces.face_reveal_buf);
-    lv_obj_align(ctx->faces.face_reveal_img, LV_ALIGN_CENTER, 0, 0);
     return true;
 }
 
@@ -171,6 +213,83 @@ static void snapshot_obj_to_image(lv_obj_t *source, lv_obj_t *image, lv_draw_buf
 
     lv_image_set_src(image, *draw_buf);
     lv_obj_set_pos(image, -ext_draw, -ext_draw);
+}
+
+/*
+ * While a sheet is dragged or animating, the face under it is shown as a snapshot drawn
+ * with image opacity over the overlay's opaque black background, instead of the live face
+ * under a translucent black scrim. It looks the same, but the opaque overlay lets LVGL start
+ * each frame at the overlay, so the live face and the full-screen scrim blend are skipped.
+ * The snapshot is taken when the movement starts, so the face holds still until it ends.
+ */
+lv_obj_t *ui_backdrop_create(lv_obj_t *overlay)
+{
+    lv_obj_t *backdrop = lv_image_create(overlay);
+
+    lv_obj_move_to_index(backdrop, 0);
+    lv_obj_add_flag(backdrop, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
+    lv_obj_remove_flag(backdrop, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(backdrop, 0, 0);
+    return backdrop;
+}
+
+static bool backdrop_capture(clock_ui_context_t *ctx, lv_obj_t *overlay)
+{
+    lv_result_t res;
+
+    if (!ctx->backdrop_ready) {
+        uint32_t stride = SCREEN_SIZE * 2U;
+        uint32_t size = stride * SCREEN_SIZE;
+        void *data = heap_caps_aligned_alloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, size, MALLOC_CAP_SPIRAM);
+
+        if (data == NULL) {
+            return false;
+        }
+        if (lv_draw_buf_init(&ctx->backdrop_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565,
+                             stride, data, size) != LV_RESULT_OK) {
+            heap_caps_free(data);
+            return false;
+        }
+        ctx->backdrop_ready = true;
+    }
+
+    lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    res = lv_snapshot_take_to_draw_buf(ctx->screen, LV_COLOR_FORMAT_RGB565, &ctx->backdrop_buf);
+    lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    return res == LV_RESULT_OK;
+}
+
+void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop, bool moving, lv_opa_t dim_opa)
+{
+    bool shown;
+
+    if (ctx == NULL || overlay == NULL || backdrop == NULL) {
+        return;
+    }
+
+    shown = !lv_obj_has_flag(backdrop, LV_OBJ_FLAG_HIDDEN);
+    if (moving && !shown && backdrop_capture(ctx, overlay)) {
+        lv_image_set_src(backdrop, &ctx->backdrop_buf);
+        lv_obj_invalidate(backdrop);
+        lv_obj_remove_flag(backdrop, LV_OBJ_FLAG_HIDDEN);
+        shown = true;
+    } else if (!moving && shown) {
+        lv_obj_add_flag(backdrop, LV_OBJ_FLAG_HIDDEN);
+        shown = false;
+    }
+
+    if (shown) {
+        lv_opa_t image_opa = LV_OPA_COVER - dim_opa;
+
+        if (lv_obj_get_style_bg_opa(overlay, LV_PART_MAIN) != LV_OPA_COVER) {
+            lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
+        }
+        if (lv_obj_get_style_image_opa(backdrop, LV_PART_MAIN) != image_opa) {
+            lv_obj_set_style_image_opa(backdrop, image_opa, 0);
+        }
+    } else if (lv_obj_get_style_bg_opa(overlay, LV_PART_MAIN) != dim_opa) {
+        lv_obj_set_style_bg_opa(overlay, dim_opa, 0);
+    }
 }
 
 static void face_theme_set_snapshot_visible(clock_ui_context_t *ctx, bool visible)
@@ -254,6 +373,9 @@ static void face_theme_update_visual_state(clock_ui_context_t *ctx, int32_t pane
     int32_t progress = clamped_y - FACE_THEME_SHEET_CLOSED_Y;
     lv_opa_t opa = (lv_opa_t)((progress * FACE_THEME_SCRIM_OPA) / travel);
 
+    ui_backdrop_set(ctx, ctx->face_theme.overlay, ctx->face_theme.backdrop_img,
+                    ctx->face_theme.snapshot_visible, opa);
+
     if (ctx->face_theme.snapshot_visible && ctx->face_theme.snapshot_img != NULL) {
         lv_coord_t ext_draw = 0;
 
@@ -262,12 +384,10 @@ static void face_theme_update_visual_state(clock_ui_context_t *ctx, int32_t pane
             ext_draw = (lv_coord_t)((int32_t)ctx->face_theme.snapshot_buf->header.w - SCREEN_SIZE) / 2;
         }
         lv_obj_set_pos(ctx->face_theme.snapshot_img, -ext_draw, clamped_y - ext_draw);
-        lv_obj_set_style_bg_opa(ctx->face_theme.overlay, FACE_THEME_SCRIM_OPA, 0);
         return;
     }
 
     lv_obj_set_y(ctx->face_theme.panel, clamped_y);
-    lv_obj_set_style_bg_opa(ctx->face_theme.overlay, opa, 0);
 }
 
 static int32_t face_theme_current_y(const clock_ui_context_t *ctx)
@@ -542,6 +662,7 @@ static void sync_face_theme_overlay(clock_ui_context_t *ctx)
 {
     clock_face_id_t face;
     uint8_t selected_theme;
+    uint32_t key;
 
     if (ctx == NULL || ctx->face_theme.overlay == NULL) {
         return;
@@ -549,6 +670,11 @@ static void sync_face_theme_overlay(clock_ui_context_t *ctx)
 
     face = sanitize_enabled_face(ctx->face_theme.picker_face);
     selected_theme = face_theme_value(ctx, face);
+    key = 0x80000000U | ((uint32_t)ctx->settings->language << 16) | ((uint32_t)selected_theme << 8) | (uint32_t)face;
+    if (ctx->face_theme.synced_key == key) {
+        return;
+    }
+    ctx->face_theme.synced_key = key;
     lv_label_set_text(ctx->face_theme.title, ui_l10n_text(ctx, L10N_THEMES));
 
     for (uint8_t theme = 0; theme < CLOCK_FACE_THEME_COUNT; ++theme) {
@@ -766,7 +892,9 @@ void sync_update_button(clock_ui_context_t *ctx)
         } else {
             snprintf(label, sizeof(label), LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_INSTALL_UPDATE));
         }
-        lv_label_set_text(ctx->update_button_label, label);
+        if (strcmp(lv_label_get_text(ctx->update_button_label), label) != 0) {
+            lv_label_set_text(ctx->update_button_label, label);
+        }
     }
     if (ctx->runtime->ota_busy) {
         lv_obj_add_state(ctx->update_button, LV_STATE_DISABLED);
@@ -782,9 +910,11 @@ void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face)
             continue;
         }
 
-        lv_obj_set_style_bg_color(ctx->page_dots[i],
-                                  (i == active_face) ? lv_color_white() : lv_color_hex(0x555555),
-                                  0);
+        lv_color_t color = (i == active_face) ? lv_color_white() : lv_color_hex(0x555555);
+
+        if (!lv_color_eq(lv_obj_get_style_bg_color(ctx->page_dots[i], LV_PART_MAIN), color)) {
+            lv_obj_set_style_bg_color(ctx->page_dots[i], color, 0);
+        }
     }
 }
 
@@ -943,21 +1073,12 @@ static void create_face_reveal_layer(clock_ui_context_t *ctx)
     lv_obj_remove_flag(ctx->faces.face_reveal_render, LV_OBJ_FLAG_CLICKABLE);
 
     ctx->faces.face_reveal_shell = lv_obj_create(ctx->screen);
+    lv_obj_remove_style_all(ctx->faces.face_reveal_shell);
     lv_obj_set_size(ctx->faces.face_reveal_shell, FACE_REVEAL_START_SIZE, FACE_REVEAL_START_SIZE);
     lv_obj_center(ctx->faces.face_reveal_shell);
-    lv_obj_set_style_bg_opa(ctx->faces.face_reveal_shell, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.face_reveal_shell, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.face_reveal_shell, 0, 0);
-    lv_obj_set_style_radius(ctx->faces.face_reveal_shell, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_clip_corner(ctx->faces.face_reveal_shell, true, 0);
     lv_obj_clear_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
-
-    ctx->faces.face_reveal_img = lv_image_create(ctx->faces.face_reveal_shell);
-    lv_obj_clear_flag(ctx->faces.face_reveal_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(ctx->faces.face_reveal_img, LV_OBJ_FLAG_CLICKABLE);
-    lv_image_set_inner_align(ctx->faces.face_reveal_img, LV_IMAGE_ALIGN_COVER);
-    lv_obj_align(ctx->faces.face_reveal_img, LV_ALIGN_CENTER, 0, 0);
+    lv_obj_add_event_cb(ctx->faces.face_reveal_shell, face_reveal_draw_cb, LV_EVENT_DRAW_MAIN, ctx);
 }
 
 static void create_face_swipe_layer(clock_ui_context_t *ctx)
@@ -1163,6 +1284,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     ctx->face_theme.overlay = surface.overlay;
     ctx->face_theme.panel = surface.panel;
     ctx->face_theme.snapshot_img = lv_image_create(surface.overlay);
+    ctx->face_theme.backdrop_img = ui_backdrop_create(surface.overlay);
     ctx->face_theme.title = surface.title;
     ctx->face_theme.content = surface.content;
     shell_bind_label(ctx, surface.title, L10N_THEMES);
@@ -1263,6 +1385,8 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
 
 void build_root_ui(clock_ui_context_t *ctx)
 {
+    ui_install_theme_overrides(lv_display_get_default());
+    ui_ppa_blend_install();
     ui_l10n_reset(ctx);
     ctx->screen = lv_screen_active();
     lv_obj_set_style_bg_color(ctx->screen, lv_color_black(), 0);
@@ -1323,4 +1447,7 @@ void build_root_ui(clock_ui_context_t *ctx)
     lv_obj_move_foreground(ctx->brightness.pull_hint);
     lv_obj_move_foreground(ctx->brightness.edge_sensor);
     set_active_face(ctx, ctx->settings->current_face, LV_ANIM_OFF);
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    ui_perf_tour_start(ctx);
+#endif
 }

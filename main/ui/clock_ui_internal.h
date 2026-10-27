@@ -165,6 +165,7 @@ typedef struct {
     lv_obj_t *edge_sensor;
     lv_obj_t *drag_handle;
     lv_obj_t *pull_hint;
+    lv_obj_t *backdrop_img;
 } clock_ui_brightness_state_t;
 
 typedef struct {
@@ -178,10 +179,12 @@ typedef struct {
     bool close_swipe_consumed;
     bool wifi_scrolling;
     bool night_scrolling;
-    bool night_control_dragging;
-    bool night_control_interaction_suppressed;
+    bool other_scrolling;
+    bool settings_control_dragging;
+    bool settings_control_interaction_suppressed;
     bool wifi_cache_valid;
     bool night_cache_valid;
+    time_t night_face_preview_minute;
     bool cached_night_enabled;
     bool cached_night_sunrise_brightness_enabled;
     bool cached_in_night_mode;
@@ -199,8 +202,8 @@ typedef struct {
     char cached_wifi_saved_ssid[33];
     char pending_ssid[33];
     lv_point_t close_drag_start_point;
-    lv_point_t night_control_drag_start_point;
-    lv_obj_t *night_control_drag_target;
+    lv_point_t settings_control_drag_start_point;
+    lv_obj_t *settings_control_drag_target;
     lv_obj_t *overlay;
     lv_obj_t *panel;
     lv_obj_t *content;
@@ -481,8 +484,9 @@ typedef struct {
     lv_obj_t *wharton_face_obj;
     lv_obj_t *face_reveal_render;
     lv_obj_t *face_reveal_shell;
-    lv_obj_t *face_reveal_img;
     lv_draw_buf_t *face_reveal_buf;
+    lv_draw_buf_t face_reveal_view;
+    int32_t face_reveal_size;
     lv_obj_t *face_swipe_layer;
     clock_face_id_t face_reveal_target;
     bool face_reveal_animating;
@@ -499,6 +503,7 @@ typedef struct {
     bool snapshot_visible;
     bool snapshot_dirty;
     bool target_open;
+    uint32_t synced_key;
     clock_face_id_t picker_face;
     lv_timer_t *auto_close_timer;
     lv_timer_t *button_hide_timer;
@@ -509,6 +514,7 @@ typedef struct {
     lv_obj_t *panel;
     lv_obj_t *snapshot_img;
     lv_draw_buf_t *snapshot_buf;
+    lv_obj_t *backdrop_img;
     lv_obj_t *drag_handle;
     lv_obj_t *grabber;
     lv_obj_t *pull_hint;
@@ -550,6 +556,8 @@ typedef struct clock_ui_state_t {
     clock_ui_alarm_state_t alarms;
     clock_ui_face_state_t faces;
     clock_ui_face_theme_state_t face_theme;
+    lv_draw_buf_t backdrop_buf;
+    bool backdrop_ready;
 } clock_ui_state_t;
 
 typedef clock_ui_state_t clock_ui_context_t;

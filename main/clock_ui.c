@@ -761,7 +761,7 @@ void clock_ui_tick(time_t now)
         wifi_controls_need_sync(ctx)) {
         sync_wifi_controls(ctx);
     }
-    if (ctx->settings_ui.other_open) {
+    if (ctx->settings_ui.other_open && !ctx->settings_ui.other_scrolling) {
         sync_other_controls(ctx);
     }
     if (ctx->settings_ui.night_open && !ctx->settings_ui.night_scrolling && night_controls_need_sync(ctx)) {

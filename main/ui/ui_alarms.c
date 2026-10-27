@@ -127,7 +127,13 @@ static void alarm_banner_set_visible(clock_ui_context_t *ctx, bool visible)
 
 void sync_alarm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face)
 {
+    static int applied_dark_badge = -1;
     bool dark_badge = sanitize_enabled_face(face) >= CLOCK_FACE_STERNGLAS;
+
+    if (applied_dark_badge == (int)dark_badge) {
+        return;
+    }
+    applied_dark_badge = dark_badge;
 
     lv_obj_set_style_bg_color(ctx->alarms.banner,
                               dark_badge ? lv_color_hex(0x101010) : lv_color_hex(0xECEFF2),

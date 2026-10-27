@@ -248,7 +248,8 @@ static void brightness_update_visual_state(clock_ui_context_t *ctx, int32_t shee
     lv_opa_t opa = (lv_opa_t)((progress * BRIGHTNESS_SCRIM_OPA) / travel);
 
     lv_obj_set_y(ctx->brightness.sheet, clamped_y);
-    lv_obj_set_style_bg_opa(ctx->brightness.overlay, opa, 0);
+    ui_backdrop_set(ctx, ctx->brightness.overlay, ctx->brightness.backdrop_img,
+                    ctx->brightness.dragging || ctx->brightness.animating, opa);
 }
 
 static void brightness_sheet_anim_cb(void *obj, int32_t value)
@@ -688,6 +689,7 @@ void create_brightness_overlay(clock_ui_context_t *ctx)
     lv_obj_set_user_data(ctx->brightness.overlay, ctx);
     lv_obj_add_event_cb(ctx->brightness.overlay, brightness_overlay_event_cb, LV_EVENT_CLICKED, ctx);
 
+    ctx->brightness.backdrop_img = ui_backdrop_create(ctx->brightness.overlay);
     ctx->brightness.sheet = lv_obj_create(ctx->brightness.overlay);
     lv_obj_set_size(ctx->brightness.sheet, BRIGHTNESS_SHEET_WIDTH, BRIGHTNESS_SHEET_HEIGHT);
     lv_obj_set_pos(ctx->brightness.sheet, BRIGHTNESS_SHEET_X, BRIGHTNESS_SHEET_CLOSED_Y);

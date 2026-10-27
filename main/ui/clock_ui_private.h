@@ -69,6 +69,11 @@ void brightness_panel_hide(clock_ui_context_t *ctx);
 bool settings_surface_is_open(const clock_ui_context_t *ctx);
 void settings_surface_close(clock_ui_context_t *ctx);
 void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx);
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+lv_obj_t *settings_perf_open_detail(clock_ui_context_t *ctx, int page);
+void ui_perf_tour_start(clock_ui_context_t *ctx);
+void ui_ppa_blend_benchmark(void);
+#endif
 void sync_alarm_controls(clock_ui_context_t *ctx);
 void sync_alarm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face);
 void alarm_management_open(clock_ui_context_t *ctx);
@@ -85,6 +90,10 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now);
 void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now);
 bool alarm_controls_need_sync(const clock_ui_context_t *ctx);
 void build_root_ui(clock_ui_context_t *ctx);
+void ui_install_theme_overrides(lv_display_t *disp);
+void ui_ppa_blend_install(void);
+lv_obj_t *ui_backdrop_create(lv_obj_t *overlay);
+void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop, bool moving, lv_opa_t dim_opa);
 void ui_l10n_reset(clock_ui_context_t *ctx);
 const char *ui_l10n_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id);
 void ui_l10n_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id);
