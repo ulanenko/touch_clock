@@ -39,4 +39,33 @@ menu "Touch Clock"
         help
             How often the clock posts a status heartbeat when connected to Wi-Fi.
 
+    config TOUCH_CLOCK_PERF_TOUR
+        bool "Run the automated UI performance tour (diagnostics only)"
+        default n
+        help
+            Drives every screen with a scripted virtual touch input after boot
+            and prints per-step frame timing as "PERF" lines on the console.
+            Never enable this in firmware that is shipped or published over OTA.
+
+    config TOUCH_CLOCK_PERF_TOUR_START_DELAY_S
+        int "Seconds after boot before the tour starts"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default 25
+
+    config TOUCH_CLOCK_PERF_TOUR_LOOPS
+        int "Number of tour loops"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default 2
+        range 1 20
+
+    config TOUCH_CLOCK_PERF_TOUR_MANUAL_ONLY
+        bool "Skip the scripted tour and only monitor frames during manual use"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default n
+
+    config TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
+        bool "Dump downscaled screen thumbnails at key steps"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default y
+
 endmenu

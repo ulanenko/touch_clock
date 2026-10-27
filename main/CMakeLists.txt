@@ -48,6 +48,7 @@ idf_component_register(
         ui/ui_controls.c
         ui/ui_faces.c
         ui/ui_l10n.c
+        ui/ui_perf_tour.c
         ui/ui_ppa_blend.c
         ui/ui_settings.c
         ui/ui_shell.c

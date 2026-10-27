@@ -13,3 +13,6 @@ tmp/
 !.env.example
 docs/private_ops_notes.md
 docs/*.private.md
+build_perf/
+perf_reports/
+perf_images/
