@@ -80,6 +80,7 @@ static void chrome_rebuild_cb(void *user_data)
         lv_timer_delete(ctx->chrome_timers[i]);
     }
     ctx->chrome_timer_count = 0;
+    kit_dial_cache_flush();
     if (ctx->chrome_root != NULL) {
         lv_obj_delete(ctx->chrome_root);
         ctx->chrome_root = NULL;

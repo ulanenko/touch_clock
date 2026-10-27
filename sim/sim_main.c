@@ -18,7 +18,7 @@
  *                                  ota_progress, ota_configured, wifi_connected, wifi_scanning,
  *                                  wifi_ssid_empty, time_synced, time_sync_manual, brightness,
  *                                  night_enabled, snooze_minutes_left, next_alarm_minutes,
- *                                  click_sound, alarm_test, sunrise_active
+ *                                  click_sound, alarm_test, sunrise_active, alarm_delete (slot)
  *   shot <name>                    write <output-dir>/<name>.png
  *   alarms                         print the saved alarms
  *   sliders                        drag every visible slider past both ends and print the range reached
@@ -55,6 +55,7 @@
 #define SIM_STEP_MS 5
 
 static uint16_t s_frame[SIM_W * SIM_H];
+static uint32_t s_draw_tasks;
 static uint16_t s_draw_buf[SIM_W * SIM_H];
 static uint32_t s_tick_ms;
 static time_t s_now;
@@ -68,6 +69,13 @@ static struct {
     int32_t x;
     int32_t y;
 } s_pointer;
+
+void sim_prof_mark(const char *func)
+{
+    if (func[0] == 'l' && strcmp(func, "lv_draw_add_task") == 0) {
+        s_draw_tasks++;
+    }
+}
 
 time_t sim_time(time_t *out)
 {
@@ -432,6 +440,10 @@ static bool apply_set(const char *key, const char *value)
         s_runtime.alarm_test_active = v != 0;
     } else if (strcmp(key, "sunrise_active") == 0) {
         s_runtime.sunrise_active = v != 0;
+    } else if (strcmp(key, "alarm_delete") == 0) {
+        /* Deleted slots look like app_action_delete_alarm leaves them. */
+        s_settings.alarms[v] = (alarm_config_t) {.enabled = false, .hour = 7, .minute = 0, .days_mask = 0x7F,
+                                                 .repeat_mode = ALARM_REPEAT_ONCE};
     } else if (strcmp(key, "time_sync_manual") == 0) {
         s_settings.wifi.time_sync_mode = v != 0 ? TIME_SYNC_MODE_MANUAL : TIME_SYNC_MODE_AUTO;
     } else {
@@ -708,14 +720,15 @@ static int run_scenario(FILE *f)
 
             sscanf(line, "%*s %*s %d", &n);
             lv_refr_now(NULL);
+            s_draw_tasks = 0;
             clock_gettime(CLOCK_MONOTONIC, &t0);
             for (int i = 0; i < n; i++) {
                 lv_obj_invalidate(lv_screen_active());
                 lv_refr_now(NULL);
             }
             clock_gettime(CLOCK_MONOTONIC, &t1);
-            printf("bench %s %.2f ms\n", a,
-                   ((t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6) / n);
+            printf("bench %s %.2f ms, %u draw tasks per frame\n", a,
+                   ((t1.tv_sec - t0.tv_sec) * 1e3 + (t1.tv_nsec - t0.tv_nsec) / 1e6) / n, s_draw_tasks / (unsigned)n);
         } else if (strcmp(cmd, "shot") == 0 && sscanf(line, "%*s %63s", a) == 1) {
             write_png(a);
         } else {

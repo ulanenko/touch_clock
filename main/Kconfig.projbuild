@@ -82,6 +82,11 @@ config TOUCH_CLOCK_PERF_TOUR_PROFILE_SEGMENTS
             Needs LV_USE_PROFILER and LV_USE_PROFILER_BUILTIN. The first frames of each
             listed step are traced and printed as "PROF" lines.
 
+config TOUCH_CLOCK_PERF_TOUR_SHORT
+        bool "Run a short tour (settings, night face picker, alarms) instead of the full one"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default n
+
 config TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
         bool "Capture full-resolution screenshots of every face instead of the tour"
         depends on TOUCH_CLOCK_PERF_TOUR_THUMBNAILS

@@ -339,23 +339,36 @@ static bool atelier_tick_skipped(int i)
 static void draw_atelier_rim(lv_layer_t *layer, const clock_ui_face_chrome_state_t *fc)
 {
     const ui_skin_t *sk = ui_skin();
+    kit_dial_t dial;
 
-    /* The ink bezel lifted over the dial's rim, its brass inner edge and outer hairline. */
-    if (!fc->bezel.ready) {
-        kit_ring_tiles_build((kit_ring_tiles_t *)&fc->bezel, KIT_CENTER, KIT_CENTER, 288, 360, sk->bg, 230);
-    }
-    kit_ring_tiles_draw(layer, &fc->bezel);
-    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 289, 1, 0, 360, sk->label, 230);
-    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 357, 1, 0, 360, sk->accent_deep, 180);
+    /* The ink bezel lifted over the dial's rim, its brass inner edge, outer hairline and minute
+     * track, baked once into cached tiles. */
+    memset(&dial, 0, sizeof(dial));
+    dial.cx = KIT_CENTER;
+    dial.cy = KIT_CENTER;
+    dial.rings[0] = (kit_dial_ring_t) {.r = 324, .width = 72, .end_deg = 360, .color = sk->bg, .opa = 230};
+    dial.rings[1] = (kit_dial_ring_t) {.r = 289, .width = 1, .end_deg = 360, .color = sk->label, .opa = 230};
+    dial.rings[2] = (kit_dial_ring_t) {.r = 357, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 180};
+    dial.ticks[0] = (kit_dial_ticks_t) {
+        .count = 60,
+        .offset_deg = -90.0f,
+        .r_in = 291,
+        .r_out = 297,
+        .major_every = 5,
+        .r_in_major = 291,
+        .r_out_major = 303,
+        .width = 1,
+        .width_major = 2,
+        .color = sk->accent_deep,
+        .color_major = sk->label,
+        .opa = LV_OPA_COVER,
+    };
     for (int i = 0; i < 60; i++) {
-        bool major = (i % 5) == 0;
-
         if (atelier_tick_skipped(i)) {
-            continue;
+            dial.ticks[0].skip |= 1ull << i;
         }
-        face_draw_tick(layer, FACE_CENTER, 291, major ? 303 : 297, (float)(i * 6 - 90), major ? 2 : 1,
-                       major ? sk->label : sk->accent_deep);
     }
+    kit_dial_draw(layer, &dial);
     draw_arc_dots(layer, fc, 335.0f, 4.6f, sk->text_2, 4, sk->accent, 6, true);
 }
 

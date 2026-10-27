@@ -30,28 +30,52 @@
 /* Half width of the visible circle at row y, minus margin (0 outside the circle). */
 int32_t kit_circle_half_width(int32_t y, int32_t margin);
 
-/* Draws a thin ring or ring segment (width up to about 6 px) as short line segments.
- * lv_draw_arc builds a mask over the arc's whole bounding box row by row, which for a ring
- * near the rim costs several milliseconds every frame on the device; short lines only touch
- * pixels near the ring. Angles in degrees, 0 = three o'clock, clockwise, start < end. */
-void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, int32_t width, int32_t start_deg,
-                   int32_t end_deg, lv_color_t color, lv_opa_t opa);
-
-/* A wide translucent ring (a bezel) pre-rendered once into ARGB8888 tiles that hug the ring,
- * so drawing it blends about 1.3x the ring's own area and computes no masks per frame.
- * Each pixel belongs to exactly one tile. */
-#define KIT_RING_TILES 16
+/* --- Dials ----------------------------------------------------------------------------
+ * Static ring decorations (hairline rings, bezels, minute tracks) are baked once into cached
+ * ARGB tiles and drawn as at most 16 images. Never draw them live: lv_draw_arc masks the
+ * whole bounding box row by row, and many small draws (60 tick lines) slow the device's draw
+ * dispatcher for the whole frame. For arcs that change while dragging, use lv_draw_arc.
+ * Angles in degrees, 0 = three o'clock, clockwise. */
+#define KIT_DIAL_RINGS 3
+#define KIT_DIAL_TICK_SETS 2
 
 typedef struct {
-    lv_draw_buf_t *buf[KIT_RING_TILES];
-    lv_area_t area[KIT_RING_TILES];
-    bool ready;
-} kit_ring_tiles_t;
+    int32_t r;         /* centre radius of the line or band */
+    int32_t width;     /* 0 = unused */
+    int32_t start_deg; /* start < end; a span of 360 or more is a full ring */
+    int32_t end_deg;
+    lv_color_t color;
+    lv_opa_t opa;
+} kit_dial_ring_t;
 
-bool kit_ring_tiles_build(kit_ring_tiles_t *tiles, int32_t cx, int32_t cy, int32_t r_in, int32_t r_out,
-                          lv_color_t color, lv_opa_t opa);
-void kit_ring_tiles_draw(lv_layer_t *layer, const kit_ring_tiles_t *tiles);
-void kit_ring_tiles_free(kit_ring_tiles_t *tiles);
+typedef struct {
+    int32_t count;       /* ticks evenly around the full circle, 0 = unused */
+    float offset_deg;    /* angle of tick 0 (-90 = twelve o'clock) */
+    int32_t r_in, r_out;
+    int32_t major_every; /* 0 = no majors */
+    int32_t r_in_major, r_out_major;
+    int32_t width, width_major;
+    lv_color_t color, color_major;
+    lv_opa_t opa;
+    uint64_t skip;       /* bit i set: leave tick i out */
+} kit_dial_ticks_t;
+
+/* Zero the whole struct before filling it in: it is the cache key. */
+typedef struct {
+    int32_t cx, cy;
+    kit_dial_ring_t rings[KIT_DIAL_RINGS];      /* drawn in order, later on top */
+    kit_dial_ticks_t ticks[KIT_DIAL_TICK_SETS]; /* drawn over the rings */
+} kit_dial_t;
+
+void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial);
+/* Frees every cached dial; the core calls it when the chrome is rebuilt. */
+void kit_dial_cache_flush(void);
+/* A single static ring or arc as a cached dial. */
+void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, int32_t width, int32_t start_deg,
+                   int32_t end_deg, lv_color_t color, lv_opa_t opa);
+/* Atelier chapter ring: rim hairline and minute track; ticks between skip_from_deg and
+ * skip_to_deg (degrees from twelve o'clock, inclusive) are left out (-1 for none). */
+void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg);
 
 /* A band along an arc with round caps and an optional 1 px edge, pre-rendered into one ARGB8888
  * image (rim tabs, rim bands). Angles in degrees, 0 = three o'clock, clockwise, a0 < a1.

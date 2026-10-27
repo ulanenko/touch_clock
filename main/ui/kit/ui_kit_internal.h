@@ -4,6 +4,8 @@
 
 #include "ui/kit/ui_kit.h"
 
+void kit_slider_cache_flush(void);
+
 /* Object flags the kit uses to remember things about its own objects. */
 #define KIT_FLAG_CAPS LV_OBJ_FLAG_USER_1    /* label text is set in capitals */
 #define KIT_FLAG_KIND_A LV_OBJ_FLAG_USER_2  /* button kind, bit 0 */

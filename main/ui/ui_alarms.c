@@ -312,31 +312,7 @@ void alm_one_line(lv_obj_t *label)
 
 void alm_draw_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg)
 {
-    const ui_skin_t *sk = ui_skin();
-    lv_draw_line_dsc_t line;
-
-    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 356, 1, 0, 360, sk->accent_deep, 140);
-    lv_draw_line_dsc_init(&line);
-    for (int i = 0; i < 60; i++) {
-        bool major = i % 5 == 0;
-        int32_t x0;
-        int32_t y0;
-        int32_t x1;
-        int32_t y1;
-
-        if (i * 6 >= skip_from_deg && i * 6 <= skip_to_deg) {
-            continue;
-        }
-        alm_polar(KIT_CENTER, KIT_CENTER, major ? 331 : 339, i * 60, &x0, &y0);
-        alm_polar(KIT_CENTER, KIT_CENTER, 347, i * 60, &x1, &y1);
-        line.color = major ? sk->accent_deep : sk->line_strong;
-        line.width = major ? 2 : 1;
-        line.p1.x = x0;
-        line.p1.y = y0;
-        line.p2.x = x1;
-        line.p2.y = y1;
-        lv_draw_line(layer, &line);
-    }
+    kit_draw_minute_rim(layer, skip_from_deg, skip_to_deg);
 }
 
 void alm_set_text(lv_obj_t *label, const char *text)

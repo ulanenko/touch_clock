@@ -163,7 +163,9 @@ static bool ppa_fill_rows(const ppa_target_t *dst, int32_t y, int32_t h, lv_colo
         };
 
         cfg.out.fill_cm = PPA_FILL_COLOR_MODE_RGB565;
+        LV_PROFILER_DRAW_BEGIN_TAG("ppa_fill");
         err = ppa_do_fill(s_fill_client, &cfg);
+        LV_PROFILER_DRAW_END_TAG("ppa_fill");
     } else {
         size_t a8_size = (size_t)dst->pic_w * h;
 
@@ -190,7 +192,9 @@ static bool ppa_fill_rows(const ppa_target_t *dst, int32_t y, int32_t h, lv_colo
             .mode = PPA_TRANS_MODE_BLOCKING,
         };
 
+        LV_PROFILER_DRAW_BEGIN_TAG("ppa_fill_opa");
         err = ppa_do_blend(s_blend_client, &cfg);
+        LV_PROFILER_DRAW_END_TAG("ppa_fill_opa");
     }
 
     if (err != ESP_OK) {
@@ -234,7 +238,11 @@ static bool ppa_image_rows(const ppa_target_t *dst, int32_t y, int32_t h,
     } else if (fg_alpha == PPA_ALPHA_SCALE) {
         cfg.fg_alpha_scale_ratio = (float)opa / 256.0f;
     }
-    esp_err_t err = ppa_do_blend(s_blend_client, &cfg);
+    esp_err_t err;
+
+    LV_PROFILER_DRAW_BEGIN_TAG(src_argb ? "ppa_image_argb" : "ppa_image");
+    err = ppa_do_blend(s_blend_client, &cfg);
+    LV_PROFILER_DRAW_END_TAG(src_argb ? "ppa_image_argb" : "ppa_image");
 
     if (err != ESP_OK) {
         ppa_log_failure(err);

@@ -77,17 +77,6 @@ static void arc_from(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, 
 {
     lv_draw_arc_dsc_t arc;
 
-    if (width <= 6 && radius > 60) {
-        /* Large thin arcs as line segments: lv_draw_arc masks the whole bounding box. */
-        int32_t start = (int32_t)lroundf(a0);
-        int32_t end = (int32_t)lroundf(a1);
-
-        if (end <= start) {
-            end += 360;
-        }
-        kit_draw_ring(layer, cx, cy, radius - width / 2, width, start, end, color, LV_OPA_COVER);
-        return;
-    }
     while (a0 < 0) {
         a0 += 360.0f;
     }
@@ -176,29 +165,38 @@ static void ring_draw_cb(lv_event_t *e)
     const ui_skin_t *sk = ui_skin();
     lv_layer_t *layer = lv_event_get_layer(e);
     bool on = ctx->settings->night_mode.enabled;
-    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 356, 1, 0, 360, sk->accent_deep, 140);
-    arc_from(layer, KIT_CENTER, KIT_CENTER, RING_R + 2, 4, 0, 360, sk->line, false);
-    for (int i = 0; i < 48; i++) {
-        float deg = (float)i * 7.5f;
+    kit_dial_t dial;
 
-        if (i % 2 != 0) {
-            lv_draw_rect_dsc_t dot;
-            float rad = deg * 3.14159265f / 180.0f;
-            int32_t x = KIT_CENTER + (int32_t)lroundf(RING_R * sinf(rad));
-            int32_t y = KIT_CENTER - (int32_t)lroundf(RING_R * cosf(rad));
-            lv_area_t da = {x - 1, y - 1, x, y};
-
-            lv_draw_rect_dsc_init(&dot);
-            dot.bg_color = sk->text_3;
-            lv_draw_rect(layer, &dot, &da);
-            continue;
-        }
-        if (i % 12 == 0) {
-            line_polar(layer, KIT_CENTER, KIT_CENTER, 322, 346, deg, sk->label, 2);
-        } else {
-            line_polar(layer, KIT_CENTER, KIT_CENTER, 326, 342, deg, sk->accent_deep, 1);
-        }
-    }
+    /* The static ring, its hour marks and dots, baked once; only the schedule arc is live. */
+    memset(&dial, 0, sizeof(dial));
+    dial.cx = KIT_CENTER;
+    dial.cy = KIT_CENTER;
+    dial.rings[0] = (kit_dial_ring_t) {.r = 356, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 140};
+    dial.rings[1] = (kit_dial_ring_t) {.r = RING_R, .width = 4, .end_deg = 360, .color = sk->line, .opa = LV_OPA_COVER};
+    dial.ticks[0] = (kit_dial_ticks_t) {
+        .count = 24,
+        .offset_deg = -90.0f,
+        .r_in = 326,
+        .r_out = 342,
+        .major_every = 6,
+        .r_in_major = 322,
+        .r_out_major = 346,
+        .width = 1,
+        .width_major = 2,
+        .color = sk->accent_deep,
+        .color_major = sk->label,
+        .opa = LV_OPA_COVER,
+    };
+    dial.ticks[1] = (kit_dial_ticks_t) {
+        .count = 24,
+        .offset_deg = -90.0f + 7.5f,
+        .r_in = RING_R - 1,
+        .r_out = RING_R + 1,
+        .width = 2,
+        .color = sk->text_3,
+        .opa = LV_OPA_COVER,
+    };
+    kit_dial_draw(layer, &dial);
     arc_from(layer, KIT_CENTER, KIT_CENTER, RING_R + 2, 4, minutes_to_lv_angle(start_minutes(ctx)),
              minutes_to_lv_angle(end_minutes(ctx)), on ? sk->accent : sk->text_3, false);
 }

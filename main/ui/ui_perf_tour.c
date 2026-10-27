@@ -157,6 +157,23 @@ static const perf_step_t s_steps[] = {
     GALLERY_FACE(0), GALLERY_FACE(1), GALLERY_FACE(2), GALLERY_FACE(3),
     GALLERY_FACE(4), GALLERY_FACE(5), GALLERY_FACE(6), GALLERY_FACE(7),
 };
+#elif CONFIG_TOUCH_CLOCK_PERF_TOUR_SHORT
+/* A short tour around the night face picker, to check what stays slow after it. */
+static const perf_step_t s_steps[] = {
+    IDLE("idle_face", 4000),
+    CALL("settings_tap", call_open_settings_root, 1200),
+    CALL("settings_night_open", call_open_night, 1500),
+    CALL("night_faces", call_night_face_picker, 2500),
+    CALL("settings_close", call_close_settings, 1500),
+    IDLE("idle_after", 4000),
+    DRAG("face_tap", 360, 300, 362, 302, 60, 1500),
+    DRAG("face_swipe", 600, 280, 120, 280, 220, 1200),
+    DRAG("face_swipe", 120, 280, 600, 280, 220, 1200),
+    CALL("alarms_open", call_open_alarms, 1200),
+    FLICK_BURST("alarms_scroll"),
+    CALL("alarms_close", call_close_alarms, 1200),
+    IDLE("idle_face_end", 4000),
+};
 #else
 static const perf_step_t s_steps[] = {
     IDLE("idle_face", 5000),

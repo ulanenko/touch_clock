@@ -5,6 +5,7 @@
 
 #include "assets/skin_fonts/skin_fonts.h"
 #include "assets/ui_assets/kit_assets.h"
+#include "src/draw/lv_draw_private.h"
 #include "ui/kit/ui_kit_internal.h"
 #include "ui/ui_controls.h"
 
@@ -117,6 +118,107 @@ static void fill(lv_layer_t *layer, int32_t x1, int32_t y1, int32_t x2, int32_t 
     lv_draw_rect(layer, &d, &a);
 }
 
+/* Instrument ruler: the 51 ticks and the base line as two cached images (ticks lit and
+ * unlit), drawn clipped either side of the knob. Drawing the ticks as 51 rects every frame
+ * slowed the device's draw dispatcher for the whole frame. */
+#define RULER_H 41
+#define RULER_CACHE 4
+
+typedef struct {
+    int32_t w;
+    bool lit;
+    lv_draw_buf_t *buf;
+} ruler_entry_t;
+
+static ruler_entry_t s_rulers[RULER_CACHE];
+
+static void ruler_px(lv_draw_buf_t *buf, int32_t x0, int32_t y0, int32_t x1, int32_t y1, lv_color_t c)
+{
+    for (int32_t y = LV_MAX(0, y0); y <= LV_MIN(RULER_H - 1, y1); y++) {
+        lv_color32_t *row = (lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
+
+        for (int32_t x = LV_MAX(0, x0); x <= LV_MIN((int32_t)buf->header.w - 1, x1); x++) {
+            row[x] = (lv_color32_t) {.blue = c.blue, .green = c.green, .red = c.red, .alpha = 0xFF};
+        }
+    }
+}
+
+static const lv_draw_buf_t *ruler_image(int32_t w, bool lit)
+{
+    const ui_skin_t *sk = ui_skin();
+    ruler_entry_t *slot = NULL;
+    lv_color_t c = lit ? sk->text_2 : sk->line_strong;
+
+    for (int i = 0; i < RULER_CACHE; i++) {
+        if (s_rulers[i].buf != NULL && s_rulers[i].w == w && s_rulers[i].lit == lit) {
+            return s_rulers[i].buf;
+        }
+        if (slot == NULL && s_rulers[i].buf == NULL) {
+            slot = &s_rulers[i];
+        }
+    }
+    if (slot == NULL) {
+        slot = &s_rulers[0];
+        lv_draw_buf_destroy(slot->buf);
+    }
+    slot->w = w;
+    slot->lit = lit;
+    slot->buf = lv_draw_buf_create((uint32_t)w, RULER_H, LV_COLOR_FORMAT_ARGB8888, 0);
+    if (slot->buf == NULL) {
+        return NULL;
+    }
+    lv_draw_buf_clear(slot->buf, NULL);
+    ruler_px(slot->buf, 0, 40, w - 1, 40, sk->line);
+    for (int i = 0; i <= 50; i++) {
+        int32_t x = i * (w - 1) / 50;
+
+        if (i % 5 == 0) {
+            ruler_px(slot->buf, x - (i == 50 ? 1 : 0), 22, x + (i == 50 ? 0 : 1), 40, c);
+        } else {
+            ruler_px(slot->buf, x, 30, x, 40, c);
+        }
+    }
+    return slot->buf;
+}
+
+void kit_slider_cache_flush(void)
+{
+    for (int i = 0; i < RULER_CACHE; i++) {
+        if (s_rulers[i].buf != NULL) {
+            lv_draw_buf_destroy(s_rulers[i].buf);
+            s_rulers[i].buf = NULL;
+        }
+    }
+}
+
+static void draw_ruler(lv_layer_t *layer, const lv_area_t *a, int32_t kx, lv_opa_t opa)
+{
+    lv_area_t clip = layer->_clip_area;
+    lv_area_t area = {a->x1, a->y1, a->x2, a->y1 + RULER_H - 1};
+    lv_draw_image_dsc_t img;
+
+    lv_draw_image_dsc_init(&img);
+    img.opa = opa;
+    for (int lit = 1; lit >= 0; lit--) {
+        lv_area_t part = clip;
+
+        img.src = ruler_image(lv_area_get_width(a), lit != 0);
+        if (img.src == NULL) {
+            continue;
+        }
+        if (lit) {
+            part.x2 = LV_MIN(clip.x2, kx);
+        } else {
+            part.x1 = LV_MAX(clip.x1, kx + 1);
+        }
+        if (part.x1 <= part.x2) {
+            layer->_clip_area = part;
+            lv_draw_image(layer, &img, &area);
+        }
+    }
+    layer->_clip_area = clip;
+}
+
 static void slider_draw_cb(lv_event_t *e)
 {
     lv_obj_t *obj = lv_event_get_current_target(e);
@@ -145,21 +247,7 @@ static void slider_draw_cb(lv_event_t *e)
 
     if (kit_is_instrument()) {
         /* Ruler: a tick every 2 %, majors every 10 %, a fader cap with the signal index. */
-        int32_t base = a.y1 + 40;
-
-        fill(layer, a.x1, base, a.x2, base, sk->line, 0, opa);
-        for (int i = 0; i <= 50; i++) {
-            int32_t x = a.x1 + i * (w - 1) / 50;
-            bool major = i % 5 == 0;
-            bool on = x <= kx;
-            lv_color_t c = on ? sk->text_2 : sk->line_strong;
-
-            if (major) {
-                fill(layer, x - (i == 50 ? 1 : 0), base - 18, x + (i == 50 ? 0 : 1), base, c, 0, opa);
-            } else {
-                fill(layer, x, base - 10, x, base, c, 0, opa);
-            }
-        }
+        draw_ruler(layer, &a, kx, opa);
         fill(layer, kx - 10, a.y1 + 4, kx + 10, a.y1 + 45, sk->text, 4, opa);
         fill(layer, kx - 1, a.y1 + 10, kx, a.y1 + 39, tint, 0, opa);
     } else if (kit_is_orbit()) {
