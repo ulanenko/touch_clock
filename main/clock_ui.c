@@ -2,6 +2,10 @@
 #include "ui/ui_areas.h"
 #include "domain/timezone_rules.h"
 
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+#include "esp_timer.h"
+#endif
+
 static clock_ui_context_t s_ctx = {0};
 
 lv_style_t s_style_hour;
@@ -703,7 +707,17 @@ void clock_ui_tick(time_t now)
     }
     active_face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
     if (!face_covered && !ctx->faces.tileview_scrolling) {
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+        int64_t started_us = esp_timer_get_time();
+
         update_face(ctx, active_face);
+        if (esp_timer_get_time() - started_us > 5000) {
+            /* The per-second face work runs on the UI thread: report the ticks that cost a frame. */
+            printf("PERF face_update face=%d us=%lld\n", (int)active_face, esp_timer_get_time() - started_us);
+        }
+#else
+        update_face(ctx, active_face);
+#endif
     }
     ui_face_chrome_tick(ctx, now, active_face, face_covered);
     ui_alarms_tick(ctx, now, face_covered);
