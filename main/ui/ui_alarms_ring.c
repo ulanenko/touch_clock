@@ -271,10 +271,15 @@ static void render_atelier_bg(clock_ui_context_t *ctx)
         line.p2.y = y1;
         lv_draw_line(&layer, &line);
     }
-    /* The groove: ink, a rule hairline, the recessed track. LVGL angles 38..142. */
-    draw_arc(&layer, KIT_CENTER, KIT_CENTER, A_SLIDE_R, 64, 38, 142, sk->bg, LV_OPA_COVER, true);
-    draw_arc(&layer, KIT_CENTER, KIT_CENTER, A_SLIDE_R, 62, 38, 142, sk->line_strong, LV_OPA_COVER, true);
-    draw_arc(&layer, KIT_CENTER, KIT_CENTER, A_SLIDE_R, 60, 38, 142, sk->surface, LV_OPA_COVER, true);
+    /* The groove: ink, a rule hairline, the recessed track. It spans exactly the knob's travel
+     * (A_SLIDE_END..A_SLIDE_START, converted to LVGL angles with 0 at three o'clock), so the
+     * jewel sits flush in the rounded ends at rest and when it reaches the stop mark. */
+    draw_arc(&layer, KIT_CENTER, KIT_CENTER, A_SLIDE_R, 64, A_SLIDE_END / 10 - 90, A_SLIDE_START / 10 - 90, sk->bg,
+             LV_OPA_COVER, true);
+    draw_arc(&layer, KIT_CENTER, KIT_CENTER, A_SLIDE_R, 62, A_SLIDE_END / 10 - 90, A_SLIDE_START / 10 - 90,
+             sk->line_strong, LV_OPA_COVER, true);
+    draw_arc(&layer, KIT_CENTER, KIT_CENTER, A_SLIDE_R, 60, A_SLIDE_END / 10 - 90, A_SLIDE_START / 10 - 90,
+             sk->surface, LV_OPA_COVER, true);
     /* The stop mark at the end of the groove. */
     alm_polar(KIT_CENTER, KIT_CENTER, A_SLIDE_R, 1340, &ex, &ey);
     draw_arc(&layer, ex, ey, 19, 2, 0, 360, sk->accent_deep, LV_OPA_COVER, false);

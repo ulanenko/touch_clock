@@ -733,6 +733,13 @@ void ui_face_chrome_create_top(clock_ui_context_t *ctx)
 
 void ui_face_chrome_destroy(clock_ui_context_t *ctx)
 {
+    kit_ring_tiles_free(&ctx->face_chrome.bezel);
+    for (int i = 0; i < 2; i++) {
+        if (ctx->face_chrome.rim_band[i] != NULL) {
+            lv_draw_buf_destroy(ctx->face_chrome.rim_band[i]);
+            ctx->face_chrome.rim_band[i] = NULL;
+        }
+    }
     face_themes_destroy(ctx);
     face_quick_destroy(ctx);
 }

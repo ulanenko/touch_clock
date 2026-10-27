@@ -1,0 +1,40 @@
+# Most expensive objects on the slow screens, per style.
+set style 2
+wait 300
+call show_controls
+wait 300
+costs 10
+call hide_controls
+call open_wifi
+wait 400
+costs 10
+call open_night
+wait 400
+costs 8
+call close_settings
+call open_alarms
+wait 400
+costs 8
+call close_alarms
+set style 0
+wait 300
+call show_controls
+wait 300
+costs 8
+call hide_controls
+call open_night
+wait 400
+costs 8
+call open_other
+wait 400
+costs 8
+call close_settings
+set style 1
+wait 300
+call show_controls
+wait 300
+costs 8
+call hide_controls
+set night_active 1
+wait 400
+costs 6

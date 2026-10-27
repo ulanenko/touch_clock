@@ -1,0 +1,51 @@
+# Drag every slider past both ends in each style.
+set style 0
+wait 300
+call open_other
+wait 400
+sliders
+call open_night
+wait 400
+sliders
+call close_settings
+call alarm_settings
+wait 400
+sliders
+call close_alarms
+call open_quick
+wait 400
+sliders
+call close_quick
+set style 1
+wait 300
+call open_other
+wait 400
+sliders
+call night_brightness
+wait 400
+sliders
+call close_settings
+call alarm_settings
+wait 400
+sliders
+call close_alarms
+call open_quick
+wait 400
+sliders
+call close_quick
+set style 2
+wait 300
+call open_other
+wait 400
+sliders
+call open_night
+wait 400
+sliders
+call close_settings
+call alarm_settings
+wait 400
+sliders
+call close_alarms
+call open_quick
+wait 400
+sliders

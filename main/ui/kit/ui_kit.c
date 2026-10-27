@@ -1099,24 +1099,229 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
 
 /* --- Pages ------------------------------------------------------------------------------ */
 
+void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, int32_t width, int32_t start_deg,
+                   int32_t end_deg, lv_color_t color, lv_opa_t opa)
+{
+    lv_draw_line_dsc_t line;
+    float span = (float)(end_deg - start_deg);
+    /* Segments of about 10 px keep the polygon within a quarter pixel of the circle. */
+    int32_t segments = LV_MAX(4, (int32_t)(span * 3.14159265f / 180.0f * (float)radius / 10.0f));
+    float px = 0;
+    float py = 0;
+
+    lv_draw_line_dsc_init(&line);
+    line.color = color;
+    line.opa = opa;
+    line.width = width;
+    line.round_start = width > 1;
+    line.round_end = width > 1;
+    for (int32_t i = 0; i <= segments; i++) {
+        float a = ((float)start_deg + span * (float)i / (float)segments) * 3.14159265f / 180.0f;
+        float x = (float)cx + (float)radius * cosf(a);
+        float y = (float)cy + (float)radius * sinf(a);
+
+        if (i > 0) {
+            line.p1.x = (lv_value_precise_t)px;
+            line.p1.y = (lv_value_precise_t)py;
+            line.p2.x = (lv_value_precise_t)x;
+            line.p2.y = (lv_value_precise_t)y;
+            lv_draw_line(layer, &line);
+        }
+        px = x;
+        py = y;
+    }
+}
+
+static void ring_tile_bounds(int32_t cx, int32_t cy, int32_t r_in, int32_t r_out, float a0, float a1,
+                             lv_area_t *area)
+{
+    float xs[8];
+    float ys[8];
+    int n = 0;
+    float angles[2] = {a0, a1};
+
+    area->x1 = INT32_MAX;
+    area->y1 = INT32_MAX;
+    area->x2 = INT32_MIN;
+    area->y2 = INT32_MIN;
+    for (int i = 0; i < 2; i++) {
+        float r[2] = {(float)r_in, (float)r_out};
+
+        for (int j = 0; j < 2; j++) {
+            xs[n] = (float)cx + r[j] * cosf(angles[i] * 3.14159265f / 180.0f);
+            ys[n] = (float)cy + r[j] * sinf(angles[i] * 3.14159265f / 180.0f);
+            n++;
+        }
+    }
+    /* Cardinal points inside the sector reach the outer radius. */
+    for (int k = 0; k <= 360; k += 90) {
+        if ((float)k > a0 && (float)k < a1) {
+            xs[n] = (float)cx + (float)r_out * cosf((float)k * 3.14159265f / 180.0f);
+            ys[n] = (float)cy + (float)r_out * sinf((float)k * 3.14159265f / 180.0f);
+            n++;
+        }
+    }
+    for (int i = 0; i < n; i++) {
+        area->x1 = LV_MIN(area->x1, (int32_t)floorf(xs[i]) - 1);
+        area->y1 = LV_MIN(area->y1, (int32_t)floorf(ys[i]) - 1);
+        area->x2 = LV_MAX(area->x2, (int32_t)ceilf(xs[i]) + 1);
+        area->y2 = LV_MAX(area->y2, (int32_t)ceilf(ys[i]) + 1);
+    }
+    area->x1 = LV_CLAMP(0, area->x1, KIT_SCREEN - 1);
+    area->y1 = LV_CLAMP(0, area->y1, KIT_SCREEN - 1);
+    area->x2 = LV_CLAMP(0, area->x2, KIT_SCREEN - 1);
+    area->y2 = LV_CLAMP(0, area->y2, KIT_SCREEN - 1);
+}
+
+bool kit_ring_tiles_build(kit_ring_tiles_t *tiles, int32_t cx, int32_t cy, int32_t r_in, int32_t r_out,
+                          lv_color_t color, lv_opa_t opa)
+{
+    const float step = 360.0f / (float)KIT_RING_TILES;
+
+    kit_ring_tiles_free(tiles);
+    for (int t = 0; t < KIT_RING_TILES; t++) {
+        float a0 = step * (float)t;
+        float a1 = step * (float)(t + 1);
+        lv_area_t *area = &tiles->area[t];
+        int32_t w;
+        int32_t h;
+
+        ring_tile_bounds(cx, cy, r_in, r_out, a0, a1, area);
+        w = lv_area_get_width(area);
+        h = lv_area_get_height(area);
+        tiles->buf[t] = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_ARGB8888, 0);
+        if (tiles->buf[t] == NULL) {
+            kit_ring_tiles_free(tiles);
+            return false;
+        }
+        for (int32_t y = 0; y < h; y++) {
+            lv_color32_t *row = (lv_color32_t *)(tiles->buf[t]->data + (size_t)y * tiles->buf[t]->header.stride);
+            float py = (float)(area->y1 + y) + 0.5f - (float)cy;
+
+            for (int32_t x = 0; x < w; x++) {
+                float px = (float)(area->x1 + x) + 0.5f - (float)cx;
+                float d = sqrtf(px * px + py * py);
+                float ang = atan2f(py, px) * 180.0f / 3.14159265f;
+                float cover;
+
+                if (ang < 0) {
+                    ang += 360.0f;
+                }
+                cover = LV_CLAMP(0.0f, (float)r_out - d + 0.5f, 1.0f) * LV_CLAMP(0.0f, d - (float)r_in + 0.5f, 1.0f);
+                if (ang < a0 || ang >= a1) {
+                    cover = 0.0f;
+                }
+                row[x].red = color.red;
+                row[x].green = color.green;
+                row[x].blue = color.blue;
+                row[x].alpha = (uint8_t)lroundf(cover * (float)opa);
+            }
+        }
+    }
+    tiles->ready = true;
+    return true;
+}
+
+void kit_ring_tiles_draw(lv_layer_t *layer, const kit_ring_tiles_t *tiles)
+{
+    lv_draw_image_dsc_t img;
+
+    if (!tiles->ready) {
+        return;
+    }
+    lv_draw_image_dsc_init(&img);
+    for (int t = 0; t < KIT_RING_TILES; t++) {
+        img.src = tiles->buf[t];
+        lv_draw_image(layer, &img, &tiles->area[t]);
+    }
+}
+
+void kit_ring_tiles_free(kit_ring_tiles_t *tiles)
+{
+    for (int t = 0; t < KIT_RING_TILES; t++) {
+        if (tiles->buf[t] != NULL) {
+            lv_draw_buf_destroy(tiles->buf[t]);
+            tiles->buf[t] = NULL;
+        }
+    }
+    tiles->ready = false;
+}
+
+/* Distance from a point to the centre line of an arc (radius r_mid, a0..a1 degrees). */
+static float arc_line_distance(float px, float py, float r_mid, float a0, float a1)
+{
+    float d = sqrtf(px * px + py * py);
+    float ang = atan2f(py, px) * 180.0f / 3.14159265f;
+    float best = 1e9f;
+
+    for (int turn = -1; turn <= 1; turn++) {
+        float a = ang + 360.0f * (float)turn;
+
+        if (a >= a0 && a <= a1) {
+            return fabsf(d - r_mid);
+        }
+    }
+    for (int i = 0; i < 2; i++) {
+        float e = (i == 0 ? a0 : a1) * 3.14159265f / 180.0f;
+        float ex = r_mid * cosf(e) - px;
+        float ey = r_mid * sinf(e) - py;
+
+        best = LV_MIN(best, sqrtf(ex * ex + ey * ey));
+    }
+    return best;
+}
+
+lv_draw_buf_t *kit_arc_band_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, float a0, float a1,
+                                  lv_color_t fill, lv_opa_t fill_opa, lv_color_t edge, lv_opa_t edge_opa,
+                                  lv_area_t *area)
+{
+    float hw = (float)width / 2.0f;
+    lv_draw_buf_t *buf;
+    int32_t w;
+    int32_t h;
+
+    /* Bounds of the band plus its caps. */
+    ring_tile_bounds(cx, cy, r_mid - width / 2 - 1, r_mid + width / 2 + 1, a0 - 10.0f, a1 + 10.0f, area);
+    w = lv_area_get_width(area);
+    h = lv_area_get_height(area);
+    buf = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_ARGB8888, 0);
+    if (buf == NULL) {
+        return NULL;
+    }
+    for (int32_t y = 0; y < h; y++) {
+        lv_color32_t *row = (lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
+        float py = (float)(area->y1 + y) + 0.5f - (float)cy;
+
+        for (int32_t x = 0; x < w; x++) {
+            float px = (float)(area->x1 + x) + 0.5f - (float)cx;
+            float dist = arc_line_distance(px, py, (float)r_mid, a0, a1);
+            float outer = LV_CLAMP(0.0f, hw - dist + 0.5f, 1.0f);
+            float inner = edge_opa > 0 ? LV_CLAMP(0.0f, hw - 1.0f - dist + 0.5f, 1.0f) : outer;
+            float fa = inner * (float)fill_opa;
+            float ea = (outer - inner) * (float)edge_opa;
+            float alpha = fa + ea;
+
+            if (alpha <= 0.0f) {
+                row[x] = (lv_color32_t) {0};
+                continue;
+            }
+            row[x].red = (uint8_t)lroundf((fa * fill.red + ea * edge.red) / alpha);
+            row[x].green = (uint8_t)lroundf((fa * fill.green + ea * edge.green) / alpha);
+            row[x].blue = (uint8_t)lroundf((fa * fill.blue + ea * edge.blue) / alpha);
+            row[x].alpha = (uint8_t)lroundf(LV_MIN(alpha, 255.0f));
+        }
+    }
+    return buf;
+}
+
 /* Atelier: the chapter ring around every page (hairline circle and minute track). */
 static void atelier_rim_cb(lv_event_t *e)
 {
     const ui_skin_t *sk = ui_skin();
     lv_layer_t *layer = lv_event_get_layer(e);
-    lv_draw_arc_dsc_t arc;
     lv_draw_line_dsc_t line;
 
-    lv_draw_arc_dsc_init(&arc);
-    arc.color = sk->accent_deep;
-    arc.opa = 140;
-    arc.width = 1;
-    arc.center.x = KIT_CENTER;
-    arc.center.y = KIT_CENTER;
-    arc.radius = 356;
-    arc.start_angle = 0;
-    arc.end_angle = 360;
-    lv_draw_arc(layer, &arc);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 356, 1, 0, 360, sk->accent_deep, 140);
 
     lv_draw_line_dsc_init(&line);
     for (int i = 0; i < 60; i++) {

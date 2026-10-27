@@ -77,6 +77,17 @@ static void arc_from(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, 
 {
     lv_draw_arc_dsc_t arc;
 
+    if (width <= 6 && radius > 60) {
+        /* Large thin arcs as line segments: lv_draw_arc masks the whole bounding box. */
+        int32_t start = (int32_t)lroundf(a0);
+        int32_t end = (int32_t)lroundf(a1);
+
+        if (end <= start) {
+            end += 360;
+        }
+        kit_draw_ring(layer, cx, cy, radius - width / 2, width, start, end, color, LV_OPA_COVER);
+        return;
+    }
     while (a0 < 0) {
         a0 += 360.0f;
     }
@@ -165,18 +176,7 @@ static void ring_draw_cb(lv_event_t *e)
     const ui_skin_t *sk = ui_skin();
     lv_layer_t *layer = lv_event_get_layer(e);
     bool on = ctx->settings->night_mode.enabled;
-    lv_draw_arc_dsc_t hair;
-
-    lv_draw_arc_dsc_init(&hair);
-    hair.color = sk->accent_deep;
-    hair.opa = 140;
-    hair.width = 1;
-    hair.center.x = KIT_CENTER;
-    hair.center.y = KIT_CENTER;
-    hair.radius = 356;
-    hair.start_angle = 0;
-    hair.end_angle = 360;
-    lv_draw_arc(layer, &hair);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 356, 1, 0, 360, sk->accent_deep, 140);
     arc_from(layer, KIT_CENTER, KIT_CENTER, RING_R + 2, 4, 0, 360, sk->line, false);
     for (int i = 0; i < 48; i++) {
         float deg = (float)i * 7.5f;

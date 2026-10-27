@@ -85,7 +85,7 @@ static void night_draw_cb(lv_event_t *e)
         return;
     }
     /* A 24 h ring barely above black; the arc runs from now to the alarm. */
-    face_draw_rim_arc(layer, FACE_CENTER, 344, 4, 0, 360, lv_color_mix(sk->tint_night, lv_color_black(), 52), LV_OPA_COVER, false);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 342, 4, 0, 360, lv_color_mix(sk->tint_night, lv_color_black(), 52), LV_OPA_COVER);
     if (!fc->night_has_alarm) {
         return;
     }
@@ -94,8 +94,8 @@ static void night_draw_cb(lv_event_t *e)
     if (end <= start) {
         end += 360;
     }
-    face_draw_rim_arc(layer, FACE_CENTER, 344, 4, start, end, lv_color_mix(sk->tint_night, lv_color_black(), 128), LV_OPA_COVER,
-                      true);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 342, 4, start, end, lv_color_mix(sk->tint_night, lv_color_black(), 128),
+                  LV_OPA_COVER);
     a = (float)(fc->night_alarm_deg - 90) * 3.14159265f / 180.0f;
     face_draw_dot(layer, (int32_t)lroundf(KIT_CENTER + 342.0f * cosf(a)), (int32_t)lroundf(KIT_CENTER + 342.0f * sinf(a)),
                   7, sk->tint_night, LV_OPA_COVER);

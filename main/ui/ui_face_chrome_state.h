@@ -15,6 +15,8 @@
  * shared sheet code in ui_face_sheet.c works on either sheet.
  */
 
+#include "ui/kit/ui_kit.h"
+
 #define FACE_SHEET_FIELDS                                                                       \
     struct clock_ui_state_t *ui;                                                               \
     lv_obj_t *overlay;      /* full screen: dim colour, tap outside the panel closes */       \
@@ -149,4 +151,7 @@ typedef struct {
     int16_t night_alarm_deg;
     bool night_has_alarm;
     bool night_visible;
+    kit_ring_tiles_t bezel; /* Atelier controls bezel, built on first show */
+    lv_draw_buf_t *rim_band[2]; /* Instrument tabs / Orbit bands at 12 and 6, built on first show */
+    lv_area_t rim_band_area[2];
 } clock_ui_face_chrome_state_t;

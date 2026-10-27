@@ -30,6 +30,36 @@
 /* Half width of the visible circle at row y, minus margin (0 outside the circle). */
 int32_t kit_circle_half_width(int32_t y, int32_t margin);
 
+/* Draws a thin ring or ring segment (width up to about 6 px) as short line segments.
+ * lv_draw_arc builds a mask over the arc's whole bounding box row by row, which for a ring
+ * near the rim costs several milliseconds every frame on the device; short lines only touch
+ * pixels near the ring. Angles in degrees, 0 = three o'clock, clockwise, start < end. */
+void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, int32_t width, int32_t start_deg,
+                   int32_t end_deg, lv_color_t color, lv_opa_t opa);
+
+/* A wide translucent ring (a bezel) pre-rendered once into ARGB8888 tiles that hug the ring,
+ * so drawing it blends about 1.3x the ring's own area and computes no masks per frame.
+ * Each pixel belongs to exactly one tile. */
+#define KIT_RING_TILES 16
+
+typedef struct {
+    lv_draw_buf_t *buf[KIT_RING_TILES];
+    lv_area_t area[KIT_RING_TILES];
+    bool ready;
+} kit_ring_tiles_t;
+
+bool kit_ring_tiles_build(kit_ring_tiles_t *tiles, int32_t cx, int32_t cy, int32_t r_in, int32_t r_out,
+                          lv_color_t color, lv_opa_t opa);
+void kit_ring_tiles_draw(lv_layer_t *layer, const kit_ring_tiles_t *tiles);
+void kit_ring_tiles_free(kit_ring_tiles_t *tiles);
+
+/* A band along an arc with round caps and an optional 1 px edge, pre-rendered into one ARGB8888
+ * image (rim tabs, rim bands). Angles in degrees, 0 = three o'clock, clockwise, a0 < a1.
+ * Returns NULL if out of memory; free with lv_draw_buf_destroy. */
+lv_draw_buf_t *kit_arc_band_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, float a0, float a1,
+                                  lv_color_t fill, lv_opa_t fill_opa, lv_color_t edge, lv_opa_t edge_opa,
+                                  lv_area_t *area);
+
 /* --- Text ----------------------------------------------------------------------------- */
 
 typedef enum {

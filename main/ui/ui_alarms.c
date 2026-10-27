@@ -313,19 +313,9 @@ void alm_one_line(lv_obj_t *label)
 void alm_draw_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg)
 {
     const ui_skin_t *sk = ui_skin();
-    lv_draw_arc_dsc_t arc;
     lv_draw_line_dsc_t line;
 
-    lv_draw_arc_dsc_init(&arc);
-    arc.color = sk->accent_deep;
-    arc.opa = 140;
-    arc.width = 1;
-    arc.center.x = KIT_CENTER;
-    arc.center.y = KIT_CENTER;
-    arc.radius = 356;
-    arc.start_angle = 0;
-    arc.end_angle = 360;
-    lv_draw_arc(layer, &arc);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 356, 1, 0, 360, sk->accent_deep, 140);
     lv_draw_line_dsc_init(&line);
     for (int i = 0; i < 60; i++) {
         bool major = i % 5 == 0;
@@ -398,7 +388,9 @@ lv_obj_t *alm_canvas(lv_obj_t *parent, int32_t w, int32_t h, void **buf)
     lv_obj_t *canvas;
 
     if (*buf == NULL) {
-        *buf = heap_caps_malloc((size_t)w * (size_t)h * sizeof(lv_color16_t), MALLOC_CAP_SPIRAM);
+        /* Cache-line aligned, as LVGL draw buffers and the PPA expect. */
+        *buf = heap_caps_aligned_alloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, (size_t)w * (size_t)h * sizeof(lv_color16_t),
+                                       MALLOC_CAP_SPIRAM);
     }
     if (*buf == NULL) {
         return NULL;

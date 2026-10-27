@@ -20,7 +20,9 @@
 #include "ui/ui_format.h"
 
 #define CONTROLS_VISIBLE_MS 4000
-#define CONTROLS_DIM_OPA 38 /* the face shows at 85 % under the controls */
+/* No dim under the controls: a full-screen translucent fill costs about 10 ms on every frame
+ * they are visible, including every frame of a face swipe, and the plates read well without. */
+#define CONTROLS_DIM_OPA LV_OPA_TRANSP
 
 static const ui_l10n_str_t s_actions = UI_L10N_STR("Actions", "Akcje", "Дії", "Действия", "Acties");
 static const ui_l10n_str_t s_update_version = UI_L10N_STR("Update %s", "Aktualizacja %s", "Оновлення %s",
@@ -276,15 +278,33 @@ static void draw_arc_dots(lv_layer_t *layer, const clock_ui_face_chrome_state_t 
     }
 }
 
-static void draw_instrument_rim(lv_layer_t *layer)
+static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, int32_t r_mid, int32_t width,
+                           float half_span, lv_color_t fill, lv_opa_t fill_opa, lv_color_t edge)
+{
+    lv_draw_image_dsc_t img;
+
+    /* Pre-rendered once: wide round-capped arcs cost a per-row angle mask every frame. */
+    for (int i = 0; i < 2; i++) {
+        if (fc->rim_band[i] == NULL) {
+            float mid = i == 0 ? 270.0f : 90.0f;
+
+            fc->rim_band[i] = kit_arc_band_image(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
+                                                 fill, fill_opa, edge, LV_OPA_COVER, &fc->rim_band_area[i]);
+        }
+        if (fc->rim_band[i] != NULL) {
+            lv_draw_image_dsc_init(&img);
+            img.src = fc->rim_band[i];
+            lv_draw_image(layer, &img, &fc->rim_band_area[i]);
+        }
+    }
+}
+
+static void draw_instrument_rim(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc)
 {
     const ui_skin_t *sk = ui_skin();
 
-    /* Pull tabs riding the bezel at 12 and 6: lv_arc 36 px with an edge, rounded ends. */
-    face_draw_rim_arc(layer, FACE_CENTER, 357, 36, 257, 283, sk->line_strong, LV_OPA_COVER, true);
-    face_draw_rim_arc(layer, FACE_CENTER, 356, 34, 257, 283, sk->bg, 235, true);
-    face_draw_rim_arc(layer, FACE_CENTER, 357, 36, 77, 103, sk->line_strong, LV_OPA_COVER, true);
-    face_draw_rim_arc(layer, FACE_CENTER, 356, 34, 77, 103, sk->bg, 235, true);
+    /* Pull tabs riding the bezel at 12 and 6: 36 px with an edge, rounded ends. */
+    draw_rim_bands(layer, fc, 339, 36, 13.0f, sk->bg, 235, sk->line_strong);
 }
 
 static lv_color_t orbit_float_bg(void)
@@ -299,10 +319,8 @@ static void draw_orbit_rim(lv_layer_t *layer, const clock_ui_face_chrome_state_t
     const ui_skin_t *sk = ui_skin();
 
     /* Bands hugging the rim at 12 and 6 (r 322, 40 px with a 1 px rim). */
-    face_draw_rim_arc(layer, FACE_CENTER, 343, 42, 258, 282, sk->line_strong, LV_OPA_COVER, true);
-    face_draw_rim_arc(layer, FACE_CENTER, 342, 40, 258, 282, orbit_float_bg(), LV_OPA_COVER, true);
-    face_draw_rim_arc(layer, FACE_CENTER, 343, 42, 78, 102, sk->line_strong, LV_OPA_COVER, true);
-    face_draw_rim_arc(layer, FACE_CENTER, 342, 40, 78, 102, orbit_float_bg(), LV_OPA_COVER, true);
+    draw_rim_bands(layer, (clock_ui_face_chrome_state_t *)fc, 322, 42, 12.0f, orbit_float_bg(), LV_OPA_COVER,
+                   sk->line_strong);
     draw_arc_dots(layer, fc, 334.0f, 2.57f, lv_color_mix(sk->text_2, sk->text_3, 96), 4, sk->text, 6, false);
 }
 
@@ -323,9 +341,12 @@ static void draw_atelier_rim(lv_layer_t *layer, const clock_ui_face_chrome_state
     const ui_skin_t *sk = ui_skin();
 
     /* The ink bezel lifted over the dial's rim, its brass inner edge and outer hairline. */
-    face_draw_rim_arc(layer, FACE_CENTER, 360, 72, 0, 360, sk->bg, 230, false);
-    face_draw_rim_arc(layer, FACE_CENTER, 289, 1, 0, 360, sk->label, 230, false);
-    face_draw_rim_arc(layer, FACE_CENTER, 357, 1, 0, 360, sk->accent_deep, 180, false);
+    if (!fc->bezel.ready) {
+        kit_ring_tiles_build((kit_ring_tiles_t *)&fc->bezel, KIT_CENTER, KIT_CENTER, 288, 360, sk->bg, 230);
+    }
+    kit_ring_tiles_draw(layer, &fc->bezel);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 289, 1, 0, 360, sk->label, 230);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 357, 1, 0, 360, sk->accent_deep, 180);
     for (int i = 0; i < 60; i++) {
         bool major = (i % 5) == 0;
 
@@ -345,7 +366,7 @@ static void layer_draw_cb(lv_event_t *e)
 
     switch (ui_skin_style()) {
     case CLOCK_UI_STYLE_INSTRUMENT:
-        draw_instrument_rim(layer);
+        draw_instrument_rim(layer, &ctx->face_chrome);
         break;
     case CLOCK_UI_STYLE_ATELIER:
         draw_atelier_rim(layer, &ctx->face_chrome);

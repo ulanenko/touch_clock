@@ -201,9 +201,15 @@ static bool ppa_fill_rows(const ppa_target_t *dst, int32_t y, int32_t h, lv_colo
 }
 
 static bool ppa_image_rows(const ppa_target_t *dst, int32_t y, int32_t h,
-                           const void *src, uint32_t src_pic_w, uint32_t src_pic_h,
+                           const void *src, bool src_argb, uint32_t src_pic_w, uint32_t src_pic_h,
                            int32_t src_x, int32_t src_y, lv_opa_t opa)
 {
+    ppa_alpha_update_mode_t fg_alpha = PPA_ALPHA_NO_CHANGE;
+
+    /* ARGB8888 keeps its per-pixel alpha, scaled by the overall opacity. */
+    if (opa < LV_OPA_MAX) {
+        fg_alpha = src_argb ? PPA_ALPHA_SCALE : PPA_ALPHA_FIX_VALUE;
+    }
     /* Opaque copies use blend too: a full-frame SRM copy measured 22 ms against 12 ms. */
     ppa_blend_oper_config_t cfg = {
         .in_bg = ppa_in_bg(dst, y, h),
@@ -215,14 +221,19 @@ static bool ppa_image_rows(const ppa_target_t *dst, int32_t y, int32_t h,
             .block_h = h,
             .block_offset_x = src_x,
             .block_offset_y = src_y,
-            .blend_cm = PPA_BLEND_COLOR_MODE_RGB565,
+            .blend_cm = src_argb ? PPA_BLEND_COLOR_MODE_ARGB8888 : PPA_BLEND_COLOR_MODE_RGB565,
         },
         .out = ppa_out(dst, y),
         .bg_alpha_update_mode = PPA_ALPHA_NO_CHANGE,
-        .fg_alpha_update_mode = opa >= LV_OPA_MAX ? PPA_ALPHA_NO_CHANGE : PPA_ALPHA_FIX_VALUE,
-        .fg_alpha_fix_val = opa,
+        .fg_alpha_update_mode = fg_alpha,
         .mode = PPA_TRANS_MODE_BLOCKING,
     };
+
+    if (fg_alpha == PPA_ALPHA_FIX_VALUE) {
+        cfg.fg_alpha_fix_val = opa;
+    } else if (fg_alpha == PPA_ALPHA_SCALE) {
+        cfg.fg_alpha_scale_ratio = (float)opa / 256.0f;
+    }
     esp_err_t err = ppa_do_blend(s_blend_client, &cfg);
 
     if (err != ESP_OK) {
@@ -249,8 +260,9 @@ static bool ppa_blend_eligible(const lv_layer_t *layer, const lv_draw_sw_blend_d
         return false;
     }
     if (dsc->src_buf != NULL &&
-        (dsc->src_color_format != LV_COLOR_FORMAT_RGB565 || !esp_ptr_external_ram(dsc->src_buf) ||
-         (dsc->src_stride % 2) != 0)) {
+        ((dsc->src_color_format != LV_COLOR_FORMAT_RGB565 && dsc->src_color_format != LV_COLOR_FORMAT_ARGB8888) ||
+         !esp_ptr_external_ram(dsc->src_buf) ||
+         (dsc->src_stride % lv_color_format_get_size(dsc->src_color_format)) != 0)) {
         return false;
     }
     return true;
@@ -293,8 +305,11 @@ static void ppa_blend_handler(lv_draw_task_t *t, const lv_draw_sw_blend_dsc_t *d
             if (dsc->src_buf == NULL) {
                 done = ppa_fill_rows(&dst, first, end - first, dsc->color, dsc->opa);
             } else {
-                done = ppa_image_rows(&dst, first, end - first, dsc->src_buf,
-                                      dsc->src_stride / 2, lv_area_get_height(dsc->src_area),
+                bool argb = dsc->src_color_format == LV_COLOR_FORMAT_ARGB8888;
+
+                done = ppa_image_rows(&dst, first, end - first, dsc->src_buf, argb,
+                                      dsc->src_stride / lv_color_format_get_size(dsc->src_color_format),
+                                      lv_area_get_height(dsc->src_area),
                                       area.x1 - dsc->src_area->x1,
                                       first + layer->buf_area.y1 - dsc->src_area->y1, dsc->opa);
             }
@@ -437,13 +452,13 @@ void ui_ppa_blend_benchmark(void)
 
     start = esp_timer_get_time();
     for (int i = 0; i < iterations; i++) {
-        ppa_image_rows(&dst, 0, SCREEN_SIZE, src, SCREEN_SIZE, SCREEN_SIZE, 0, 0, LV_OPA_COVER);
+        ppa_image_rows(&dst, 0, SCREEN_SIZE, src, false, SCREEN_SIZE, SCREEN_SIZE, 0, 0, LV_OPA_COVER);
     }
     bench_report("ppa_image", start, iterations);
 
     start = esp_timer_get_time();
     for (int i = 0; i < iterations; i++) {
-        ppa_image_rows(&dst, 0, SCREEN_SIZE, src, SCREEN_SIZE, SCREEN_SIZE, 0, 0, LV_OPA_50);
+        ppa_image_rows(&dst, 0, SCREEN_SIZE, src, false, SCREEN_SIZE, SCREEN_SIZE, 0, 0, LV_OPA_50);
     }
     bench_report("ppa_image_opa50", start, iterations);
 

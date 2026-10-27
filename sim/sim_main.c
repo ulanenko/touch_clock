@@ -21,12 +21,16 @@
  *                                  click_sound, alarm_test, sunrise_active
  *   shot <name>                    write <output-dir>/<name>.png
  *   alarms                         print the saved alarms
+ *   sliders                        drag every visible slider past both ends and print the range reached
+ *   costs [n]                      hide each visible object in turn and print the n that cost the most
+ *                                  render time (relative numbers; parents include their children)
  *   bench <name> [n]               time n full-screen renders (default 20) and print the average
  *   benchdrag <name> <x0> <y0> <x1> <y1> <ms>
  *                                  drag and time the UI work (events, layout, render) per step
  *   clock <HH:MM:SS>               set the wall clock (date stays Tue 27 Oct 2026)
  */
 #include <ctype.h>
+#include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -39,6 +43,8 @@
 #include "domain/settings_policy.h"
 #include "domain/timezone_rules.h"
 #include "lvgl.h"
+#include "src/core/lv_obj_private.h"
+#include "src/core/lv_obj_class_private.h"
 #include "ui/clock_ui_private.h"
 #include "ui/ui_areas.h"
 
@@ -473,6 +479,158 @@ static void bench_drag(const char *name, int32_t x0, int32_t y0, int32_t x1, int
     printf("benchdrag %s avg %.2f ms max %.2f ms (%d steps)\n", name, total / steps, worst, steps);
 }
 
+static void find_sliders(lv_obj_t *obj, lv_obj_t **out, int *count, int max)
+{
+    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+    if ((lv_obj_check_type(obj, &lv_slider_class) || lv_obj_check_type(obj, &lv_arc_class)) && *count < max) {
+        out[(*count)++] = obj;
+    }
+    for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        find_sliders(lv_obj_get_child(obj, (int32_t)i), out, count, max);
+    }
+}
+
+static void test_sliders(void)
+{
+    lv_obj_t *found[16];
+    int count = 0;
+
+    find_sliders(lv_screen_active(), found, &count, 16);
+    for (int i = 0; i < count; i++) {
+        lv_obj_t *obj = found[i];
+        bool arc = lv_obj_check_type(obj, &lv_arc_class);
+        lv_area_t a;
+        int32_t lo;
+        int32_t hi;
+        int32_t cy;
+
+        lv_obj_get_coords(obj, &a);
+        if (a.y2 < 0 || a.y1 > SIM_H) {
+            continue;
+        }
+        if (arc) {
+            /* Drag along the arc's radius from 25 degrees before its start to 25 after its end. */
+            int32_t rot = lv_arc_get_rotation(obj);
+            int32_t start = lv_arc_get_bg_angle_start(obj) + rot;
+            int32_t end = lv_arc_get_bg_angle_end(obj) + rot;
+            int32_t cx = (a.x1 + a.x2) / 2;
+            int32_t cyy = (a.y1 + a.y2) / 2;
+            int32_t r = (a.x2 - a.x1) / 2 - lv_obj_get_style_arc_width(obj, LV_PART_MAIN) / 2;
+            int32_t first = -1;
+            int32_t last = -1;
+
+            if (end < start) {
+                end += 360;
+            }
+            for (int pass = 0; pass < 2; pass++) {
+                /* Press on the middle of the track, like a finger, then slide past one end. */
+                int32_t from = (start + end) / 2;
+                int32_t to = pass == 0 ? start - 25 : end + 25;
+                int32_t steps = 60;
+
+                s_pointer.pressed = true;
+                for (int k = 0; k <= steps; k++) {
+                    float deg = (float)(from + (to - from) * k / steps);
+                    s_pointer.x = cx + (int32_t)(r * cosf(deg * 3.14159265f / 180.0f));
+                    s_pointer.y = cyy + (int32_t)(r * sinf(deg * 3.14159265f / 180.0f));
+                    step(SIM_STEP_MS * 3);
+                }
+                s_pointer.pressed = false;
+                step(60);
+                if (pass == 0) {
+                    first = lv_arc_get_value(obj);
+                } else {
+                    last = lv_arc_get_value(obj);
+                }
+            }
+            printf("arc %d angles %d..%d (rot %d) range %d..%d: start end -> %d, far end -> %d%s\n", i, (int)start, (int)end,
+                   (int)rot, (int)lv_arc_get_min_value(obj), (int)lv_arc_get_max_value(obj), (int)first, (int)last,
+                   ((first == lv_arc_get_min_value(obj) && last == lv_arc_get_max_value(obj)) ||
+                    (last == lv_arc_get_min_value(obj) && first == lv_arc_get_max_value(obj))) ? "" : "  <-- NOT FULL RANGE");
+            continue;
+        }
+        cy = (a.y1 + a.y2) / 2;
+        gesture((a.x1 + a.x2) / 2, cy, a.x1, cy, 300);
+        printf("slider %d at its left end x=%d -> %d\n", i, (int)a.x1, (int)lv_slider_get_value(obj));
+        gesture((a.x1 + a.x2) / 2, cy, a.x2, cy, 300);
+        printf("slider %d at its right end x=%d -> %d\n", i, (int)a.x2, (int)lv_slider_get_value(obj));
+        gesture((a.x1 + a.x2) / 2, cy, a.x1 - 60, cy, 300);
+        lo = lv_slider_get_value(obj);
+        gesture((a.x1 + a.x2) / 2, cy, a.x2 + 60, cy, 300);
+        hi = lv_slider_get_value(obj);
+        printf("slider %d x %d..%d range %d..%d: dragged to %d .. %d%s\n", i, (int)a.x1, (int)a.x2,
+               (int)lv_slider_get_min_value(obj), (int)lv_slider_get_max_value(obj), (int)lo, (int)hi,
+               (lo == lv_slider_get_min_value(obj) && hi == lv_slider_get_max_value(obj)) ? "" : "  <-- NOT FULL RANGE");
+    }
+}
+
+static double render_ms(int n)
+{
+    double start = now_ms();
+
+    for (int i = 0; i < n; i++) {
+        lv_obj_invalidate(lv_screen_active());
+        lv_refr_now(NULL);
+    }
+    return (now_ms() - start) / n;
+}
+
+typedef struct {
+    lv_obj_t *obj;
+    double cost;
+} obj_cost_t;
+
+static void collect_visible(lv_obj_t *obj, lv_obj_t **out, int *count, int max)
+{
+    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) || *count >= max) {
+        return;
+    }
+    out[(*count)++] = obj;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        collect_visible(lv_obj_get_child(obj, (int32_t)i), out, count, max);
+    }
+}
+
+static int cmp_cost(const void *a, const void *b)
+{
+    double d = ((const obj_cost_t *)b)->cost - ((const obj_cost_t *)a)->cost;
+    return d > 0 ? 1 : d < 0 ? -1 : 0;
+}
+
+static void object_costs(int top)
+{
+    static lv_obj_t *objs[2048];
+    static obj_cost_t costs[2048];
+    int count = 0;
+    double base;
+
+    collect_visible(lv_screen_active(), objs, &count, 2048);
+    render_ms(3);
+    base = render_ms(12);
+    for (int i = 1; i < count; i++) {
+        lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
+        costs[i] = (obj_cost_t) {.obj = objs[i], .cost = base - render_ms(6)};
+        lv_obj_remove_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
+    }
+    qsort(costs + 1, (size_t)(count - 1), sizeof(costs[0]), cmp_cost);
+    printf("costs: %d objects, full render %.3f ms\n", count, base);
+    for (int i = 1; i < count && i <= top; i++) {
+        lv_area_t a;
+        const char *text = "";
+        lv_obj_t *o = costs[i].obj;
+
+        lv_obj_get_coords(o, &a);
+        if (lv_obj_check_type(o, &lv_label_class)) {
+            text = lv_label_get_text(o);
+        }
+        printf("  %6.3f ms (%4.0f%%) %-10s %4dx%-4d at %4d,%-4d children %-3u %.30s\n", costs[i].cost,
+               100.0 * costs[i].cost / base, o->class_p->name ? o->class_p->name : "?", (int)lv_area_get_width(&a),
+               (int)lv_area_get_height(&a), (int)a.x1, (int)a.y1, (unsigned)lv_obj_get_child_count(o), text);
+    }
+}
+
 static int run_scenario(FILE *f)
 {
     char line[256];
@@ -530,6 +688,13 @@ static int run_scenario(FILE *f)
         } else if (strcmp(cmd, "benchdrag") == 0 &&
                    sscanf(line, "%*s %63s %d %d %d %d %d", a, &x0, &y0, &x1, &y1, &ms) == 6) {
             bench_drag(a, x0, y0, x1, y1, (uint32_t)ms);
+        } else if (strcmp(cmd, "costs") == 0) {
+            int n = 12;
+
+            sscanf(line, "%*s %d", &n);
+            object_costs(n);
+        } else if (strcmp(cmd, "sliders") == 0) {
+            test_sliders();
         } else if (strcmp(cmd, "alarms") == 0) {
             for (int i = 0; i < MAX_ALARMS; i++) {
                 const alarm_config_t *al = &s_settings.alarms[i];

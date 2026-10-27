@@ -1,0 +1,25 @@
+# Slide-to-stop: knob at rest, mid-way and at the end, Orbit and Atelier.
+set style 2
+wait 300
+set alarm_ringing 1
+wait 1500
+shot atelier_slide_rest
+press 154 553
+move 200 600
+move 300 650
+move 420 655
+move 520 610
+wait 50
+shot atelier_slide_mid
+move 566 553
+move 580 540
+wait 50
+shot atelier_slide_end
+release
+wait 500
+shot atelier_slide_released
+set style 1
+wait 300
+set alarm_ringing 1
+wait 1500
+shot orbit_slide_rest
