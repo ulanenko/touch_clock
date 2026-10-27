@@ -339,6 +339,7 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         ink.text = lv_color_hex(p.primary);
         ink.accent = lv_color_hex(p.primary);
         ink.soft = ink_toward(p.primary, p.bg, 150);
+        ink.paper = lv_color_hex(p.bg);
         break;
     }
     case CLOCK_FACE_MATRIX: {
@@ -347,6 +348,7 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         ink.text = lv_color_hex(p.on);
         ink.accent = lv_color_hex(p.on);
         ink.soft = ink_toward(p.on, p.bg, 150);
+        ink.paper = lv_color_hex(p.bg);
         break;
     }
     case CLOCK_FACE_WHARTON: {
@@ -355,6 +357,7 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         ink.text = lv_color_hex(p.on);
         ink.accent = lv_color_hex(p.on);
         ink.soft = ink_toward(p.on, p.bg, 150);
+        ink.paper = lv_color_hex(p.bg);
         break;
     }
     case CLOCK_FACE_STERNGLAS: {
@@ -364,6 +367,7 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         ink.text = lv_color_hex(p.title);
         ink.accent = lv_color_hex(p.primary);
         ink.soft = lv_color_hex(p.subtitle);
+        ink.paper = lv_color_hex(p.bg);
         break;
     }
     case CLOCK_FACE_AVENIR: {
@@ -372,6 +376,7 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         ink.text = lv_color_hex(p.text);
         ink.accent = lv_color_hex(p.primary);
         ink.soft = ink_toward(p.text, p.face_bg, 170);
+        ink.paper = lv_color_hex(p.face_bg);
         break;
     }
     case CLOCK_FACE_MODERN_SILVER: {
@@ -381,12 +386,14 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         ink.text = lv_color_hex(p.text_primary);
         ink.accent = lv_color_hex(p.secondary);
         ink.soft = lv_color_hex(p.text_secondary);
+        ink.paper = lv_color_hex(p.dial_bg);
         break;
     }
     default:
         ink.text = lv_color_white();
         ink.accent = lv_color_white();
         ink.soft = lv_color_hex(0x8A8A8A);
+        ink.paper = lv_color_black();
         break;
     }
     return ink;

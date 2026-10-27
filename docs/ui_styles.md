@@ -47,6 +47,10 @@ A style change then deletes the root, zeroes the area state structs and builds e
    - the brightness arc
 
    Keep the logic shared: one callback that changes the value, several ways to draw it.
+   Details drawn on the face itself (the night alarm row, the snooze banner) are the
+   exception to the skin rule: they take the face's inks from `ui_face_ink()` and sit in
+   the face's clear spot from `ui_face_chrome_alarm_slot_y()`, so they read as part of the
+   face in every style.
 3. **Strings:**
    - Existing ones: `ui_l10n_text(ctx, L10N_...)`.
    - New ones are declared inline next to their use: `static const ui_l10n_str_t s_x = UI_L10N_STR("en", "pl", "uk", "ru", "nl");` and `ui_l10n_str(ctx, &s_x)`.
@@ -63,7 +67,8 @@ A style change then deletes the root, zeroes the area state structs and builds e
 - **Shadows:** at most one per screen; shadows are cached.
 - **Images:** RGB565 or A8. Full-width opaque images and fills go to the PPA, so they are cheap.
 - **Sheets over the face:** draw a dimmed snapshot over an opaque overlay while they move (`ui_backdrop_set`). They must not redraw the live face.
-- **Ticks:** only touch a label or style when its value changed. `kit_label_set_text_if_changed()` and `kit_switch_set()` help.
+- **Ticks:** only touch a label or style when its value changed. `kit_label_set_text_if_changed()` and `kit_switch_set()` help. Setting a style invalidates the object even when the value is the same.
+- **Arcs and rings:** never `lv_draw_arc` or an `lv_arc` widget's own drawing. A software arc costs the device 4–14 ms however small, and its task covers the whole circle. Use cached dials (`kit_dial_draw`, `kit_draw_ring`, `kit_arc_bake`) or, for a one-off, `kit_draw_arc`.
 - **Touch targets:** at least 72 px (`ext_click_area` when the visual is smaller).
 
 ## Simulator

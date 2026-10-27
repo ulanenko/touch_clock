@@ -386,7 +386,7 @@ static void segment_report(void)
     }
     report_task_cpu(s_seg.name);
     printf("PERF seg loop=%d name=%s frames=%lu render_avg=%lld render_p95=%lu render_max=%lld "
-           "pre_avg=%lld pre_max=%lld interval_max=%lld slow=%lu white=%lu internal_free_min=%u\n",
+           "pre_avg=%lld pre_max=%lld interval_max=%lld slow=%lu white=%lu internal_free_min=%u t_ms=%lld\n",
            s_loop,
            s_seg.name,
            (unsigned long)s_seg.frames,
@@ -398,7 +398,7 @@ static void segment_report(void)
            s_seg.interval_max,
            (unsigned long)s_seg.slow_frames,
            (unsigned long)s_seg.white_frames,
-           (unsigned)s_seg.internal_free_min);
+           (unsigned)s_seg.internal_free_min, esp_timer_get_time() / 1000);
     s_seg.name[0] = '\0';
 }
 

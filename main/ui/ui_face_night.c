@@ -125,6 +125,23 @@ static void night_ink(clock_ui_context_t *ctx, clock_face_id_t face)
     lv_obj_set_style_text_color(fc->night_countdown, ink.soft, 0);
 }
 
+int32_t ui_face_chrome_alarm_slot_y(clock_face_id_t face)
+{
+    return night_layout(face).row_y;
+}
+
+static void night_show(lv_obj_t *obj, bool show)
+{
+    if (lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) != show) {
+        return;
+    }
+    if (show) {
+        lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 static void night_place(clock_ui_context_t *ctx, clock_face_id_t face)
 {
     clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
@@ -173,7 +190,7 @@ void face_night_sync(clock_ui_context_t *ctx, time_t now, bool force)
             night_place(ctx, face);
         }
         fc->night_minute = minute;
-        fc->night_alarm = when;
+        fc->night_alarm = has_alarm ? when : 0;
         fc->night_face = face;
         fc->night_language = ctx->settings->language;
         if (has_alarm) {
@@ -182,13 +199,14 @@ void face_night_sync(clock_ui_context_t *ctx, time_t now, bool force)
         }
         kit_label_set_text_if_changed(fc->night_time, clock);
         kit_label_set_text_if_changed(fc->night_countdown, countdown);
-        if (has_alarm) {
-            lv_obj_remove_flag(fc->night_alarm_row, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_remove_flag(fc->night_countdown, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(fc->night_alarm_row, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(fc->night_countdown, LV_OBJ_FLAG_HIDDEN);
-        }
+    }
+    /* The banner (snoozed, or waking within half an hour) shows the next wake in this
+     * spot; the overlay keeps only its moon then. */
+    {
+        bool row = fc->night_alarm != 0 && !ui_alarms_banner_shown(ctx, now);
+
+        night_show(fc->night_alarm_row, row);
+        night_show(fc->night_countdown, row);
     }
     night_ink(ctx, face);
     if (!fc->night_visible) {

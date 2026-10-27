@@ -806,7 +806,7 @@ void ui_alarms_create(clock_ui_context_t *ctx)
     ctx->alarms.focus_alarm_index = -1;
     ctx->alarms.swipe_open_index = -1;
     ctx->alarms.swipe_drag_index = -1;
-    ctx->alarms.banner_light_face = -1;
+    ctx->alarms.banner_face = -1;
     ctx->alarms.ring_sec_shown = -1;
 
     alm_banner_create(ctx);
@@ -844,6 +844,7 @@ void ui_alarms_destroy(clock_ui_context_t *ctx)
 void ui_alarms_tick(clock_ui_context_t *ctx, time_t now, bool face_covered)
 {
     if (!face_covered) {
+        alm_banner_style(ctx, ctx->face_chrome.active_face); /* follows theme changes; cheap when unchanged */
         alm_banner_update(ctx, now);
     }
     alm_ring_sync(ctx, now);
@@ -870,6 +871,11 @@ void ui_alarms_refresh(clock_ui_context_t *ctx)
 void ui_alarms_on_face_changed(clock_ui_context_t *ctx, clock_face_id_t face)
 {
     alm_banner_style(ctx, face);
+}
+
+bool ui_alarms_banner_shown(const clock_ui_context_t *ctx, time_t now)
+{
+    return ctx->alarms.banner != NULL && alm_banner_wanted(ctx, now);
 }
 
 void ui_alarms_open(clock_ui_context_t *ctx)

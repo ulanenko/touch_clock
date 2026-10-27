@@ -12,6 +12,7 @@
 #include "esp_log.h"
 #include "esp_netif.h"
 #include "esp_sntp.h"
+#include "esp_timer.h"
 #include "esp_wifi.h"
 
 typedef struct {
@@ -115,11 +116,16 @@ static void wifi_scan_task(void *arg)
     uint16_t ap_count = WIFI_TIME_MAX_SCAN_RESULTS;
     esp_err_t err;
 
+    int64_t started_us = esp_timer_get_time();
+
     memset(ap_records, 0, sizeof(ap_records));
+    ESP_LOGI(TAG, "Wi-Fi scan started");
     err = esp_wifi_scan_start(NULL, true);
     if (err == ESP_OK) {
         ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_scan_get_ap_records(&ap_count, ap_records));
     }
+    ESP_LOGI(TAG, "Wi-Fi scan done in %lld ms: %s, %u networks", (esp_timer_get_time() - started_us) / 1000,
+             esp_err_to_name(err), (unsigned)ap_count);
 
     xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
     s_wifi.scanning = false;

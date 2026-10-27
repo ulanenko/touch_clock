@@ -138,6 +138,7 @@ void alm_ring_free(clock_ui_context_t *ctx);
 void alm_banner_create(clock_ui_context_t *ctx);
 void alm_banner_update(clock_ui_context_t *ctx, time_t now);
 void alm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face);
+bool alm_banner_wanted(const clock_ui_context_t *ctx, time_t now);
 void alm_banner_feedback(clock_ui_context_t *ctx, const char *text, bool revertible, time_t now);
 
 /* --- Small drawing helpers (ui_alarms.c) -------------------------------------------- */

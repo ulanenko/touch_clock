@@ -155,6 +155,16 @@ typedef struct {
 } clock_ui_boot_state_t;
 
 
+/* Inks that belong to a face in its current theme, for details drawn over it (the night
+ * alarm): text in the face's own ink, the accent its glow or hand colour, soft a quieter
+ * version of the text that still reads on the face. */
+typedef struct {
+    lv_color_t text;
+    lv_color_t accent;
+    lv_color_t soft;
+    lv_color_t paper; /* the face's ground under the alarm details */
+} ui_face_ink_t;
+
 #include "ui/ui_settings_state.h"
 
 #include "ui/ui_alarms_state.h"
@@ -254,14 +264,6 @@ typedef struct {
     lv_point_t face_swipe_start_point;
 } clock_ui_face_state_t;
 
-/* Inks that belong to a face in its current theme, for details drawn over it (the night
- * alarm): text in the face's own ink, the accent its glow or hand colour, soft a quieter
- * version of the text that still reads on the face. */
-typedef struct {
-    lv_color_t text;
-    lv_color_t accent;
-    lv_color_t soft;
-} ui_face_ink_t;
 
 #include "ui/ui_face_chrome_state.h"
 

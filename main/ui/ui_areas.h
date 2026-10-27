@@ -49,6 +49,9 @@ void ui_face_chrome_close_all(clock_ui_context_t *ctx);
 bool ui_face_chrome_covers_face(const clock_ui_context_t *ctx); /* an opaque surface is open */
 bool ui_face_chrome_dims_face(const clock_ui_context_t *ctx);   /* a sheet over the face is open */
 bool ui_face_chrome_controls_visible(const clock_ui_context_t *ctx); /* tap controls are showing */
+/* Top of the spot on a face (in the current style) where alarm details sit clear of the
+ * face's own numerals and lettering: the night alarm row, the snooze banner. */
+int32_t ui_face_chrome_alarm_slot_y(clock_face_id_t face);
 
 /* --- Settings ---------------------------------------------------------------------------- */
 
@@ -79,4 +82,6 @@ void ui_alarms_refresh(clock_ui_context_t *ctx);
 void ui_alarms_on_face_changed(clock_ui_context_t *ctx, clock_face_id_t face);
 void ui_alarms_open(clock_ui_context_t *ctx);
 bool ui_alarms_is_open(const clock_ui_context_t *ctx);
+/* The snooze / waking-soon banner is on the face (it carries the next alarm then). */
+bool ui_alarms_banner_shown(const clock_ui_context_t *ctx, time_t now);
 void ui_alarms_close_all(clock_ui_context_t *ctx);

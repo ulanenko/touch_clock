@@ -59,6 +59,7 @@ typedef struct {
     bool management_scrolling;
     bool list_swipe_dragging;
     bool list_swipe_consumed;
+    ui_face_ink_t banner_ink;
     bool banner_visible;
     bool cache_valid;
     bool debug_ringing;     /* preview of the ringing screen without a real alarm */
@@ -171,7 +172,7 @@ typedef struct {
     time_t banner_feedback_until;
     bool banner_feedback_revertible;
     char banner_feedback_text[48];
-    int8_t banner_light_face;   /* -1 unknown */
+    int8_t banner_face;   /* face the banner is styled for, -1 none */
     uint8_t banner_kind;        /* what the mark currently shows */
 
     /* --- caches for sync ------------------------------------------------------------- */

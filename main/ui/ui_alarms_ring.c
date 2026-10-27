@@ -1262,11 +1262,11 @@ void alm_ring_free(clock_ui_context_t *ctx)
 
 /* --- Banner on the face ------------------------------------------------------------------------ */
 
-/* Atelier: the face controls put their alarm chip (540-596) where the banner sits, and the
- * chip already shows the next alarm. The banner steps out while the controls are up. */
+/* The face controls carry an alarm chip that already shows the next alarm, and on some
+ * faces it sits where the banner does. The banner steps out while the controls are up. */
 static bool banner_held(const clock_ui_context_t *ctx)
 {
-    return ALM_IS_ATELIER() && ui_face_chrome_controls_visible(ctx);
+    return ui_face_chrome_controls_visible(ctx);
 }
 
 static void banner_set_visible(clock_ui_context_t *ctx, bool visible)
@@ -1362,7 +1362,7 @@ void alm_banner_create(clock_ui_context_t *ctx)
     alm_one_line(a->banner_label);
     lv_obj_set_width(a->banner_label, LV_SIZE_CONTENT);
     lv_obj_set_style_max_width(a->banner_label, ALM_IS_INSTRUMENT() ? 440 : 400, 0);
-    a->banner_light_face = -1;
+    a->banner_face = -1;
     a->banner_kind = BANNER_NONE;
 }
 
@@ -1379,6 +1379,17 @@ static void banner_set(clock_ui_context_t *ctx, uint8_t kind, const char *time_t
     alm_show(a->banner_time, time_text != NULL && time_text[0] != '\0');
     alm_set_text(a->banner_time, time_text != NULL ? time_text : "");
     alm_set_text(a->banner_label, text);
+}
+
+/* Whether the banner has something to say: feedback, a snooze, or an alarm within half an
+ * hour. Shared with the night overlay, which steps aside for it. */
+bool alm_banner_wanted(const clock_ui_context_t *ctx, time_t now)
+{
+    const app_runtime_state_t *rt = ctx->runtime;
+
+    return (ctx->alarms.banner_feedback_until > now && ctx->alarms.banner_feedback_text[0] != '\0') ||
+           (rt->snooze_active && rt->snooze_deadline > now) ||
+           (!rt->alarm_ringing && rt->next_alarm_epoch > now && (rt->next_alarm_epoch - now) <= 1800);
 }
 
 void alm_banner_update(clock_ui_context_t *ctx, time_t now)
@@ -1428,18 +1439,37 @@ void alm_banner_update(clock_ui_context_t *ctx, time_t now)
     banner_set_visible(ctx, false);
 }
 
+/* The banner is printed in the face's own inks on the face's ground, in the spot each face
+ * keeps clear (the night alarm row's), so it reads as part of the face. Restyled only when
+ * the face or its theme changes. */
 void alm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face)
 {
     clock_ui_alarm_state_t *a = &ctx->alarms;
-    int8_t light = sanitize_enabled_face(face) >= CLOCK_FACE_STERNGLAS ? 1 : 0;
+    ui_face_ink_t ink;
+    int32_t h;
 
-    if (a->banner == NULL || a->banner_light_face == light) {
+    if (a->banner == NULL) {
         return;
     }
-    a->banner_light_face = light;
-    /* On white dials the dark pill gets a soft drop shadow (cached, the one on the face). */
-    lv_obj_set_style_shadow_width(a->banner, light ? 24 : 0, 0);
-    lv_obj_set_style_shadow_offset_y(a->banner, light ? 8 : 0, 0);
-    lv_obj_set_style_shadow_opa(a->banner, light ? 110 : 0, 0);
-    lv_obj_set_style_shadow_color(a->banner, lv_color_black(), 0);
+    face = sanitize_enabled_face(face);
+    ink = ui_face_ink(ctx, face);
+    if (a->banner_face == (int8_t)face && lv_color_eq(a->banner_ink.text, ink.text) &&
+        lv_color_eq(a->banner_ink.accent, ink.accent) && lv_color_eq(a->banner_ink.soft, ink.soft) &&
+        lv_color_eq(a->banner_ink.paper, ink.paper)) {
+        return;
+    }
+    a->banner_face = (int8_t)face;
+    a->banner_ink = ink;
+    h = lv_obj_get_style_height(a->banner, 0);
+    lv_obj_align(a->banner, LV_ALIGN_TOP_MID, 0, ui_face_chrome_alarm_slot_y(face) + 18 - h / 2);
+    lv_obj_set_style_bg_color(a->banner, ink.paper, 0);
+    lv_obj_set_style_bg_opa(a->banner, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(a->banner, lv_color_mix(ink.soft, ink.paper, 120), 0);
+    lv_obj_set_style_text_color(a->banner_time, ink.text, 0);
+    lv_obj_set_style_text_color(a->banner_label, ink.soft, 0);
+    if (ALM_IS_INSTRUMENT()) {
+        lv_obj_set_style_bg_color(a->banner_mark, ink.accent, 0);
+    } else {
+        lv_obj_set_style_image_recolor(a->banner_mark, ink.accent, 0);
+    }
 }
