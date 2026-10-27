@@ -1,0 +1,46 @@
+# Page scrolling from non-interactive points (section labels, gaps between rows, empty
+# space below the list) in the kit specimen, the alarms list and a settings page.
+set style 0
+wait 300
+call kit_specimen
+call kit_specimen_2
+wait 200
+drag 360 512 360 260 400
+wait 600
+shot scroll_instrument_kit_section
+call kit_specimen_close
+call open_alarms
+wait 400
+drag 360 600 360 380 400
+wait 600
+shot scroll_instrument_alarms
+set style 1
+wait 300
+call kit_specimen
+call kit_specimen_2
+wait 200
+drag 360 575 360 300 400
+wait 600
+shot scroll_orbit_kit_section
+call kit_specimen_close
+call open_alarms
+wait 400
+drag 360 380 360 200 400
+wait 600
+shot scroll_orbit_alarms
+set style 2
+wait 300
+call kit_specimen
+call kit_specimen_2
+wait 200
+drag 360 550 360 300 400
+wait 600
+shot scroll_atelier_kit_section
+call kit_specimen_close
+call open_settings
+wait 300
+call open_other
+wait 400
+drag 360 520 360 260 400
+wait 600
+shot scroll_atelier_other

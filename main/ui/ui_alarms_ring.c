@@ -26,8 +26,6 @@
 #define HOLD_MS 1500
 #define BANNER_MIN_BRIGHTNESS_UI_PERCENT 10
 #define BANNER_CENTER_Y 548
-/* Atelier: the face controls put their alarm chip at 540-596, the banner sits above it. */
-#define BANNER_CENTER_Y_ATELIER 480
 
 /* Slide geometry: polar angles in 0.1 degree, 0 = twelve o'clock, clockwise. */
 #define O_SLIDE_R 292
@@ -572,7 +570,10 @@ static void math_generate(clock_ui_context_t *ctx)
         a->math_a = (uint8_t)(a->math_expected + a->math_b);
         a->math_plus = false;
     }
-    snprintf(text, sizeof(text), "%u %s %u", a->math_a, a->math_plus ? "+" : "\xE2\x88\x92", a->math_b);
+    /* Instrument sets the whole sum with its question mark; the others put the answer box
+     * where the question mark would be. */
+    snprintf(text, sizeof(text), "%u %s %u =%s", a->math_a, a->math_plus ? "+" : "\xE2\x88\x92", a->math_b,
+             ALM_IS_INSTRUMENT() ? " ?" : "");
     alm_set_text(a->math_problem, text);
     math_reset_input(ctx);
     math_set_error(ctx, false);
@@ -708,23 +709,6 @@ static lv_obj_t *hrow(lv_obj_t *parent, int32_t center_y, int32_t height, int32_
     lv_obj_set_style_pad_column(r, gap, 0);
     lv_obj_align(r, LV_ALIGN_TOP_MID, 0, center_y - height / 2);
     return r;
-}
-
-/* "=" for fonts that only carry digits: two bars in the figure weight. */
-static void equals_sign(lv_obj_t *parent, int32_t w, int32_t thick, int32_t gap, lv_color_t color)
-{
-    lv_obj_t *eq = alm_box(parent);
-
-    lv_obj_set_size(eq, w, 2 * thick + gap);
-    for (int i = 0; i < 2; i++) {
-        lv_obj_t *bar = alm_box(eq);
-
-        lv_obj_set_size(bar, w, thick);
-        lv_obj_set_pos(bar, 0, i * (thick + gap));
-        lv_obj_set_style_bg_opa(bar, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(bar, color, 0);
-        lv_obj_set_style_radius(bar, thick / 2, 0);
-    }
 }
 
 static void build_instrument_main(clock_ui_context_t *ctx, lv_obj_t *m)
@@ -974,7 +958,6 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
     if (ALM_IS_INSTRUMENT()) {
         r = hrow(m, 114, 56, 18);
         a->math_problem = alm_label(r, sk->font_time_m, sk->text, "");
-        equals_sign(r, 30, 3, 10, sk->text);
         box = alm_box(m);
         lv_obj_set_size(box, 180, 68);
         lv_obj_set_pos(box, 270, 160);
@@ -992,7 +975,6 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
     } else if (ALM_IS_ORBIT()) {
         r = hrow(m, 160, 72, 18);
         a->math_problem = alm_label(r, sk->font_time_m, sk->text, "");
-        equals_sign(r, 30, 5, 9, sk->text);
         box = alm_box(r);
         lv_obj_set_size(box, 128, 72);
         lv_obj_set_style_radius(box, 36, 0);
@@ -1009,7 +991,6 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
     } else {
         r = hrow(m, 135, 62, 16);
         a->math_problem = alm_label(r, sk->font_time_m, sk->text, "");
-        equals_sign(r, 24, 2, 9, sk->text);
         box = alm_box(r);
         lv_obj_set_size(box, LV_SIZE_CONTENT, 62);
         lv_obj_set_style_min_width(box, 84, 0);
@@ -1274,9 +1255,16 @@ void alm_ring_free(clock_ui_context_t *ctx)
 
 /* --- Banner on the face ------------------------------------------------------------------------ */
 
+/* Atelier: the face controls put their alarm chip (540-596) where the banner sits, and the
+ * chip already shows the next alarm. The banner steps out while the controls are up. */
+static bool banner_held(const clock_ui_context_t *ctx)
+{
+    return ALM_IS_ATELIER() && ui_face_chrome_controls_visible(ctx);
+}
+
 static void banner_set_visible(clock_ui_context_t *ctx, bool visible)
 {
-    alm_show(ctx->alarms.banner, visible);
+    alm_show(ctx->alarms.banner, visible && !banner_held(ctx));
     if (ctx->alarms.banner_visible == visible) {
         return;
     }
@@ -1325,7 +1313,7 @@ void alm_banner_create(clock_ui_context_t *ctx)
     lv_obj_set_style_border_width(b, 1, 0);
     lv_obj_set_flex_flow(b, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(b, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_align(b, LV_ALIGN_TOP_MID, 0, (ALM_IS_ATELIER() ? BANNER_CENTER_Y_ATELIER : BANNER_CENTER_Y) - h / 2);
+    lv_obj_align(b, LV_ALIGN_TOP_MID, 0, BANNER_CENTER_Y - h / 2);
     lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
     lv_obj_set_ext_click_area(b, (72 - h) / 2 + 2);
     kit_make_pressable(b);

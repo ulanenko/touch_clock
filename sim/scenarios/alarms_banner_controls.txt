@@ -1,0 +1,11 @@
+# Atelier: the alarm banner steps out while the face controls (with their alarm chip) show.
+set style 2
+wait 300
+set next_alarm_minutes 20
+wait 1100
+shot atelier_banner_before_controls
+tap 360 360
+wait 1100
+shot atelier_banner_with_controls
+wait 8000
+shot atelier_banner_after_controls

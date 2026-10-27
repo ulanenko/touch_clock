@@ -14,7 +14,6 @@
 #include <math.h>
 #include <string.h>
 
-#include "assets/ui_assets/kit_assets.h"
 #include "domain/face_catalog.h"
 #include "ui/ui_areas.h"
 #include "ui/ui_face_chrome.h"
@@ -194,9 +193,9 @@ lv_obj_t *face_engraved_rule(lv_obj_t *parent, int32_t y, int32_t w)
     lv_obj_set_style_bg_opa(lit, LV_OPA_COVER, 0);
 
     lozenge = lv_image_create(parent);
-    lv_image_set_src(lozenge, &ui_kit_atelier_lozenge);
+    lv_image_set_src(lozenge, kit_image_src(KIT_IMAGE_LOZENGE));
     lv_obj_remove_flag(lozenge, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_align(lozenge, LV_ALIGN_TOP_MID, 0, y + 1 - (int32_t)ui_kit_atelier_lozenge.header.h / 2);
+    lv_obj_align(lozenge, LV_ALIGN_TOP_MID, 0, y + 1 - (int32_t)kit_image_src(KIT_IMAGE_LOZENGE)->header.h / 2);
     return rule;
 }
 

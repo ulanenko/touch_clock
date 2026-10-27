@@ -422,14 +422,10 @@ void alm_list_create(clock_ui_context_t *ctx)
     kit_page_create(p, ui_chrome_root(ctx), ALM_IS_ORBIT() ? NULL : "", alm_text(ctx, L10N_ALARMS),
                     ALM_IS_ORBIT() ? KIT_NAV_CLOSE : KIT_NAV_BACK, nav_cb, ctx);
     ui_l10n_bind_kit(ctx, p->title, L10N_ALARMS);
-    alm_one_line(p->title);
     if (ALM_IS_ORBIT() && p->nav != NULL) {
         kit_set_tint(p->nav, sk->tint_alarms);
     }
     content = p->content;
-    /* Kit workaround: the scroll layer must take presses, or drags that start between rows
-     * land on the (not scrollable) page root and the page does not scroll. */
-    lv_obj_add_flag(p->scroll, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_flex_align(content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_add_event_cb(p->scroll, scroll_cb, LV_EVENT_SCROLL_BEGIN, ctx);
     lv_obj_add_event_cb(p->scroll, scroll_cb, LV_EVENT_SCROLL_END, ctx);
@@ -845,8 +841,6 @@ void alm_settings_create(clock_ui_context_t *ctx)
     kit_page_create(p, ui_chrome_root(ctx), NULL, alm_str(ctx, &alm_s_settings_title),
                     KIT_NAV_BACK, settings_nav_cb, ctx);
     ui_l10n_bind_kit_str(ctx, p->title, &alm_s_settings_title);
-    alm_one_line(p->title); /* kit workaround: a long title would wrap into the content */
-    lv_obj_add_flag(p->scroll, LV_OBJ_FLAG_CLICKABLE); /* see alm_list_create */
     if (ALM_IS_ORBIT() && p->nav != NULL) {
         kit_set_tint(p->nav, sk->tint_alarms);
     }

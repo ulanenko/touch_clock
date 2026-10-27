@@ -13,7 +13,6 @@
  */
 #include <math.h>
 
-#include "assets/ui_assets/kit_assets.h"
 #include "ui/ui_areas.h"
 #include "ui/ui_face_chrome.h"
 
@@ -94,7 +93,7 @@ static lv_point_t arc_point(lv_point_t c, int32_t r, float deg)
 
 static void draw_jewel(lv_layer_t *layer, lv_point_t p)
 {
-    const lv_image_dsc_t *src = &ui_kit_atelier_jewel_40;
+    const lv_image_dsc_t *src = kit_image_src(KIT_IMAGE_JEWEL_40);
     lv_draw_image_dsc_t d;
     lv_area_t a;
 

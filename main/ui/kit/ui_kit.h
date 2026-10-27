@@ -52,6 +52,9 @@ void kit_label_set_text(lv_obj_t *label, const char *text);
 /* Only touches the label when the text differs (cheap to call every tick). */
 void kit_label_set_text_if_changed(lv_obj_t *label, const char *text);
 const lv_font_t *kit_font(kit_text_role_t role);
+/* One line, ending in "…" when too long: a fixed line height and LV_LABEL_LONG_MODE_DOTS.
+ * Set the width first. Page titles, eyebrows and row titles already are. */
+void kit_label_one_line(lv_obj_t *label);
 /* UTF-8 upper case for Latin, Latin Extended-A and Cyrillic. */
 void kit_text_upper(char *dst, size_t dst_size, const char *src);
 
@@ -111,6 +114,19 @@ const lv_image_dsc_t *kit_icon_src(kit_icon_t icon);
 lv_obj_t *kit_icon_small(lv_obj_t *parent, kit_icon_t icon, lv_color_t color);
 const lv_image_dsc_t *kit_icon_small_src(kit_icon_t icon);
 
+/* --- Decorations ---------------------------------------------------------------------- */
+
+typedef enum {
+    KIT_IMAGE_JEWEL_28,     /* Atelier gilt bead with ruby: slider knob */
+    KIT_IMAGE_JEWEL_30,     /* switch knob, on */
+    KIT_IMAGE_JEWEL_30_OFF, /* steel bead: switch knob, off */
+    KIT_IMAGE_JEWEL_40,     /* rim and arc knobs */
+    KIT_IMAGE_LOZENGE,      /* Atelier lozenge ornament on engraved rules (23 px, ink moat) */
+} kit_image_t;
+
+/* RGB565A8 images of the kit's decorations (Atelier assets, usable in any style). */
+const lv_image_dsc_t *kit_image_src(kit_image_t image);
+
 /* --- Pages ---------------------------------------------------------------------------- */
 
 typedef enum {
@@ -144,6 +160,9 @@ void kit_page_create(kit_page_t *page,
 /* Adds a round header action key opposite the nav key (Scan, Add, ...). */
 lv_obj_t *kit_page_set_action(kit_page_t *page, kit_icon_t icon, lv_event_cb_t cb, void *user_data);
 void kit_page_set_title(kit_page_t *page, const char *title);
+/* Atelier draws its chapter ring (minute track) around every page; off for pages that draw
+ * their own rim (the night page's 24 h ring). No effect in the other styles. */
+void kit_page_set_rim(kit_page_t *page, bool on);
 void kit_page_set_eyebrow(kit_page_t *page, const char *eyebrow);
 
 /* --- Groups and rows ------------------------------------------------------------------ */
@@ -243,6 +262,9 @@ lv_obj_t *kit_day_toggle(lv_obj_t *parent, const char *letter, bool on);
 
 /* lv_roller styled for the skin: selected row in the time font, others dimmed. */
 lv_obj_t *kit_roller(lv_obj_t *parent, const char *options, uint32_t visible_rows, const lv_font_t *selected_font);
+/* Instrument: the two signal marks either side of the selection window (on by default).
+ * Two rollers that share one window turn off their inner marks. No effect elsewhere. */
+void kit_roller_set_marks(lv_obj_t *roller, bool left, bool right);
 
 /* Styles an lv_keyboard for the skin (keys, special keys, pressed state). */
 void kit_style_keyboard(lv_obj_t *keyboard);

@@ -645,18 +645,9 @@ static void build_ring(clock_ui_context_t *ctx, kit_page_t *p)
     const ui_skin_t *sk = ui_skin();
     clock_ui_settings_state_t *st = ST(ctx);
     static const char *const labels[3] = {"6", "12", "18"};
-    uint32_t n;
 
     /* The 24 h ring replaces the kit's minute track on this page. */
-    n = lv_obj_get_event_count(p->root);
-    for (int32_t i = (int32_t)n - 1; i >= 0; i--) {
-        lv_event_dsc_t *dsc = lv_obj_get_event_dsc(p->root, (uint32_t)i);
-
-        /* The kit registers its rim drawer without user data; ours all carry the context. */
-        if (dsc != NULL && lv_event_dsc_get_cb(dsc) != NULL && lv_event_dsc_get_user_data(dsc) == NULL) {
-            lv_obj_remove_event(p->root, (uint32_t)i);
-        }
-    }
+    kit_page_set_rim(p, false);
     st->night_ring = p->root;
     lv_obj_add_event_cb(p->root, ring_draw_cb, LV_EVENT_DRAW_POST, ctx);
     for (int i = 0; i < 3; i++) {

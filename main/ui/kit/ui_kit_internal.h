@@ -56,5 +56,7 @@ void kit_add_key_deco(lv_obj_t *obj, const kit_key_deco_t *deco);
 lv_obj_t *kit_label_raw(lv_obj_t *parent, kit_text_role_t role, const char *text);
 lv_color_t kit_role_color(kit_text_role_t role);
 
+bool kit_has_event_cb(lv_obj_t *obj, lv_event_cb_t cb);
+void kit_remove_event_cb(lv_obj_t *obj, lv_event_cb_t cb);
 /* Finds the user data of the first event callback cb registered on obj. */
 void *kit_event_data(lv_obj_t *obj, lv_event_cb_t cb);

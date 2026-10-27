@@ -79,6 +79,32 @@ lv_color_t kit_wash(lv_color_t tint)
     return lv_color_mix(tint, lv_color_black(), 78);
 }
 
+bool kit_has_event_cb(lv_obj_t *obj, lv_event_cb_t cb)
+{
+    uint32_t n = lv_obj_get_event_count(obj);
+
+    for (uint32_t i = 0; i < n; i++) {
+        lv_event_dsc_t *dsc = lv_obj_get_event_dsc(obj, i);
+
+        if (dsc != NULL && lv_event_dsc_get_cb(dsc) == cb) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void kit_remove_event_cb(lv_obj_t *obj, lv_event_cb_t cb)
+{
+    /* Backwards: lv_obj_remove_event_cb skips the second of two adjacent matches. */
+    for (int32_t i = (int32_t)lv_obj_get_event_count(obj) - 1; i >= 0; i--) {
+        lv_event_dsc_t *dsc = lv_obj_get_event_dsc(obj, (uint32_t)i);
+
+        if (dsc != NULL && lv_event_dsc_get_cb(dsc) == cb) {
+            lv_obj_remove_event(obj, (uint32_t)i);
+        }
+    }
+}
+
 void *kit_event_data(lv_obj_t *obj, lv_event_cb_t cb)
 {
     uint32_t n = lv_obj_get_event_count(obj);
@@ -266,6 +292,24 @@ static lv_obj_t *icon_image(lv_obj_t *parent, const lv_image_dsc_t *src, lv_colo
     lv_obj_remove_flag(img, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_flag(img, LV_OBJ_FLAG_EVENT_BUBBLE);
     return img;
+}
+
+const lv_image_dsc_t *kit_image_src(kit_image_t image)
+{
+    switch (image) {
+    case KIT_IMAGE_JEWEL_28:
+        return &ui_kit_atelier_jewel_28;
+    case KIT_IMAGE_JEWEL_30:
+        return &ui_kit_atelier_jewel_on_30;
+    case KIT_IMAGE_JEWEL_30_OFF:
+        return &ui_kit_atelier_jewel_off_30;
+    case KIT_IMAGE_JEWEL_40:
+        return &ui_kit_atelier_jewel_40;
+    case KIT_IMAGE_LOZENGE:
+        return &ui_kit_atelier_lozenge;
+    default:
+        return NULL;
+    }
 }
 
 lv_obj_t *kit_icon(lv_obj_t *parent, kit_icon_t icon, lv_color_t color)
@@ -808,6 +852,16 @@ lv_obj_t *kit_divider(lv_obj_t *parent)
     return div;
 }
 
+void kit_label_one_line(lv_obj_t *label)
+{
+    if (label == NULL) {
+        return;
+    }
+    /* A fixed one-line height: with LV_SIZE_CONTENT a dotted label still wraps. */
+    lv_obj_set_height(label, lv_font_get_line_height(lv_obj_get_style_text_font(label, LV_PART_MAIN)));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
+}
+
 lv_obj_t *kit_spacer(lv_obj_t *parent, int32_t height)
 {
     lv_obj_t *sp = kit_plain(parent);
@@ -997,7 +1051,7 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
     lv_obj_set_style_pad_row(col, kit_is_instrument() ? 2 : kit_is_orbit() ? -1 : -5, 0);
     row->title = kit_label_raw(col, KIT_TEXT_HEADING, opts->title);
     lv_obj_set_width(row->title, lv_pct(100));
-    lv_label_set_long_mode(row->title, LV_LABEL_LONG_MODE_DOTS);
+    kit_label_one_line(row->title);
     if (two) {
         row->subtitle = kit_label_raw(col, KIT_TEXT_BODY, opts->subtitle);
         lv_obj_set_width(row->subtitle, lv_pct(100));
@@ -1189,7 +1243,10 @@ void kit_page_create(kit_page_t *page,
     scroll = kit_plain(root);
     page->scroll = scroll;
     lv_obj_set_size(scroll, KIT_SCREEN, KIT_SCREEN);
-    lv_obj_add_flag(scroll, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM | LV_OBJ_FLAG_SCROLL_ELASTIC);
+    /* Clickable, so a drag that starts between rows or on any non-interactive part lands on
+     * the scrolling layer (not on the page root) and scrolls the page. */
+    lv_obj_add_flag(scroll, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_MOMENTUM |
+                                LV_OBJ_FLAG_SCROLL_ELASTIC);
     lv_obj_set_scroll_dir(scroll, LV_DIR_VER);
     lv_obj_set_scrollbar_mode(scroll, LV_SCROLLBAR_MODE_OFF);
     half = sk->content_w / 2;
@@ -1203,7 +1260,7 @@ void kit_page_create(kit_page_t *page,
 
     page->title = kit_label_raw(scroll, KIT_TEXT_TITLE, title);
     lv_obj_set_width(page->title, kit_is_orbit() ? 400 : KIT_SCREEN - 2 * (sk->nav_x + sk->round_button + 12));
-    lv_label_set_long_mode(page->title, LV_LABEL_LONG_MODE_DOTS);
+    kit_label_one_line(page->title);
     lv_obj_set_style_text_align(page->title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(page->title, LV_ALIGN_TOP_MID, 0, sk->title_y);
 
@@ -1217,7 +1274,7 @@ void kit_page_create(kit_page_t *page,
         lv_obj_t *loz = lv_image_create(scroll);
 
         lv_obj_align(rule, LV_ALIGN_TOP_MID, 0, 168);
-        lv_image_set_src(loz, &ui_kit_atelier_lozenge);
+        lv_image_set_src(loz, kit_image_src(KIT_IMAGE_LOZENGE));
         lv_obj_align(loz, LV_ALIGN_TOP_MID, 0, 168 + 1 - 11);
     }
 
@@ -1242,6 +1299,22 @@ void kit_page_create(kit_page_t *page,
             lv_obj_add_event_cb(page->nav, nav_cb, LV_EVENT_CLICKED, user_data);
         }
     }
+}
+
+void kit_page_set_rim(kit_page_t *page, bool on)
+{
+    if (page == NULL || page->root == NULL || !kit_is_atelier()) {
+        return;
+    }
+    if (on == kit_has_event_cb(page->root, atelier_rim_cb)) {
+        return;
+    }
+    if (on) {
+        lv_obj_add_event_cb(page->root, atelier_rim_cb, LV_EVENT_DRAW_POST, NULL);
+    } else {
+        kit_remove_event_cb(page->root, atelier_rim_cb);
+    }
+    lv_obj_invalidate(page->root);
 }
 
 lv_obj_t *kit_page_set_action(kit_page_t *page, kit_icon_t icon, lv_event_cb_t cb, void *user_data)
@@ -1282,7 +1355,7 @@ void kit_page_set_eyebrow(kit_page_t *page, const char *eyebrow)
         }
         page->eyebrow = kit_label_raw(page->scroll, KIT_TEXT_LABEL, eyebrow);
         lv_obj_set_width(page->eyebrow, kit_is_orbit() ? 440 : 400);
-        lv_label_set_long_mode(page->eyebrow, LV_LABEL_LONG_MODE_DOTS);
+        kit_label_one_line(page->eyebrow);
         lv_obj_set_style_text_align(page->eyebrow, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(page->eyebrow, LV_ALIGN_TOP_MID, 0, sk->eyebrow_y);
         if (page->content != NULL) {

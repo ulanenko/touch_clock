@@ -517,8 +517,6 @@ kit_page_t *st_page_begin(clock_ui_context_t *ctx, ui_st_page_t id, st_text_t ey
                     nav, st_back_event_cb, ctx);
     st_bind(ctx, p->title, title);
     st_bind(ctx, p->eyebrow, eyebrow);
-    /* One line, ending in dots when a translation is too long for the header. */
-    lv_obj_set_height(p->title, lv_font_get_line_height(lv_obj_get_style_text_font(p->title, 0)));
     ST(ctx)->built[id] = true;
 
     /* A swipe to the right goes back (it stops at the page root). */

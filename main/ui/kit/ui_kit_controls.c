@@ -84,8 +84,8 @@ lv_obj_t *kit_switch(lv_obj_t *parent, lv_color_t tint)
         lv_obj_set_style_pad_all(sw, -5, LV_PART_KNOB);
         lv_obj_set_style_radius(sw, LV_RADIUS_CIRCLE, LV_PART_KNOB);
         lv_obj_set_style_bg_opa(sw, LV_OPA_TRANSP, LV_PART_KNOB);
-        lv_obj_set_style_bg_image_src(sw, &ui_kit_atelier_jewel_off_30, LV_PART_KNOB);
-        lv_obj_set_style_bg_image_src(sw, &ui_kit_atelier_jewel_on_30, LV_PART_KNOB | LV_STATE_CHECKED);
+        lv_obj_set_style_bg_image_src(sw, kit_image_src(KIT_IMAGE_JEWEL_30_OFF), LV_PART_KNOB);
+        lv_obj_set_style_bg_image_src(sw, kit_image_src(KIT_IMAGE_JEWEL_30), LV_PART_KNOB | LV_STATE_CHECKED);
     }
     return sw;
 }
@@ -184,7 +184,7 @@ static void slider_draw_cb(lv_event_t *e)
         }
         fill(layer, a.x1, ty, kx, ty + 1, tint, 0, opa);
         lv_draw_image_dsc_init(&img);
-        img.src = &ui_kit_atelier_jewel_28;
+        img.src = kit_image_src(KIT_IMAGE_JEWEL_28);
         img.opa = opa;
         ia.x1 = kx - 14;
         ia.y1 = ty + 1 - 14;
@@ -564,10 +564,15 @@ lv_obj_t *kit_day_toggle(lv_obj_t *parent, const char *letter, bool on)
 
 /* --- Roller ----------------------------------------------------------------------------- */
 
-/* Instrument: two signal marks either side of the selection window. */
+/* Instrument: two signal marks either side of the selection window. The user data holds
+ * which sides are drawn (bit 0 left, bit 1 right). */
+#define MARK_LEFT 1U
+#define MARK_RIGHT 2U
+
 static void roller_marks_cb(lv_event_t *e)
 {
     lv_obj_t *roller = lv_event_get_current_target(e);
+    uintptr_t sides = (uintptr_t)lv_event_get_user_data(e);
     lv_layer_t *layer;
     lv_area_t a;
     lv_draw_rect_dsc_t r;
@@ -585,8 +590,28 @@ static void roller_marks_cb(lv_event_t *e)
     r.radius = 2;
     lv_area_t left = {a.x1 - 10, cy - 2, a.x1 - 5, cy + 1};
     lv_area_t right = {a.x2 + 5, cy - 2, a.x2 + 10, cy + 1};
-    lv_draw_rect(layer, &r, &left);
-    lv_draw_rect(layer, &r, &right);
+    if (sides & MARK_LEFT) {
+        lv_draw_rect(layer, &r, &left);
+    }
+    if (sides & MARK_RIGHT) {
+        lv_draw_rect(layer, &r, &right);
+    }
+}
+
+void kit_roller_set_marks(lv_obj_t *roller, bool left, bool right)
+{
+    uintptr_t sides = (left ? MARK_LEFT : 0U) | (right ? MARK_RIGHT : 0U);
+
+    if (roller == NULL || !kit_is_instrument()) {
+        return;
+    }
+    kit_remove_event_cb(roller, roller_marks_cb);
+    if (sides != 0U) {
+        lv_obj_add_event_cb(roller, roller_marks_cb, LV_EVENT_DRAW_MAIN_END, (void *)sides);
+        lv_obj_add_event_cb(roller, roller_marks_cb, LV_EVENT_REFR_EXT_DRAW_SIZE, (void *)sides);
+    }
+    lv_obj_refresh_ext_draw_size(roller);
+    lv_obj_invalidate(roller);
 }
 
 lv_obj_t *kit_roller(lv_obj_t *parent, const char *options, uint32_t visible_rows, const lv_font_t *selected_font)
@@ -631,8 +656,7 @@ lv_obj_t *kit_roller(lv_obj_t *parent, const char *options, uint32_t visible_row
         lv_obj_set_style_border_width(roller, 1, LV_PART_SELECTED);
         lv_obj_set_style_border_color(roller, sk->line, LV_PART_SELECTED);
         lv_obj_set_style_radius(roller, sk->radius_s, LV_PART_SELECTED);
-        lv_obj_add_event_cb(roller, roller_marks_cb, LV_EVENT_DRAW_MAIN_END, NULL);
-        lv_obj_add_event_cb(roller, roller_marks_cb, LV_EVENT_REFR_EXT_DRAW_SIZE, NULL);
+        kit_roller_set_marks(roller, true, true);
     } else if (kit_is_atelier()) {
         lv_obj_set_style_border_side(roller, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, LV_PART_SELECTED);
         lv_obj_set_style_border_width(roller, 1, LV_PART_SELECTED);

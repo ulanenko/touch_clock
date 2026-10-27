@@ -85,11 +85,13 @@ static void create_drums(clock_ui_context_t *ctx, lv_obj_t *parent)
     for (int i = 0; i < 2; i++) {
         lv_obj_t *r = i == 0 ? ts->hour_roller : ts->minute_roller;
 
-        /* One shared window: the rollers' own windows are cleared. */
+        /* One shared window: the rollers' own windows are cleared, and only its outer
+         * edges carry the signal marks. */
         lv_obj_set_style_bg_opa(r, LV_OPA_TRANSP, LV_PART_SELECTED);
         lv_obj_set_style_border_width(r, 0, LV_PART_SELECTED);
+        kit_roller_set_marks(r, i == 0, i == 1);
     }
-    /* The colon sits on a well-coloured block that hides the rollers' inner marks. */
+    /* The colon, centred in the window between the drums. */
     colon = alm_box(parent);
     lv_obj_set_pos(colon, 344, 121);
     lv_obj_set_size(colon, 32, 94);
