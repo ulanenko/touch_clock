@@ -34,7 +34,7 @@ void app_controller_core_apply_action_result(app_controller_core_t *core,
 void app_controller_core_set_temporary_brightness_floor(app_controller_core_t *core,
                                                         bool enabled,
                                                         uint8_t floor_brightness);
-void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t now);
+void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t now, uint8_t sound);
 void app_controller_core_stop_alarm_test(app_controller_core_t *core);
 void app_controller_core_arm_cancel_revert_window(app_controller_core_t *core, int64_t duration_ms);
 bool app_controller_core_cancel_revert_window_active(const app_controller_core_t *core);

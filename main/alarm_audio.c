@@ -3,10 +3,13 @@
 #include <math.h>
 #include <string.h>
 
+#include "alarm_tones.h"
 #include "assets/alarm_pcm.h"
 #include "bsp/esp32_p4_wifi6_touch_lcd_xc.h"
+#include "domain/clock_types.h"
 #include "driver/i2s_std.h"
 #include "esp_codec_dev.h"
+#include "esp_heap_caps.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
@@ -42,7 +45,14 @@ typedef enum {
 typedef struct {
     alarm_audio_cmd_type_t type;
     uint8_t volume;
+    uint8_t sound; /* alarm_sound_t, for the play commands */
 } alarm_audio_cmd_t;
+
+/* The loop being played: the recorded tone or a synthesised one. */
+typedef struct {
+    const int16_t *data;
+    size_t samples;
+} alarm_audio_loop_t;
 
 typedef struct {
     QueueHandle_t queue;
@@ -56,6 +66,46 @@ typedef struct {
 
 static const char *TAG = "alarm_audio";
 static alarm_audio_state_t s_alarm_audio = {0};
+
+/* The last synthesised tone, kept in PSRAM so playing it again starts at once. */
+static int16_t *s_tone_pcm;
+static size_t s_tone_samples;
+static uint8_t s_tone_sound = ALARM_SOUND_COUNT;
+
+/* Returns the loop for a sound, rendering a synthesised one on first use (well under a
+ * second); the recorded tone if anything fails. */
+static alarm_audio_loop_t loop_for_sound(uint8_t sound)
+{
+    alarm_audio_loop_t recorded = {.data = alarm_pcm_data, .samples = (size_t)ALARM_PCM_SAMPLES};
+    size_t samples;
+    float *scratch;
+
+    if (!alarm_tone_is_synth(sound)) {
+        return recorded;
+    }
+    if (s_tone_sound == sound && s_tone_pcm != NULL) {
+        return (alarm_audio_loop_t) {.data = s_tone_pcm, .samples = s_tone_samples};
+    }
+    samples = alarm_tone_loop_samples(sound);
+    if (s_tone_pcm != NULL && s_tone_samples < samples) {
+        heap_caps_free(s_tone_pcm);
+        s_tone_pcm = NULL;
+    }
+    if (s_tone_pcm == NULL) {
+        s_tone_pcm = heap_caps_malloc(samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    }
+    scratch = heap_caps_malloc(samples * sizeof(float), MALLOC_CAP_SPIRAM);
+    s_tone_sound = ALARM_SOUND_COUNT;
+    if (s_tone_pcm == NULL || scratch == NULL || !alarm_tone_render(sound, s_tone_pcm, scratch)) {
+        ESP_LOGW(TAG, "Could not render alarm sound %u, playing the recorded tone", sound);
+        heap_caps_free(scratch);
+        return recorded;
+    }
+    heap_caps_free(scratch);
+    s_tone_sound = sound;
+    s_tone_samples = samples;
+    return (alarm_audio_loop_t) {.data = s_tone_pcm, .samples = samples};
+}
 
 static uint8_t clamp_volume(uint8_t volume)
 {
@@ -149,6 +199,7 @@ static bool mode_uses_ascending_ramp(alarm_audio_mode_t mode)
 
 static void handle_command(const alarm_audio_cmd_t *cmd,
                            alarm_audio_mode_t *mode,
+                           alarm_audio_loop_t *loop,
                            size_t *sample_index,
                            uint8_t *volume,
                            uint8_t *applied_volume,
@@ -156,6 +207,7 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
 {
     switch (cmd->type) {
     case ALARM_AUDIO_CMD_PLAY_ALARM:
+        *loop = loop_for_sound(cmd->sound);
         *volume = clamp_volume(cmd->volume);
         *sample_index = 0;
         *elapsed_samples = 0;
@@ -164,6 +216,7 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
         apply_volume(*applied_volume);
         break;
     case ALARM_AUDIO_CMD_PLAY_TEST:
+        *loop = loop_for_sound(cmd->sound);
         *volume = clamp_volume(cmd->volume);
         *sample_index = 0;
         *elapsed_samples = 0;
@@ -209,6 +262,7 @@ static void alarm_audio_task(void *arg)
 {
     alarm_audio_cmd_t cmd;
     alarm_audio_mode_t mode = ALARM_AUDIO_MODE_IDLE;
+    alarm_audio_loop_t loop = {.data = alarm_pcm_data, .samples = (size_t)ALARM_PCM_SAMPLES};
     size_t sample_index = 0;
     uint8_t volume = s_alarm_audio.volume;
     uint8_t applied_volume = volume;
@@ -220,13 +274,13 @@ static void alarm_audio_task(void *arg)
     for (;;) {
         if (mode == ALARM_AUDIO_MODE_IDLE) {
             if (xQueueReceive(s_alarm_audio.queue, &cmd, portMAX_DELAY) == pdTRUE) {
-                handle_command(&cmd, &mode, &sample_index, &volume, &applied_volume, &elapsed_samples);
+                handle_command(&cmd, &mode, &loop, &sample_index, &volume, &applied_volume, &elapsed_samples);
             }
             continue;
         }
 
         while (xQueueReceive(s_alarm_audio.queue, &cmd, 0) == pdTRUE) {
-            handle_command(&cmd, &mode, &sample_index, &volume, &applied_volume, &elapsed_samples);
+            handle_command(&cmd, &mode, &loop, &sample_index, &volume, &applied_volume, &elapsed_samples);
         }
 
         if (mode == ALARM_AUDIO_MODE_IDLE) {
@@ -249,13 +303,13 @@ static void alarm_audio_task(void *arg)
         } else {
             size_t remaining;
 
-            if (sample_index >= (size_t)ALARM_PCM_SAMPLES) {
+            if (sample_index >= loop.samples) {
                 sample_index = 0;
             }
 
-            remaining = (size_t)ALARM_PCM_SAMPLES - sample_index;
+            remaining = loop.samples - sample_index;
             chunk_samples = (remaining > ALARM_AUDIO_CHUNK_SAMPLES) ? ALARM_AUDIO_CHUNK_SAMPLES : remaining;
-            memcpy(chunk, &alarm_pcm_data[sample_index], chunk_samples * sizeof(int16_t));
+            memcpy(chunk, &loop.data[sample_index], chunk_samples * sizeof(int16_t));
         }
 
         if (esp_codec_dev_write(s_alarm_audio.speaker, chunk, chunk_samples * sizeof(int16_t)) != ESP_CODEC_DEV_OK) {
@@ -290,11 +344,12 @@ static void alarm_audio_task(void *arg)
     }
 }
 
-static esp_err_t enqueue_command(alarm_audio_cmd_type_t type, uint8_t volume)
+static esp_err_t enqueue_command(alarm_audio_cmd_type_t type, uint8_t volume, uint8_t sound)
 {
     alarm_audio_cmd_t cmd = {
         .type = type,
         .volume = clamp_volume(volume),
+        .sound = sound,
     };
     alarm_audio_mode_t previous_mode = s_alarm_audio.mode;
     uint8_t previous_volume = s_alarm_audio.volume;
@@ -409,7 +464,7 @@ void alarm_audio_set_volume(uint8_t volume)
         return;
     }
 
-    (void)enqueue_command(ALARM_AUDIO_CMD_SET_VOLUME, volume);
+    (void)enqueue_command(ALARM_AUDIO_CMD_SET_VOLUME, volume, 0);
 }
 
 void alarm_audio_set_ascending_enabled(bool enabled)
@@ -417,19 +472,19 @@ void alarm_audio_set_ascending_enabled(bool enabled)
     s_alarm_audio.ascending_enabled = enabled ? true : false;
 }
 
-esp_err_t alarm_audio_start_alarm(uint8_t volume)
+esp_err_t alarm_audio_start_alarm(uint8_t volume, uint8_t sound)
 {
-    return enqueue_command(ALARM_AUDIO_CMD_PLAY_ALARM, volume);
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_ALARM, volume, sound);
 }
 
-esp_err_t alarm_audio_start_test(uint8_t volume)
+esp_err_t alarm_audio_start_test(uint8_t volume, uint8_t sound)
 {
-    return enqueue_command(ALARM_AUDIO_CMD_PLAY_TEST, volume);
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_TEST, volume, sound);
 }
 
 esp_err_t alarm_audio_play_ui_click(uint8_t volume)
 {
-    return enqueue_command(ALARM_AUDIO_CMD_PLAY_CLICK, volume);
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_CLICK, volume, 0);
 }
 
 void alarm_audio_stop(void)
@@ -438,7 +493,7 @@ void alarm_audio_stop(void)
         return;
     }
 
-    (void)enqueue_command(ALARM_AUDIO_CMD_STOP, s_alarm_audio.volume);
+    (void)enqueue_command(ALARM_AUDIO_CMD_STOP, s_alarm_audio.volume, 0);
 }
 
 bool alarm_audio_is_alarm_active(void)

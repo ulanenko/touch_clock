@@ -97,6 +97,7 @@ typedef struct {
     lv_obj_t *volume_value;
     lv_obj_t *settings_test_btn;
     lv_obj_t *settings_sound_sub;
+    lv_obj_t *settings_sound_title;
     lv_obj_t *ascending_sw;
 
     /* --- editor ---------------------------------------------------------------------- */
@@ -116,6 +117,7 @@ typedef struct {
     lv_obj_t *editor_day_btn[7]; /* by weekday (0 = Sunday) */
     lv_obj_t *editor_test_btn;
     lv_obj_t *editor_sound_sub;
+    lv_obj_t *editor_sound_title;
     lv_obj_t *editor_math_sw;
     lv_obj_t *editor_enabled_row;
     lv_obj_t *editor_enabled_sw;
@@ -178,6 +180,7 @@ typedef struct {
     bool cached_alarm_test_active;
     bool cached_snooze_active;
     bool cached_ascending_alarm_enabled;
+    uint8_t cached_default_sound;
     time_t cached_snooze_deadline;
     time_t cached_next_alarm_epoch;
     int8_t cached_next_alarm_index;

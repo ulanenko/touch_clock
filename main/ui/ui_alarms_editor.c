@@ -116,6 +116,17 @@ static void test_cb(lv_event_t *e)
     alm_editor_sync(ctx);
 }
 
+/* Tapping the sound row steps to the next sound and plays it. */
+static void sound_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+    alarm_config_t *d = &ctx->alarms.editor_draft;
+
+    d->sound = (uint8_t)((d->sound + 1) % ALARM_SOUND_COUNT);
+    alm_sound_preview(ctx);
+    alm_editor_sync(ctx);
+}
+
 static void math_cb(lv_event_t *e)
 {
     clock_ui_context_t *ctx = lv_event_get_user_data(e);
@@ -254,16 +265,18 @@ static lv_obj_t *create_rows(clock_ui_context_t *ctx, lv_obj_t *parent)
                                       .subtitle = ALM_IS_ORBIT() ? "" : NULL,
                                       .trail = KIT_TRAIL_CUSTOM});
     set_note_icon(row.icon);
-    ui_l10n_bind_kit_str(ctx, row.title, &alm_s_sound_name);
+    ctx->alarms.editor_sound_title = row.title; /* the draft's sound, set in sync */
     ctx->alarms.editor_sound_sub = row.subtitle;
+    kit_make_pressable(row.row);
+    lv_obj_add_event_cb(row.row, sound_cb, LV_EVENT_CLICKED, ctx);
     if (row.subtitle != NULL) {
         alm_one_line(row.subtitle);
     }
     col = lv_obj_get_parent(row.title);
     if (ALM_IS_INSTRUMENT()) {
-        lv_obj_t *eb = kit_label(col, KIT_TEXT_LABEL, alm_str(ctx, &alm_s_sound));
+        lv_obj_t *eb = kit_label(col, KIT_TEXT_LABEL, alm_str(ctx, &alm_s_sound_tap));
 
-        ui_l10n_bind_kit_str(ctx, eb, &alm_s_sound);
+        ui_l10n_bind_kit_str(ctx, eb, &alm_s_sound_tap);
         lv_obj_move_to_index(eb, 0);
         lv_obj_set_style_pad_row(col, 0, 0);
         lv_obj_set_style_min_height(col, 52, 0);
@@ -680,7 +693,6 @@ void alm_editor_sync(clock_ui_context_t *ctx)
     const alarm_config_t *d = &a->editor_draft;
     uint8_t preset = alarm_repeat_preset_from_config(d);
     bool testing = ctx->runtime->alarm_test_active;
-    char text[64];
 
     if (a->editor_root == NULL) {
         return;
@@ -710,13 +722,9 @@ void alm_editor_sync(clock_ui_context_t *ctx)
         }
     }
 
+    alm_set_text(a->editor_sound_title, alm_str(ctx, alm_sound_name(d->sound)));
     if (a->editor_sound_sub != NULL) {
-        if (ctx->settings->ascending_alarm_enabled) {
-            snprintf(text, sizeof(text), "%s \xC2\xB7 %s", alm_str(ctx, &alm_s_sound), alm_str(ctx, &alm_s_rising));
-        } else {
-            snprintf(text, sizeof(text), "%s", alm_str(ctx, &alm_s_sound));
-        }
-        alm_set_text(a->editor_sound_sub, text);
+        alm_set_text(a->editor_sound_sub, alm_str(ctx, &alm_s_tap_to_change));
     }
     kit_button_set_text(a->editor_test_btn, alm_str(ctx, testing ? &alm_s_stop : &alm_s_test));
     kit_icon_set(lv_obj_get_child(a->editor_test_btn, 0), testing ? KIT_ICON_STOP : KIT_ICON_PLAY);

@@ -265,7 +265,11 @@ static void reconcile_alarm_audio(app_controller_core_t *core)
         if (audio->is_alarm_active != NULL &&
             !audio->is_alarm_active() &&
             audio->start_alarm != NULL) {
-            audio->start_alarm(core->state.settings.alarm_volume);
+            int8_t idx = core->state.runtime.active_alarm_index;
+            uint8_t sound = (idx >= 0 && idx < MAX_ALARMS) ? core->state.settings.alarms[idx].sound
+                                                           : (uint8_t)ALARM_SOUND_MORNING_LIGHT;
+
+            audio->start_alarm(core->state.settings.alarm_volume, sound);
         }
     } else if (audio->is_alarm_active != NULL && audio->is_alarm_active() && audio->stop != NULL) {
         audio->stop();
@@ -439,7 +443,7 @@ void app_controller_core_set_temporary_brightness_floor(app_controller_core_t *c
     apply_runtime_brightness(core);
 }
 
-void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t now)
+void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t now, uint8_t sound)
 {
     app_action_result_t result = app_action_alarm_test_toggle(&core->state);
     const audio_service_t *audio = core->config.audio_service;
@@ -453,7 +457,7 @@ void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t n
             audio->stop();
         }
     } else if (audio->start_test != NULL) {
-        audio->start_test(core->state.settings.alarm_volume);
+        audio->start_test(core->state.settings.alarm_volume, sound);
     }
 
     if (audio->is_test_active != NULL) {

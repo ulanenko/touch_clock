@@ -28,6 +28,7 @@ typedef struct {
     void (*on_set_ui_click_volume)(void *user_ctx, uint8_t volume);
     void (*on_set_language)(void *user_ctx, clock_language_t language);
     void (*on_set_ui_style)(void *user_ctx, clock_ui_style_t style);
+    void (*on_set_default_alarm_sound)(void *user_ctx, uint8_t sound);
     void (*on_set_night_mode_enabled)(void *user_ctx, bool enabled);
     void (*on_set_night_schedule)(void *user_ctx,
                                   uint8_t start_hour,
@@ -44,7 +45,7 @@ typedef struct {
     void (*on_delete_alarm)(void *user_ctx, uint8_t alarm_index);
     void (*on_alarm_snooze_requested)(void *user_ctx);
     void (*on_alarm_stop_requested)(void *user_ctx);
-    void (*on_alarm_test_requested)(void *user_ctx);
+    void (*on_alarm_test_requested)(void *user_ctx, uint8_t sound);
     void (*on_alarm_test_stop_requested)(void *user_ctx);
     void (*on_next_alarm_cancel_requested)(void *user_ctx);
     void (*on_next_alarm_cancel_undo_requested)(void *user_ctx);

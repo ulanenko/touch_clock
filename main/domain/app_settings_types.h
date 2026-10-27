@@ -23,4 +23,5 @@ typedef struct {
     uint8_t ui_click_volume;
     uint8_t language;
     uint8_t ui_style;
+    uint8_t default_alarm_sound; /* alarm_sound_t new alarms start with */
 } app_settings_t;

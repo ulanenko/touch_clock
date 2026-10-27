@@ -25,10 +25,18 @@ const ui_l10n_str_t alm_s_settings_title =
     UI_L10N_STR("Alarm settings", "Ustawienia", "Налаштування", "Настройки", "Instellingen");
 const ui_l10n_str_t alm_s_sound_name =
     UI_L10N_STR("Morning Light", "Poranne światło", "Ранкове світло", "Утренний свет", "Ochtendlicht");
+static const ui_l10n_str_t s_sound_chimes =
+    UI_L10N_STR("Wind Chimes", "Dzwonki wietrzne", "Музика вітру", "Музыка ветра", "Windgong");
+static const ui_l10n_str_t s_sound_marimba = UI_L10N_STR("Marimba", "Marimba", "Марімба", "Маримба", "Marimba");
+static const ui_l10n_str_t s_sound_bowl =
+    UI_L10N_STR("Singing Bowl", "Misa dźwiękowa", "Співоча чаша", "Поющая чаша", "Klankschaal");
 const ui_l10n_str_t alm_s_sound = UI_L10N_STR("Sound", "Dźwięk", "Звук", "Звук", "Geluid");
-const ui_l10n_str_t alm_s_rising =
-    UI_L10N_STR("rising volume", "narastająca głośność", "наростаюча гучність", "нарастающая громкость",
-                "oplopend volume");
+const ui_l10n_str_t alm_s_tap_to_change =
+    UI_L10N_STR("Tap to change", "Dotknij, aby zmienić", "Торкніться, щоб змінити", "Нажмите, чтобы сменить",
+                "Tik om te wijzigen");
+const ui_l10n_str_t alm_s_sound_tap =
+    UI_L10N_STR("Sound · tap to change", "Dźwięk · dotknij, aby zmienić", "Звук · торкніться, щоб змінити",
+                "Звук · нажмите, чтобы сменить", "Geluid · tik om te wijzigen");
 const ui_l10n_str_t alm_s_repeat = UI_L10N_STR("Repeat", "Powtarzanie", "Повтор", "Повтор", "Herhalen");
 const ui_l10n_str_t alm_s_new_alarm =
     UI_L10N_STR("New alarm", "Nowy budzik", "Новий будильник", "Новый будильник", "Nieuwe wekker");
@@ -569,6 +577,7 @@ void alm_editor_open(clock_ui_context_t *ctx, uint8_t index, bool is_new)
     ctx->alarms.close_swipe_consumed = false;
     *draft = ctx->settings->alarms[index];
     if (is_new) {
+        draft->sound = ctx->settings->default_alarm_sound;
         time_t now = alm_now();
         struct tm tm;
         int minute;
@@ -607,11 +616,37 @@ void alm_editor_close(clock_ui_context_t *ctx)
     }
 }
 
+const ui_l10n_str_t *alm_sound_name(uint8_t sound)
+{
+    switch (sound) {
+    case ALARM_SOUND_WIND_CHIMES:
+        return &s_sound_chimes;
+    case ALARM_SOUND_MARIMBA:
+        return &s_sound_marimba;
+    case ALARM_SOUND_SINGING_BOWL:
+        return &s_sound_bowl;
+    default:
+        return &alm_s_sound_name;
+    }
+}
+
+/* The sound Test plays: the alarm being edited, else the default for new alarms. */
+static uint8_t test_sound(const clock_ui_context_t *ctx)
+{
+    return ctx->alarms.editor_open ? ctx->alarms.editor_draft.sound : ctx->settings->default_alarm_sound;
+}
+
 void alm_test_toggle(clock_ui_context_t *ctx)
 {
     if (ctx->callbacks.on_alarm_test_requested != NULL) {
-        ctx->callbacks.on_alarm_test_requested(ctx->user_ctx);
+        ctx->callbacks.on_alarm_test_requested(ctx->user_ctx, test_sound(ctx));
     }
+}
+
+void alm_sound_preview(clock_ui_context_t *ctx)
+{
+    alm_test_stop(ctx);
+    alm_test_toggle(ctx);
 }
 
 void alm_test_stop(clock_ui_context_t *ctx)
@@ -636,7 +671,8 @@ static bool needs_sync(const clock_ui_context_t *ctx)
            a->cached_active_alarm_index != rt->active_alarm_index || a->cached_alarm_volume != st->alarm_volume ||
            a->cached_ascending_alarm_enabled != st->ascending_alarm_enabled ||
            a->cached_snooze_minutes != st->snooze_minutes || a->cached_skipped_alarm_index != st->skipped_alarm_index ||
-           a->cached_skipped_alarm_epoch != st->skipped_alarm_epoch || a->cached_language != st->language;
+           a->cached_skipped_alarm_epoch != st->skipped_alarm_epoch || a->cached_language != st->language ||
+           a->cached_default_sound != st->default_alarm_sound;
 }
 
 void alm_sync_all(clock_ui_context_t *ctx)
@@ -667,6 +703,7 @@ void alm_sync_all(clock_ui_context_t *ctx)
     a->cached_skipped_alarm_index = st->skipped_alarm_index;
     a->cached_skipped_alarm_epoch = st->skipped_alarm_epoch;
     a->cached_language = st->language;
+    a->cached_default_sound = st->default_alarm_sound;
     a->cache_valid = true;
 }
 

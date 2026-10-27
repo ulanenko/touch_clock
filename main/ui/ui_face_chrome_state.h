@@ -147,9 +147,8 @@ typedef struct {
     time_t night_alarm;
     clock_face_id_t night_face;
     uint8_t night_language;
-    int16_t night_now_deg;   /* Orbit rim arc: now and alarm on a 24 h dial (0 at 12) */
-    int16_t night_alarm_deg;
-    bool night_has_alarm;
+    ui_face_ink_t night_ink; /* the face's inks the texts were coloured with */
+    bool night_inked;
     bool night_visible;
     lv_draw_buf_t *rim_band[2]; /* Instrument tabs / Orbit bands at 12 and 6, built on first show */
     lv_area_t rim_band_area[2];

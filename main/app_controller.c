@@ -214,6 +214,14 @@ static void on_set_language(void *user_ctx, clock_language_t language)
     app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
 }
 
+static void on_set_default_alarm_sound(void *user_ctx, uint8_t sound)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    app_action_result_t result = app_action_set_default_alarm_sound(&app->core.state, sound);
+
+    app_controller_core_apply_action_result(&app->core, &result, app->core.config.clock_service->now());
+}
+
 static void on_set_ui_style(void *user_ctx, clock_ui_style_t style)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -338,10 +346,10 @@ static void on_alarm_stop_requested(void *user_ctx)
     app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
-static void on_alarm_test_requested(void *user_ctx)
+static void on_alarm_test_requested(void *user_ctx, uint8_t sound)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
-    app_controller_core_toggle_alarm_test(&app->core, app->core.config.clock_service->now());
+    app_controller_core_toggle_alarm_test(&app->core, app->core.config.clock_service->now(), sound);
 }
 
 static void on_alarm_test_stop_requested(void *user_ctx)
@@ -409,6 +417,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_set_ui_click_volume = on_set_ui_click_volume,
         .on_set_language = on_set_language,
         .on_set_ui_style = on_set_ui_style,
+        .on_set_default_alarm_sound = on_set_default_alarm_sound,
         .on_set_night_mode_enabled = on_set_night_mode_enabled,
         .on_set_night_schedule = on_set_night_schedule,
         .on_set_night_brightness = on_set_night_brightness,

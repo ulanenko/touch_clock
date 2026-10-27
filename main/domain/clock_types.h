@@ -53,6 +53,14 @@ typedef enum {
 
 #define CLOCK_UI_STYLE_DEFAULT CLOCK_UI_STYLE_ORBIT
 
+typedef enum {
+    ALARM_SOUND_MORNING_LIGHT = 0, /* the recorded tone */
+    ALARM_SOUND_WIND_CHIMES = 1,   /* the rest are synthesised on the device */
+    ALARM_SOUND_MARIMBA = 2,
+    ALARM_SOUND_SINGING_BOWL = 3,
+    ALARM_SOUND_COUNT = 4,
+} alarm_sound_t;
+
 typedef struct {
     bool enabled;
     uint8_t hour;
@@ -60,6 +68,7 @@ typedef struct {
     uint8_t days_mask;
     uint8_t repeat_mode;
     bool math_unlock_enabled;
+    uint8_t sound; /* alarm_sound_t */
 } alarm_config_t;
 
 typedef struct {

@@ -395,6 +395,13 @@ void request_set_language(clock_ui_context_t *ctx, clock_language_t language)
     }
 }
 
+void request_set_default_alarm_sound(clock_ui_context_t *ctx, uint8_t sound)
+{
+    if (ctx->callbacks.on_set_default_alarm_sound != NULL) {
+        ctx->callbacks.on_set_default_alarm_sound(ctx->user_ctx, sound);
+    }
+}
+
 void request_set_ui_style(clock_ui_context_t *ctx, clock_ui_style_t style)
 {
     if (ctx->callbacks.on_set_ui_style != NULL) {

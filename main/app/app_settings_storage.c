@@ -36,6 +36,7 @@
 #define SETTINGS_KEY_UI_CLICK_VOLUME "ui_clk_vol"
 #define SETTINGS_KEY_LANGUAGE "lang"
 #define SETTINGS_KEY_UI_STYLE "ui_style"
+#define SETTINGS_KEY_DEFAULT_ALARM_SOUND "alarm_snd"
 #define SETTINGS_KEY_ASCENDING_ALARM "alarm_ramp"
 #define SETTINGS_KEY_SNOOZE "snooze"
 #define SETTINGS_KEY_CURRENT_FACE "face"
@@ -80,6 +81,16 @@ typedef struct {
     uint8_t repeat_mode;
 } legacy_alarm_config_t;
 
+/* Before alarms had a sound. */
+typedef struct {
+    bool enabled;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t days_mask;
+    uint8_t repeat_mode;
+    bool math_unlock_enabled;
+} legacy_alarm_config_v2_t;
+
 static const settings_field_descriptor_t s_settings_fields[] = {
     {
         .key = SETTINGS_KEY_BASE_BRIGHTNESS,
@@ -110,6 +121,11 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .key = SETTINGS_KEY_UI_STYLE,
         .kind = SETTINGS_FIELD_U8,
         .offset = offsetof(app_settings_t, ui_style),
+    },
+    {
+        .key = SETTINGS_KEY_DEFAULT_ALARM_SOUND,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, default_alarm_sound),
     },
     {
         .key = SETTINGS_KEY_ASCENDING_ALARM,
@@ -294,16 +310,17 @@ static esp_err_t save_field(const app_settings_storage_t *storage,
     return ESP_FAIL;
 }
 
+_Static_assert(sizeof(alarm_config_t) > sizeof(legacy_alarm_config_v2_t), "alarm layouts must differ in size");
+_Static_assert(sizeof(legacy_alarm_config_v2_t) > sizeof(legacy_alarm_config_t), "alarm layouts must differ in size");
+
 static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
                                           app_settings_t *settings,
                                           uint32_t version)
 {
     size_t alarms_size = sizeof(settings->alarms);
     app_settings_t defaults;
-    uint8_t alarm_buffer[(sizeof(alarm_config_t) * MAX_ALARMS) >
-                                 (sizeof(legacy_alarm_config_t) * MAX_ALARMS)
-                             ? (sizeof(alarm_config_t) * MAX_ALARMS)
-                             : (sizeof(legacy_alarm_config_t) * MAX_ALARMS)];
+    /* alarm_config_t is the largest layout; the asserts below keep it so. */
+    uint8_t alarm_buffer[sizeof(alarm_config_t) * MAX_ALARMS];
 
     set_defaults(settings);
     defaults = *settings;
@@ -333,6 +350,19 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
             settings->alarms[i].days_mask = legacy_alarms[i].days_mask;
             settings->alarms[i].repeat_mode = legacy_alarms[i].repeat_mode;
             settings->alarms[i].math_unlock_enabled = false;
+        }
+    } else if (alarms_size == sizeof(legacy_alarm_config_v2_t) * MAX_ALARMS) {
+        const legacy_alarm_config_v2_t *v2 = (const legacy_alarm_config_v2_t *)alarm_buffer;
+
+        memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
+        for (size_t i = 0; i < MAX_ALARMS; ++i) {
+            settings->alarms[i].enabled = v2[i].enabled;
+            settings->alarms[i].hour = v2[i].hour;
+            settings->alarms[i].minute = v2[i].minute;
+            settings->alarms[i].days_mask = v2[i].days_mask;
+            settings->alarms[i].repeat_mode = v2[i].repeat_mode;
+            settings->alarms[i].math_unlock_enabled = v2[i].math_unlock_enabled;
+            settings->alarms[i].sound = ALARM_SOUND_MORNING_LIGHT;
         }
     } else {
         memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));

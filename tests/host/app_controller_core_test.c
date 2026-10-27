@@ -20,6 +20,7 @@ typedef struct {
     int audio_set_ascending_calls;
     int audio_start_alarm_calls;
     int audio_start_test_calls;
+    uint8_t audio_last_sound;
     int audio_stop_calls;
     uint8_t audio_last_volume;
     bool audio_ascending_enabled;
@@ -84,17 +85,19 @@ static void fake_audio_set_ascending_enabled(bool enabled)
     g_env->audio_ascending_enabled = enabled;
 }
 
-static int fake_audio_start_alarm(uint8_t volume)
+static int fake_audio_start_alarm(uint8_t volume, uint8_t sound)
 {
     g_env->audio_start_alarm_calls += 1;
+    g_env->audio_last_sound = sound;
     g_env->audio_last_volume = volume;
     g_env->alarm_active = true;
     return 0;
 }
 
-static int fake_audio_start_test(uint8_t volume)
+static int fake_audio_start_test(uint8_t volume, uint8_t sound)
 {
     g_env->audio_start_test_calls += 1;
+    g_env->audio_last_sound = sound;
     g_env->audio_last_volume = volume;
     g_env->test_active = true;
     return 0;
@@ -441,8 +444,9 @@ static int test_alarm_test_and_cancel_window(void)
     core = make_core(&env);
     EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, now));
 
-    app_controller_core_toggle_alarm_test(&core, now);
+    app_controller_core_toggle_alarm_test(&core, now, ALARM_SOUND_MARIMBA);
     EXPECT_EQ_INT(1, env.audio_start_test_calls);
+    EXPECT_EQ_INT(ALARM_SOUND_MARIMBA, env.audio_last_sound);
     EXPECT_TRUE(core.state.runtime.alarm_test_active);
 
     app_controller_core_stop_alarm_test(&core);
@@ -452,11 +456,11 @@ static int test_alarm_test_and_cancel_window(void)
     app_controller_core_stop_alarm_test(&core);
     EXPECT_EQ_INT(1, env.audio_stop_calls);
 
-    app_controller_core_toggle_alarm_test(&core, now);
+    app_controller_core_toggle_alarm_test(&core, now, ALARM_SOUND_MORNING_LIGHT);
     EXPECT_EQ_INT(2, env.audio_start_test_calls);
     EXPECT_TRUE(core.state.runtime.alarm_test_active);
 
-    app_controller_core_toggle_alarm_test(&core, now);
+    app_controller_core_toggle_alarm_test(&core, now, ALARM_SOUND_MORNING_LIGHT);
     EXPECT_EQ_INT(2, env.audio_stop_calls);
     EXPECT_FALSE(core.state.runtime.alarm_test_active);
 

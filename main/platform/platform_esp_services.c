@@ -54,14 +54,14 @@ static void esp_audio_set_ascending_enabled(bool enabled)
     alarm_audio_set_ascending_enabled(enabled);
 }
 
-static int esp_audio_start_alarm(uint8_t volume)
+static int esp_audio_start_alarm(uint8_t volume, uint8_t sound)
 {
-    return alarm_audio_start_alarm(volume);
+    return alarm_audio_start_alarm(volume, sound);
 }
 
-static int esp_audio_start_test(uint8_t volume)
+static int esp_audio_start_test(uint8_t volume, uint8_t sound)
 {
-    return alarm_audio_start_test(volume);
+    return alarm_audio_start_test(volume, sound);
 }
 
 static int esp_audio_play_ui_click(uint8_t volume)

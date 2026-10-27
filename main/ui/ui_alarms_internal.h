@@ -33,8 +33,9 @@
 extern const ui_l10n_str_t alm_s_alarm_settings;
 extern const ui_l10n_str_t alm_s_settings_title;
 extern const ui_l10n_str_t alm_s_sound_name;
+extern const ui_l10n_str_t alm_s_tap_to_change;
+extern const ui_l10n_str_t alm_s_sound_tap;
 extern const ui_l10n_str_t alm_s_sound;
-extern const ui_l10n_str_t alm_s_rising;
 extern const ui_l10n_str_t alm_s_repeat;
 extern const ui_l10n_str_t alm_s_new_alarm;
 extern const ui_l10n_str_t alm_s_test;
@@ -93,6 +94,10 @@ void alm_show(lv_obj_t *obj, bool show);
 /* Re-reads settings and runtime into every page that is built. */
 void alm_sync_all(clock_ui_context_t *ctx);
 void alm_test_toggle(clock_ui_context_t *ctx);
+/* Plays the Test sound from the start (after the sound was changed). */
+void alm_sound_preview(clock_ui_context_t *ctx);
+/* Name of an alarm_sound_t. */
+const ui_l10n_str_t *alm_sound_name(uint8_t sound);
 void alm_test_stop(clock_ui_context_t *ctx);
 
 /* --- List and settings pages (ui_alarms_list.c) ------------------------------------- */

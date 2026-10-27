@@ -26,8 +26,12 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (settings->language >= CLOCK_LANGUAGE_COUNT) {
         settings->language = CLOCK_LANGUAGE_ENGLISH;
     }
+    if (settings->default_alarm_sound >= ALARM_SOUND_COUNT) {
+        settings->default_alarm_sound = ALARM_SOUND_MORNING_LIGHT;
+    }
     if (settings->ui_style >= CLOCK_UI_STYLE_COUNT) {
         settings->ui_style = CLOCK_UI_STYLE_DEFAULT;
+    settings->default_alarm_sound = ALARM_SOUND_MORNING_LIGHT;
     }
     settings->ascending_alarm_enabled = settings->ascending_alarm_enabled ? true : false;
 
@@ -99,6 +103,9 @@ void settings_policy_sanitize(app_settings_t *settings)
             settings->alarms[i].days_mask = 0x7F;
         }
         settings->alarms[i].math_unlock_enabled = settings->alarms[i].math_unlock_enabled ? true : false;
+        if (settings->alarms[i].sound >= ALARM_SOUND_COUNT) {
+            settings->alarms[i].sound = ALARM_SOUND_MORNING_LIGHT;
+        }
     }
 
     if (settings->skipped_alarm_index < -1 || settings->skipped_alarm_index >= MAX_ALARMS) {
@@ -139,5 +146,6 @@ void settings_policy_set_defaults(app_settings_t *settings)
         settings->alarms[i].days_mask = 0x7F;
         settings->alarms[i].repeat_mode = ALARM_REPEAT_ONCE;
         settings->alarms[i].math_unlock_enabled = false;
+        settings->alarms[i].sound = ALARM_SOUND_MORNING_LIGHT;
     }
 }

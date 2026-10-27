@@ -213,6 +213,19 @@ app_action_result_t app_action_set_language(app_state_t *state, clock_language_t
     return result;
 }
 
+app_action_result_t app_action_set_default_alarm_sound(app_state_t *state, uint8_t sound)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    if (sound >= ALARM_SOUND_COUNT || state->settings.default_alarm_sound == sound) {
+        return result;
+    }
+    state->settings.default_alarm_sound = sound;
+    emit_settings_changed(&result);
+    return result;
+}
+
 app_action_result_t app_action_set_ui_style(app_state_t *state, clock_ui_style_t style)
 {
     app_action_result_t result;
@@ -505,6 +518,7 @@ app_action_result_t app_action_delete_alarm(app_state_t *state, uint8_t index, t
         .days_mask = 0x7F,
         .repeat_mode = ALARM_REPEAT_ONCE,
         .math_unlock_enabled = false,
+        .sound = ALARM_SOUND_MORNING_LIGHT,
     };
 
     return app_action_save_alarm(state, index, &empty_alarm, now);

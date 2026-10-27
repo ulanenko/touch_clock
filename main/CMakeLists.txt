@@ -7,6 +7,7 @@ file(GLOB_RECURSE UI_SOURCES
 idf_component_register(
     SRCS
         alarm_audio.c
+        alarm_tones.c
         alarm_logic.c
         ota_update.c
         telemetry_update.c

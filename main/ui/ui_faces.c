@@ -321,6 +321,77 @@ static modern_theme_palette_t modern_theme_palette(const clock_ui_context_t *ctx
     };
 }
 
+/* Mixes toward the face background: amount 255 keeps the ink, 0 gives the background. */
+static lv_color_t ink_toward(uint32_t ink, uint32_t bg, uint8_t amount)
+{
+    return lv_color_mix(lv_color_hex(ink), lv_color_hex(bg), amount);
+}
+
+ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    ui_face_ink_t ink;
+
+    switch (face) {
+    case CLOCK_FACE_DIGITAL: {
+        /* Lit LCD segments for the alarm, the unlit-segment tone lifted for the countdown. */
+        digital_theme_palette_t p = digital_theme_palette(ctx);
+
+        ink.text = lv_color_hex(p.primary);
+        ink.accent = lv_color_hex(p.primary);
+        ink.soft = ink_toward(p.primary, p.bg, 150);
+        break;
+    }
+    case CLOCK_FACE_MATRIX: {
+        dot_theme_palette_t p = matrix_theme_palette(ctx);
+
+        ink.text = lv_color_hex(p.on);
+        ink.accent = lv_color_hex(p.on);
+        ink.soft = ink_toward(p.on, p.bg, 150);
+        break;
+    }
+    case CLOCK_FACE_WHARTON: {
+        dot_theme_palette_t p = wharton_theme_palette(ctx);
+
+        ink.text = lv_color_hex(p.on);
+        ink.accent = lv_color_hex(p.on);
+        ink.soft = ink_toward(p.on, p.bg, 150);
+        break;
+    }
+    case CLOCK_FACE_STERNGLAS: {
+        /* Printed like the dial's own lettering, the bell in the hands' blue. */
+        sternglas_theme_palette_t p = sternglas_theme_palette(ctx);
+
+        ink.text = lv_color_hex(p.title);
+        ink.accent = lv_color_hex(p.primary);
+        ink.soft = lv_color_hex(p.subtitle);
+        break;
+    }
+    case CLOCK_FACE_AVENIR: {
+        avenir_theme_palette_t p = avenir_theme_palette(ctx);
+
+        ink.text = lv_color_hex(p.text);
+        ink.accent = lv_color_hex(p.primary);
+        ink.soft = ink_toward(p.text, p.face_bg, 170);
+        break;
+    }
+    case CLOCK_FACE_MODERN_SILVER: {
+        /* The dial's print, the bell in the seconds hand's colour. */
+        modern_theme_palette_t p = modern_theme_palette(ctx);
+
+        ink.text = lv_color_hex(p.text_primary);
+        ink.accent = lv_color_hex(p.secondary);
+        ink.soft = lv_color_hex(p.text_secondary);
+        break;
+    }
+    default:
+        ink.text = lv_color_white();
+        ink.accent = lv_color_white();
+        ink.soft = lv_color_hex(0x8A8A8A);
+        break;
+    }
+    return ink;
+}
+
 static void show_digital_face_live(clock_ui_context_t *ctx)
 {
     if (ctx->faces.digital_live_root == NULL || ctx->faces.digital_snapshot_img == NULL) {

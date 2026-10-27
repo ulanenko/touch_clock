@@ -150,6 +150,20 @@ static void cb_click_sound(void *u, bool e) { (void)u; s_settings.ui_click_sound
 static void cb_click_volume(void *u, uint8_t v) { (void)u; s_settings.ui_click_volume = v; mark_refresh(); }
 static void cb_language(void *u, clock_language_t l) { (void)u; s_settings.language = (uint8_t)l; mark_refresh(); }
 static void cb_ui_style(void *u, clock_ui_style_t st) { (void)u; s_settings.ui_style = (uint8_t)st; mark_refresh(); }
+static void cb_default_sound(void *u, uint8_t s) { (void)u; s_settings.default_alarm_sound = s; mark_refresh(); }
+static void cb_alarm_test_stop(void *u)
+{
+    (void)u;
+    s_runtime.alarm_test_active = false;
+    mark_refresh();
+}
+static void cb_alarm_test(void *u, uint8_t s)
+{
+    (void)u;
+    printf("alarm test sound=%u\n", s);
+    s_runtime.alarm_test_active = !s_runtime.alarm_test_active;
+    mark_refresh();
+}
 static void cb_night_enabled(void *u, bool e) { (void)u; s_settings.night_mode.enabled = e; mark_refresh(); }
 static void cb_night_schedule(void *u, uint8_t sh, uint8_t sm, uint8_t eh, uint8_t em)
 {
@@ -192,6 +206,7 @@ static const clock_ui_callbacks_t s_callbacks = {
     .on_set_ui_click_volume = cb_click_volume,
     .on_set_language = cb_language,
     .on_set_ui_style = cb_ui_style,
+    .on_set_default_alarm_sound = cb_default_sound,
     .on_set_night_mode_enabled = cb_night_enabled,
     .on_set_night_schedule = cb_night_schedule,
     .on_set_night_brightness = cb_night_brightness,
@@ -204,8 +219,8 @@ static const clock_ui_callbacks_t s_callbacks = {
     .on_delete_alarm = cb_delete_alarm,
     .on_alarm_snooze_requested = cb_snooze_req,
     .on_alarm_stop_requested = cb_stop_req,
-    .on_alarm_test_requested = cb_noop,
-    .on_alarm_test_stop_requested = cb_noop,
+    .on_alarm_test_requested = cb_alarm_test,
+    .on_alarm_test_stop_requested = cb_alarm_test_stop,
     .on_next_alarm_cancel_requested = cb_noop,
     .on_next_alarm_cancel_undo_requested = cb_noop,
 };

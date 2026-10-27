@@ -40,6 +40,7 @@ void request_set_ui_click_sound_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_ui_click_volume(clock_ui_context_t *ctx, uint8_t volume);
 void request_set_language(clock_ui_context_t *ctx, clock_language_t language);
 void request_set_ui_style(clock_ui_context_t *ctx, clock_ui_style_t style);
+void request_set_default_alarm_sound(clock_ui_context_t *ctx, uint8_t sound);
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t start_hour,
@@ -61,6 +62,9 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
 void show_affordances_temporarily(clock_ui_context_t *ctx);
 void refresh_digital_face_snapshot(clock_ui_context_t *ctx);
 const void *ui_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face);
+
+
+ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face);
 void update_face(clock_ui_context_t *ctx, clock_face_id_t face);
 void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face);
 bool brightness_panel_is_open(const clock_ui_context_t *ctx);

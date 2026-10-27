@@ -42,6 +42,15 @@ typedef struct {
     uint8_t repeat_mode;
 } legacy_alarm_config_t;
 
+typedef struct {
+    bool enabled;
+    uint8_t hour;
+    uint8_t minute;
+    uint8_t days_mask;
+    uint8_t repeat_mode;
+    bool math_unlock_enabled;
+} legacy_alarm_config_v2_t;
+
 static store_entry_t *find_entry(fake_store_t *store, const char *key)
 {
     for (size_t i = 0; i < (sizeof(store->entries) / sizeof(store->entries[0])); ++i) {
@@ -434,6 +443,52 @@ static int test_v7_alarm_blob_migration(void)
     return 0;
 }
 
+/* Alarms saved before they had a sound keep everything and get the original tone. */
+static int test_alarm_blob_without_sound_migration(void)
+{
+    fake_store_t store = {0};
+    app_settings_storage_t storage = make_storage(&store);
+    legacy_alarm_config_v2_t v2[MAX_ALARMS] = {0};
+    app_settings_t loaded;
+
+    v2[1].enabled = true;
+    v2[1].hour = 6;
+    v2[1].minute = 45;
+    v2[1].days_mask = 0x1F;
+    v2[1].repeat_mode = ALARM_REPEAT_WEEKLY;
+    v2[1].math_unlock_enabled = true;
+
+    EXPECT_EQ_INT(ESP_OK, store_set_u32(&store, "ver", 11));
+    EXPECT_EQ_INT(ESP_OK, store_set_blob(&store, "alarms", v2, sizeof(v2)));
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
+    EXPECT_TRUE(loaded.alarms[1].enabled);
+    EXPECT_EQ_INT(6, loaded.alarms[1].hour);
+    EXPECT_EQ_INT(45, loaded.alarms[1].minute);
+    EXPECT_EQ_INT(0x1F, loaded.alarms[1].days_mask);
+    EXPECT_TRUE(loaded.alarms[1].math_unlock_enabled);
+    EXPECT_EQ_INT(ALARM_SOUND_MORNING_LIGHT, loaded.alarms[1].sound);
+    return 0;
+}
+
+/* A chosen sound survives a save and load; an unknown one falls back to the original. */
+static int test_alarm_sound_round_trip(void)
+{
+    fake_store_t store = {0};
+    app_settings_storage_t storage = make_storage(&store);
+    app_settings_t saved;
+    app_settings_t loaded;
+
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &saved));
+    saved.alarms[0].enabled = true;
+    saved.alarms[0].sound = ALARM_SOUND_SINGING_BOWL;
+    saved.alarms[2].sound = 200;
+    EXPECT_EQ_INT(ESP_OK, app_settings_save_to_storage(&storage, &saved));
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
+    EXPECT_EQ_INT(ALARM_SOUND_SINGING_BOWL, loaded.alarms[0].sound);
+    EXPECT_EQ_INT(ALARM_SOUND_MORNING_LIGHT, loaded.alarms[2].sound);
+    return 0;
+}
+
 static int test_future_structured_version_loads_without_reset(void)
 {
     fake_store_t store = {0};
@@ -484,6 +539,16 @@ int main(void)
     }
 
     status = test_v7_alarm_blob_migration();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_alarm_blob_without_sound_migration();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_alarm_sound_round_trip();
     if (status != 0) {
         return status;
     }

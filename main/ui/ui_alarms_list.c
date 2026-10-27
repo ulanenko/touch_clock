@@ -701,11 +701,11 @@ void alm_list_sync(clock_ui_context_t *ctx, time_t now)
 
         alm_format_minutes(ctx, ctx->settings->snooze_minutes, mins, sizeof(mins));
         if (ALM_IS_ATELIER()) {
-            snprintf(text, sizeof(text), "%s \xC2\xB7 %s %s", alm_str(ctx, &alm_s_sound_name),
-                     alm_text(ctx, L10N_SNOOZE), mins);
+            snprintf(text, sizeof(text), "%s \xC2\xB7 %s %s",
+                     alm_str(ctx, alm_sound_name(ctx->settings->default_alarm_sound)), alm_text(ctx, L10N_SNOOZE), mins);
         } else {
             snprintf(text, sizeof(text), "%s %s \xC2\xB7 %s", alm_text(ctx, L10N_SNOOZE), mins,
-                     alm_str(ctx, &alm_s_sound_name));
+                     alm_str(ctx, alm_sound_name(ctx->settings->default_alarm_sound)));
         }
         alm_set_text(a->list_settings_sub, text);
     }
@@ -799,6 +799,16 @@ static void ascending_cb(lv_event_t *e)
     alm_sync_all(ctx);
 }
 
+/* Tapping the sound row steps the default sound for new alarms and plays it. */
+static void settings_sound_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+    uint8_t next = (uint8_t)((ctx->settings->default_alarm_sound + 1) % ALARM_SOUND_COUNT);
+
+    request_set_default_alarm_sound(ctx, next);
+    alm_sound_preview(ctx);
+}
+
 static void settings_test_cb(lv_event_t *e)
 {
     clock_ui_context_t *ctx = lv_event_get_user_data(e);
@@ -888,8 +898,10 @@ void alm_settings_create(clock_ui_context_t *ctx)
                                       .subtitle = "",
                                       .trail = KIT_TRAIL_CUSTOM});
     row_icon_note(&row);
-    ui_l10n_bind_kit_str(ctx, row.title, &alm_s_sound_name);
+    ctx->alarms.settings_sound_title = row.title; /* the default sound, set in sync */
     ctx->alarms.settings_sound_sub = row.subtitle;
+    kit_make_pressable(row.row);
+    lv_obj_add_event_cb(row.row, settings_sound_cb, LV_EVENT_CLICKED, ctx);
     alm_one_line(row.subtitle);
     ctx->alarms.settings_test_btn = kit_button(row.trail, KIT_BUTTON_QUIET, KIT_ICON_PLAY, alm_str(ctx, &alm_s_test));
     kit_set_tint(ctx->alarms.settings_test_btn, sk->tint_alarms);
@@ -951,12 +963,8 @@ void alm_settings_sync(clock_ui_context_t *ctx)
     snprintf(text, sizeof(text), "%u%%", st->alarm_volume);
     alm_set_text(a->volume_value, text);
 
-    if (st->ascending_alarm_enabled) {
-        snprintf(text, sizeof(text), "%s \xC2\xB7 %s", alm_str(ctx, &alm_s_sound), alm_str(ctx, &alm_s_rising));
-    } else {
-        snprintf(text, sizeof(text), "%s", alm_str(ctx, &alm_s_sound));
-    }
-    alm_set_text(a->settings_sound_sub, text);
+    alm_set_text(a->settings_sound_sub, alm_str(ctx, &alm_s_tap_to_change));
+    alm_set_text(a->settings_sound_title, alm_str(ctx, alm_sound_name(st->default_alarm_sound)));
     kit_button_set_text(a->settings_test_btn, alm_str(ctx, testing ? &alm_s_stop : &alm_s_test));
     kit_icon_set(lv_obj_get_child(a->settings_test_btn, 0), testing ? KIT_ICON_STOP : KIT_ICON_PLAY);
 }

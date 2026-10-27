@@ -1114,6 +1114,7 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
     char date[64];
     char mins[24];
     struct tm tm;
+    const char *sound = alm_str(ctx, alm_sound_name(alarm != NULL ? alarm->sound : ctx->settings->default_alarm_sound));
 
     localtime_r(&now, &tm);
     alm_format_hm(a->ring_time_text, sizeof(a->ring_time_text), tm.tm_hour, tm.tm_min);
@@ -1136,9 +1137,9 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
 
         if (alarm != NULL) {
             alm_repeat_summary(ctx, alarm, sum, sizeof(sum));
-            snprintf(text, sizeof(text), "%s \xC2\xB7 %s", sum, alm_str(ctx, &alm_s_sound_name));
+            snprintf(text, sizeof(text), "%s \xC2\xB7 %s", sum, sound);
         } else {
-            snprintf(text, sizeof(text), "%s", alm_str(ctx, &alm_s_sound_name));
+            snprintf(text, sizeof(text), "%s", sound);
         }
         alm_set_text(a->ring_sub, text);
         {
@@ -1157,7 +1158,7 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
         }
     } else {
         alm_format_long_date(ctx, now, date, sizeof(date));
-        snprintf(text, sizeof(text), "%s \xC2\xB7 %s", date, alm_str(ctx, &alm_s_sound_name));
+        snprintf(text, sizeof(text), "%s \xC2\xB7 %s", date, sound);
         alm_set_text(a->ring_sub, text);
         alm_set_text(lv_obj_get_child(a->ring_snooze, 0), alm_text(ctx, L10N_SNOOZE));
     }
