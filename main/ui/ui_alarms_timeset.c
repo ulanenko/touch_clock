@@ -153,6 +153,7 @@ static void create_orbit(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_arc_color(arc, sk->tint_alarms, LV_PART_INDICATOR);
     lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
+    kit_arc_bake(arc);
     ts->arc = arc;
     for (int i = 0; i < 4; i++) {
         lv_obj_t *d = dot(parent, 6, lv_color_hex(0x484848), 0, sk->bg);
@@ -240,21 +241,21 @@ static void render_dial(lv_obj_t *canvas)
     arc.width = 1;
     for (int r = 6; r < A_GUILLOCHE_R; r += 4) {
         arc.radius = (uint16_t)r;
-        lv_draw_arc(&layer, &arc);
+        kit_draw_arc(&layer, &arc);
     }
     arc.color = sk->line;
     arc.radius = A_GUILLOCHE_R;
-    lv_draw_arc(&layer, &arc);
+    kit_draw_arc(&layer, &arc);
     /* Bezel hairline and the minute track. */
     arc.color = sk->accent_deep;
     arc.opa = 140;
     arc.radius = 356;
-    lv_draw_arc(&layer, &arc);
+    kit_draw_arc(&layer, &arc);
     arc.opa = LV_OPA_COVER;
     arc.color = sk->line;
     arc.width = 2;
     arc.radius = 344;
-    lv_draw_arc(&layer, &arc);
+    kit_draw_arc(&layer, &arc);
 
     lv_draw_line_dsc_init(&line);
     for (int i = 0; i < 60; i++) {
@@ -372,6 +373,7 @@ static void create_atelier(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_arc_width(arc, 2, LV_PART_INDICATOR);
     lv_obj_set_style_arc_color(arc, sk->accent, LV_PART_INDICATOR);
     lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
+    kit_arc_bake(arc);
     ts->arc = arc;
 
     ts->minute_mark = alm_label(parent, &at_sans_medium_18, sk->accent, "00");

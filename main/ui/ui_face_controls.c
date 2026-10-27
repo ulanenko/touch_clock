@@ -144,7 +144,7 @@ void face_draw_rim_arc(lv_layer_t *layer, lv_point_t c, int32_t radius, int32_t 
     d.color = color;
     d.opa = opa;
     d.rounded = rounded ? 1 : 0;
-    lv_draw_arc(layer, &d);
+    kit_draw_arc(layer, &d);
 }
 
 void face_draw_tick(lv_layer_t *layer, lv_point_t ctr, int32_t r0, int32_t r1, float angle_deg, int32_t width,
@@ -270,7 +270,7 @@ static void draw_arc_dots(lv_layer_t *layer, const clock_ui_face_chrome_state_t 
                 d.end_angle = 360;
                 d.color = on;
                 d.opa = LV_OPA_50;
-                lv_draw_arc(layer, &d);
+                kit_draw_arc(layer, &d);
             }
         } else {
             face_draw_dot(layer, x, y, off_r, off, LV_OPA_COVER);

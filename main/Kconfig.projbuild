@@ -74,6 +74,12 @@ config TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST
         range 0 2
         default 0
 
+config TOUCH_CLOCK_PERF_TOUR_START_FACE
+        int "Face each loop starts on (-1 keeps the current face)"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        range -1 7
+        default -1
+
 config TOUCH_CLOCK_PERF_TOUR_THUMB_STEP
         int "Thumbnail downscale step (1 = full resolution)"
         depends on TOUCH_CLOCK_PERF_TOUR_THUMBNAILS

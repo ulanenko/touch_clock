@@ -273,7 +273,7 @@ static void signal_draw_cb(lv_event_t *e)
             arc.radius = (uint16_t)(radii[i] * k + w / 2.0f);
             arc.start_angle = 227;
             arc.end_angle = 313;
-            lv_draw_arc(layer, &arc);
+            kit_draw_arc(layer, &arc);
         }
         lv_draw_rect_dsc_init(&dot);
         dot.bg_color = level >= 1 ? sk->accent : sk->line_strong;
@@ -444,13 +444,13 @@ static void legend_scroll_cb(lv_event_t *e)
 }
 
 /* Scroll register on the right rim, drawn after the page (Instrument and Atelier). It reads
- * the scroll position when the screen is drawn, so it costs nothing extra while scrolling. */
+ * the scroll position when the screen is drawn, so it costs nothing extra while scrolling.
+ * Drawn as cached rings: a live arc costs the device several ms per arc, every frame. */
 static void register_draw_cb(lv_event_t *e)
 {
     kit_page_t *page = lv_event_get_user_data(e);
     const ui_skin_t *sk = ui_skin();
     lv_layer_t *layer = lv_event_get_layer(e);
-    lv_draw_arc_dsc_t arc;
     int32_t y = lv_obj_get_scroll_y(page->scroll);
     int32_t rest = lv_obj_get_scroll_bottom(page->scroll);
     int32_t total = y + rest;
@@ -468,40 +468,21 @@ static void register_draw_cb(lv_event_t *e)
     if (st_atelier()) {
         a0 = -30;
         a1 = 30;
-        radius = 344;
+        radius = 342;
         /* Clear the minute track under the register. */
-        lv_draw_arc_dsc_init(&arc);
-        arc.color = sk->bg;
-        arc.width = 22;
-        arc.center.x = KIT_CENTER;
-        arc.center.y = KIT_CENTER;
-        arc.radius = 350;
-        arc.start_angle = 360 - 36;
-        arc.end_angle = 36;
-        lv_draw_arc(layer, &arc);
+        kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 339, 22, -36, 36, sk->bg, LV_OPA_COVER);
     } else {
         a0 = -22;
         a1 = 22;
-        radius = 348;
+        radius = 346;
     }
     span = a1 - a0;
     len = LV_MAX(8, span * KIT_SCREEN / (KIT_SCREEN + total));
     pos = a0 + (span - len) * y / total;
 
-    lv_draw_arc_dsc_init(&arc);
-    arc.width = 4;
-    arc.rounded = 1;
-    arc.center.x = KIT_CENTER;
-    arc.center.y = KIT_CENTER;
-    arc.radius = (uint16_t)radius;
-    arc.color = sk->line;
-    arc.start_angle = (lv_value_precise_t)((a0 + 360) % 360);
-    arc.end_angle = (lv_value_precise_t)((a1 + 360) % 360);
-    lv_draw_arc(layer, &arc);
-    arc.color = st_atelier() ? sk->accent : sk->text_3;
-    arc.start_angle = (lv_value_precise_t)((pos + 360) % 360);
-    arc.end_angle = (lv_value_precise_t)((pos + len + 360) % 360);
-    lv_draw_arc(layer, &arc);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, radius, 4, a0, a1, sk->line, LV_OPA_COVER);
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, radius, 4, pos, pos + len, st_atelier() ? sk->accent : sk->text_3,
+                  LV_OPA_COVER);
 }
 
 void st_back_event_cb(lv_event_t *e)

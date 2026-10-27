@@ -92,7 +92,7 @@ static void arc_from(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, 
     arc.radius = (uint16_t)radius;
     arc.start_angle = (lv_value_precise_t)fmodf(a0, 360.0f);
     arc.end_angle = (lv_value_precise_t)fmodf(a1, 360.0f);
-    lv_draw_arc(layer, &arc);
+    kit_draw_arc(layer, &arc);
 }
 
 static void line_polar(lv_layer_t *layer, int32_t cx, int32_t cy, float r0, float r1, float deg, lv_color_t color,
@@ -211,11 +211,19 @@ static void ring_draw_cb(lv_event_t *e)
     lv_layer_t *layer = lv_event_get_layer(e);
     bool on = ctx->settings->night_mode.enabled;
     kit_dial_t dial;
+    int32_t start;
+    int32_t end;
 
     ring_dial_spec(&dial);
     kit_dial_draw(layer, &dial);
-    arc_from(layer, KIT_CENTER, KIT_CENTER, RING_R + 2, 4, minutes_to_lv_angle(start_minutes(ctx)),
-             minutes_to_lv_angle(end_minutes(ctx)), on ? sk->accent : sk->text_3, false);
+    /* The schedule as a cached ring too: a live arc this size costs the device a few hundred
+     * ms a frame. Each new span while dragging a jewel builds one small dial. */
+    start = (int32_t)lroundf(minutes_to_lv_angle(start_minutes(ctx)));
+    end = (int32_t)lroundf(minutes_to_lv_angle(end_minutes(ctx)));
+    if (end <= start) {
+        end += 360;
+    }
+    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, RING_R, 4, start, end, on ? sk->accent : sk->text_3, LV_OPA_COVER);
 }
 
 static void place_jewels(clock_ui_context_t *ctx)

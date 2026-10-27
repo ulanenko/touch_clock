@@ -14,6 +14,8 @@
 #include <string.h>
 
 #include "ui/kit/ui_kit_internal.h"
+#include "src/draw/lv_draw_private.h"
+#include "src/misc/lv_area_private.h"
 
 #define KIT_DIAL_TILES 16
 #define KIT_DIAL_CACHE 24
@@ -66,10 +68,7 @@ static void sector_bounds(int32_t cx, int32_t cy, float r_in, float r_out, float
         area->x2 = LV_MAX(area->x2, (int32_t)ceilf(xs[i]) + 1);
         area->y2 = LV_MAX(area->y2, (int32_t)ceilf(ys[i]) + 1);
     }
-    area->x1 = LV_CLAMP(0, area->x1, KIT_SCREEN - 1);
-    area->y1 = LV_CLAMP(0, area->y1, KIT_SCREEN - 1);
-    area->x2 = LV_CLAMP(0, area->x2, KIT_SCREEN - 1);
-    area->y2 = LV_CLAMP(0, area->y2, KIT_SCREEN - 1);
+    /* No clamp to the screen: dials are built around 0,0 and moved when drawn. */
 }
 
 static float norm_deg(float a)
@@ -369,12 +368,16 @@ static void free_tiles(dial_tiles_t *tiles)
 
 static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
 {
-    const float step = 360.0f / (float)KIT_DIAL_TILES;
     float r_min;
     float r_max;
+    int count;
+    float step;
 
     dial_extent(dial, &r_min, &r_max);
-    for (int t = 0; t < KIT_DIAL_TILES; t++) {
+    /* Small rings (a key's lit edge) need few tiles; every tile is a draw task. */
+    count = r_max < 120.0f ? 4 : KIT_DIAL_TILES;
+    step = 360.0f / (float)count;
+    for (int t = 0; t < count; t++) {
         float a0 = step * (float)t;
         float a1 = step * (float)(t + 1);
         bool needed = dial->ticks[0].count > 0 || dial->ticks[1].count > 0;
@@ -388,9 +391,16 @@ static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
 
 /* --- Cache -------------------------------------------------------------------------------- */
 
-static const dial_tiles_t *dial_get(const kit_dial_t *dial)
+/* Dials are cached by shape: the key has the centre at 0,0 and the tiles are moved to the
+ * real centre when drawn, so the same ring on several keys is built once. */
+static const dial_tiles_t *dial_get(const kit_dial_t *dial_in)
 {
     dial_entry_t *slot = NULL;
+    kit_dial_t key = *dial_in;
+    const kit_dial_t *dial = &key;
+
+    key.cx = 0;
+    key.cy = 0;
 
     for (int i = 0; i < KIT_DIAL_CACHE; i++) {
         if (s_cache[i].used && memcmp(&s_cache[i].key, dial, sizeof(*dial)) == 0) {
@@ -415,18 +425,27 @@ static const dial_tiles_t *dial_get(const kit_dial_t *dial)
     return &slot->tiles;
 }
 
-void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial)
+static void dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t opa)
 {
     const dial_tiles_t *tiles = dial_get(dial);
     lv_draw_image_dsc_t img;
+    lv_area_t area;
 
     lv_draw_image_dsc_init(&img);
+    img.opa = opa;
     for (int t = 0; t < KIT_DIAL_TILES; t++) {
         if (tiles->buf[t] != NULL) {
             img.src = tiles->buf[t];
-            lv_draw_image(layer, &img, &tiles->area[t]);
+            area = tiles->area[t];
+            lv_area_move(&area, dial->cx, dial->cy);
+            lv_draw_image(layer, &img, &area);
         }
     }
+}
+
+void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial)
+{
+    dial_draw_opa(layer, dial, LV_OPA_COVER);
 }
 
 void kit_dial_prewarm(const kit_dial_t *dial)
@@ -447,7 +466,12 @@ void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, in
                    int32_t end_deg, lv_color_t color, lv_opa_t opa)
 {
     kit_dial_t dial;
+    int32_t span = LV_MIN(end_deg - start_deg, 360);
 
+    /* The ring code wants the start in 0..359 and the end after it; this also makes equal
+     * arcs share a cache entry. */
+    start_deg = ((start_deg % 360) + 360) % 360;
+    end_deg = start_deg + span;
     memset(&dial, 0, sizeof(dial));
     dial.cx = cx;
     dial.cy = cy;
@@ -457,9 +481,106 @@ void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, in
         .start_deg = start_deg,
         .end_deg = end_deg,
         .color = color,
-        .opa = opa,
+        .opa = LV_OPA_COVER,
     };
-    kit_dial_draw(layer, &dial);
+    /* Opacity applies when drawing, so a fading ring does not build a dial per step. */
+    if (opa > LV_OPA_MIN) {
+        dial_draw_opa(layer, &dial, opa);
+    }
+}
+
+/* --- Live arcs ----------------------------------------------------------------------------- */
+
+void kit_draw_arc(lv_layer_t *layer, const lv_draw_arc_dsc_t *dsc)
+{
+    lv_area_t circle;
+    lv_area_t bounds;
+    lv_area_t clip;
+    lv_area_t layer_clip = layer->_clip_area;
+    lv_draw_task_t *t;
+
+    if (dsc->opa <= LV_OPA_MIN || dsc->width == 0 || dsc->start_angle == dsc->end_angle) {
+        return;
+    }
+    /* lv_draw_arc gives the task the whole circle as its area: the software renderer then
+     * masks every row of it and the dispatcher treats the arc as covering the screen, so
+     * nothing drawn after it runs in parallel. The renderer needs the circle for its masks,
+     * so keep that as the area but clip and register the task by the arc's own bounds. */
+    lv_draw_arc_get_area(dsc->center.x, dsc->center.y, dsc->radius, dsc->start_angle, dsc->end_angle, dsc->width,
+                         dsc->rounded, &bounds);
+    if (!lv_area_intersect(&clip, &layer_clip, &bounds)) {
+        return;
+    }
+    circle.x1 = dsc->center.x - dsc->radius;
+    circle.y1 = dsc->center.y - dsc->radius;
+    circle.x2 = dsc->center.x + dsc->radius - 1;
+    circle.y2 = dsc->center.y + dsc->radius - 1;
+    layer->_clip_area = clip;
+    t = lv_draw_add_task(layer, &circle, LV_DRAW_TASK_TYPE_ARC);
+    layer->_clip_area = layer_clip;
+    t->_real_area = clip;
+    lv_memcpy(t->draw_dsc, dsc, sizeof(*dsc));
+    lv_draw_finalize_task_creation(layer, t);
+}
+
+/* --- Baked lv_arc widgets -------------------------------------------------------------------- */
+
+typedef struct {
+    int32_t width[2];
+    lv_color_t color[2];
+    lv_opa_t opa[2];
+} baked_arc_t;
+
+static void baked_arc_ring(lv_layer_t *layer, const lv_area_t *c, int32_t radius, const baked_arc_t *b, int part,
+                           int32_t start, int32_t end)
+{
+    if (b->opa[part] <= LV_OPA_MIN || b->width[part] <= 0 || start == end) {
+        return;
+    }
+    while (end <= start) {
+        end += 360;
+    }
+    kit_draw_ring(layer, c->x1 + lv_area_get_width(c) / 2, c->y1 + lv_area_get_height(c) / 2,
+                  radius - b->width[part] / 2, b->width[part], start, end, b->color[part], b->opa[part]);
+}
+
+static void baked_arc_cb(lv_event_t *e)
+{
+    lv_obj_t *arc = lv_event_get_current_target(e);
+    baked_arc_t *b = lv_event_get_user_data(e);
+    lv_area_t c;
+    int32_t rot;
+    int32_t radius;
+
+    if (lv_event_get_code(e) == LV_EVENT_DELETE) {
+        lv_free(b);
+        return;
+    }
+    lv_obj_get_content_coords(arc, &c);
+    radius = LV_MIN(lv_area_get_width(&c), lv_area_get_height(&c)) / 2;
+    rot = lv_arc_get_rotation(arc);
+    baked_arc_ring(lv_event_get_layer(e), &c, radius, b, 0, rot + (int32_t)lv_arc_get_bg_angle_start(arc),
+                   rot + (int32_t)lv_arc_get_bg_angle_end(arc));
+    baked_arc_ring(lv_event_get_layer(e), &c, radius, b, 1, rot + (int32_t)lv_arc_get_angle_start(arc),
+                   rot + (int32_t)lv_arc_get_angle_end(arc));
+}
+
+void kit_arc_bake(lv_obj_t *arc)
+{
+    static const lv_part_t parts[2] = {LV_PART_MAIN, LV_PART_INDICATOR};
+    baked_arc_t *b = lv_malloc_zeroed(sizeof(*b));
+
+    if (b == NULL) {
+        return;
+    }
+    for (int i = 0; i < 2; i++) {
+        b->width[i] = lv_obj_get_style_arc_width(arc, parts[i]);
+        b->color[i] = lv_obj_get_style_arc_color(arc, parts[i]);
+        b->opa[i] = lv_obj_get_style_arc_opa(arc, parts[i]);
+        lv_obj_set_style_arc_opa(arc, LV_OPA_TRANSP, parts[i]);
+    }
+    lv_obj_add_event_cb(arc, baked_arc_cb, LV_EVENT_DRAW_MAIN_END, b);
+    lv_obj_add_event_cb(arc, baked_arc_cb, LV_EVENT_DELETE, b);
 }
 
 /* --- Rim bands ---------------------------------------------------------------------------- */

@@ -34,7 +34,7 @@ int32_t kit_circle_half_width(int32_t y, int32_t margin);
  * Static ring decorations (hairline rings, bezels, minute tracks) are baked once into cached
  * ARGB tiles and drawn as at most 16 images. Never draw them live: lv_draw_arc masks the
  * whole bounding box row by row, and many small draws (60 tick lines) slow the device's draw
- * dispatcher for the whole frame. For arcs that change while dragging, use lv_draw_arc.
+ * dispatcher for the whole frame. For arcs that change while dragging, use kit_draw_arc.
  * Angles in degrees, 0 = three o'clock, clockwise. */
 #define KIT_DIAL_RINGS 3
 #define KIT_DIAL_TICK_SETS 2
@@ -75,6 +75,12 @@ void kit_prewarm(void);
 /* Frees every cached dial; the core calls it when the chrome is rebuilt. */
 void kit_dial_cache_flush(void);
 /* A single static ring or arc as a cached dial. */
+/* Draws a styled lv_arc (track and indicator, as set before this call) with cached rings
+ * instead of live arcs. Ring ends are always round. */
+void kit_arc_bake(lv_obj_t *arc);
+/* lv_draw_arc, but the draw task covers only the arc's bounds instead of its whole circle.
+ * Use it for every live arc. */
+void kit_draw_arc(lv_layer_t *layer, const lv_draw_arc_dsc_t *dsc);
 void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, int32_t width, int32_t start_deg,
                    int32_t end_deg, lv_color_t color, lv_opa_t opa);
 /* Atelier chapter ring: rim hairline and minute track; ticks between skip_from_deg and

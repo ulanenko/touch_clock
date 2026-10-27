@@ -45,11 +45,11 @@ static void atelier_rim_cb(lv_event_t *e)
         arc.color = sk->line;
         arc.start_angle = 330;
         arc.end_angle = 30;
-        lv_draw_arc(layer, &arc);
+        kit_draw_arc(layer, &arc);
         arc.color = sk->accent;
         arc.start_angle = 6;
         arc.end_angle = 30;
-        lv_draw_arc(layer, &arc);
+        kit_draw_arc(layer, &arc);
     }
 }
 

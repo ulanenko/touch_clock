@@ -135,7 +135,7 @@ static void draw_arc(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t r_mid, i
     d.color = color;
     d.opa = opa;
     d.rounded = rounded;
-    lv_draw_arc(layer, &d);
+    kit_draw_arc(layer, &d);
 }
 
 static uint32_t utf8_next(const char *s, uint32_t *i)
@@ -760,6 +760,7 @@ static void build_instrument_main(clock_ui_context_t *ctx, lv_obj_t *m)
     lv_obj_set_style_arc_color(arc, sk->accent, LV_PART_INDICATOR);
     lv_obj_set_style_arc_opa(arc, LV_OPA_COVER, LV_PART_INDICATOR);
     lv_obj_set_style_arc_rounded(arc, true, LV_PART_INDICATOR);
+    kit_arc_bake(arc);
     a->ring_hold_arc = arc;
 
     btn = kit_round_button(m, KIT_BUTTON_SECONDARY, KIT_ICON_NONE, 112);

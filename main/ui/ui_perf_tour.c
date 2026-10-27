@@ -92,6 +92,7 @@ static int s_step = -1;
 static int s_loop;
 static alarm_config_t s_saved_alarms[MAX_ALARMS];
 static uint8_t s_saved_style;
+static uint8_t s_saved_face;
 #if CONFIG_LV_USE_PROFILER && CONFIG_LV_USE_PROFILER_BUILTIN
 static int s_profile_frames_left;
 #endif
@@ -595,6 +596,8 @@ static void perf_save_user_state(void)
 {
     memcpy(s_saved_alarms, s_ctx->settings->alarms, sizeof(s_saved_alarms));
     s_saved_style = s_ctx->settings->ui_style;
+    s_saved_face = s_ctx->settings->current_face;
+    printf("PERF user_face face=%u\n", s_saved_face);
 }
 
 static void perf_restore_user_state(void)
@@ -608,6 +611,9 @@ static void perf_restore_user_state(void)
     if (s_ctx->settings->ui_style != s_saved_style) {
         request_set_ui_style(s_ctx, (clock_ui_style_t)s_saved_style);
     }
+    if (s_ctx->settings->current_face != s_saved_face) {
+        request_set_current_face(s_ctx, (clock_face_id_t)s_saved_face);
+    }
     clock_ui_refresh();
 }
 
@@ -615,6 +621,11 @@ static void perf_restore_user_state(void)
  * gets a moment to settle before the first step. */
 static void perf_begin_loop(void)
 {
+    /* Every loop starts on the same face, so runs compare. */
+    if (CONFIG_TOUCH_CLOCK_PERF_TOUR_START_FACE >= 0) {
+        request_set_current_face(s_ctx, (clock_face_id_t)CONFIG_TOUCH_CLOCK_PERF_TOUR_START_FACE);
+    }
+    printf("PERF loop_face loop=%d face=%u\n", s_loop, s_ctx->settings->current_face);
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
     clock_ui_style_t style = (clock_ui_style_t)((s_loop + CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST) % CLOCK_UI_STYLE_COUNT);
 

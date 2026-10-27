@@ -191,18 +191,9 @@ static void key_deco_cb(lv_event_t *e)
     } else if (code == LV_EVENT_DRAW_MAIN_END) {
         /* The lit top edge of the keycap. */
         if (radius * 2 >= lv_area_get_height(&a)) {
-            lv_draw_arc_dsc_t d;
-
-            lv_draw_arc_dsc_init(&d);
-            d.color = deco->edge;
-            d.opa = opa;
-            d.width = 1;
-            d.center.x = a.x1 + lv_area_get_width(&a) / 2;
-            d.center.y = a.y1 + lv_area_get_height(&a) / 2;
-            d.radius = (uint16_t)radius;
-            d.start_angle = 215;
-            d.end_angle = 325;
-            lv_draw_arc(layer, &d);
+            /* A cached ring: one per key size, shared by every key of that size. */
+            kit_draw_ring(layer, a.x1 + lv_area_get_width(&a) / 2, a.y1 + lv_area_get_height(&a) / 2, radius - 1, 1, 215,
+                          325, deco->edge, opa);
         } else {
             lv_draw_rect_dsc_t d;
             lv_area_t edge = {a.x1 + radius / 2, a.y1, a.x2 - radius / 2, a.y1};
