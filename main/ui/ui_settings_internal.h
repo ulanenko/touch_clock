@@ -115,6 +115,7 @@ void st_face_sync(clock_ui_context_t *ctx, bool force);
 void st_night_bright_build(clock_ui_context_t *ctx);
 void st_night_bright_sync(clock_ui_context_t *ctx);
 void st_night_destroy(clock_ui_context_t *ctx);
+void st_night_prewarm(void);
 
 /* Other (ui_settings_other.c). */
 void st_other_build(clock_ui_context_t *ctx);

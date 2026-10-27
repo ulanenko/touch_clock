@@ -1103,16 +1103,15 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
 /* --- Pages ------------------------------------------------------------------------------ */
 
 /* Atelier: the chapter ring around every page (hairline circle and minute track). */
-void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg)
+static void minute_rim_spec(kit_dial_t *dial, int32_t skip_from_deg, int32_t skip_to_deg)
 {
     const ui_skin_t *sk = ui_skin();
-    kit_dial_t dial;
 
-    memset(&dial, 0, sizeof(dial));
-    dial.cx = KIT_CENTER;
-    dial.cy = KIT_CENTER;
-    dial.rings[0] = (kit_dial_ring_t) {.r = 356, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 140};
-    dial.ticks[0] = (kit_dial_ticks_t) {
+    memset(dial, 0, sizeof(*dial));
+    dial->cx = KIT_CENTER;
+    dial->cy = KIT_CENTER;
+    dial->rings[0] = (kit_dial_ring_t) {.r = 356, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 140};
+    dial->ticks[0] = (kit_dial_ticks_t) {
         .count = 60,
         .offset_deg = -90.0f,
         .r_in = 339,
@@ -1128,10 +1127,27 @@ void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_
     };
     for (int i = 0; i < 60; i++) {
         if (skip_from_deg >= 0 && i * 6 >= skip_from_deg && i * 6 <= skip_to_deg) {
-            dial.ticks[0].skip |= 1ull << i;
+            dial->ticks[0].skip |= 1ull << i;
         }
     }
+}
+
+void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg)
+{
+    kit_dial_t dial;
+
+    minute_rim_spec(&dial, skip_from_deg, skip_to_deg);
     kit_dial_draw(layer, &dial);
+}
+
+void kit_prewarm(void)
+{
+    kit_dial_t dial;
+
+    if (kit_is_atelier()) {
+        minute_rim_spec(&dial, -1, -1);
+        kit_dial_prewarm(&dial);
+    }
 }
 
 static void atelier_rim_cb(lv_event_t *e)

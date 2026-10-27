@@ -68,6 +68,10 @@ typedef struct {
 } kit_dial_t;
 
 void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial);
+/* Bakes a dial into the cache now (at chrome build) so its first frame does not pay for it. */
+void kit_dial_prewarm(const kit_dial_t *dial);
+/* Bakes the dials the kit itself draws for the current style. */
+void kit_prewarm(void);
 /* Frees every cached dial; the core calls it when the chrome is rebuilt. */
 void kit_dial_cache_flush(void);
 /* A single static ring or arc as a cached dial. */

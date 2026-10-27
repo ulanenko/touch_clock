@@ -1226,6 +1226,7 @@ void ui_settings_create(clock_ui_context_t *ctx)
     ui_debug_register("language_picker", debug_language);
     ui_debug_register("style_picker", debug_style);
     ui_debug_register("about", debug_about);
+    st_night_prewarm();
 }
 
 void ui_settings_destroy(clock_ui_context_t *ctx)

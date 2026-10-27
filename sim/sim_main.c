@@ -25,6 +25,7 @@
  *   sliders                        drag every visible slider past both ends and print the range reached
  *   costs [n]                      hide each visible object in turn and print the n that cost the most
  *                                  render time (relative numbers; parents include their children)
+ *   coldbench <name>               flush the dial cache and time the next frame (dial builds)
  *   bench <name> [n]               time n full-screen renders (default 20) and print the average
  *   benchdrag <name> <x0> <y0> <x1> <y1> <ms>
  *                                  drag and time the UI work (events, layout, render) per step
@@ -48,6 +49,7 @@
 #include "src/core/lv_obj_class_private.h"
 #include "ui/clock_ui_private.h"
 #include "ui/ui_areas.h"
+#include "ui/kit/ui_kit.h"
 
 #undef time
 
@@ -730,6 +732,14 @@ static int run_scenario(FILE *f)
                 printf("alarm %d: %s %02u:%02u days=0x%02x repeat=%u math=%d\n", i, al->enabled ? "on " : "off",
                        al->hour, al->minute, al->days_mask, al->repeat_mode, al->math_unlock_enabled);
             }
+        } else if (strcmp(cmd, "coldbench") == 0 && sscanf(line, "%*s %63s", a) == 1) {
+            double start;
+
+            kit_dial_cache_flush();
+            start = now_ms();
+            lv_obj_invalidate(lv_screen_active());
+            lv_refr_now(NULL);
+            printf("coldbench %s %.2f ms\n", a, now_ms() - start);
         } else if (strcmp(cmd, "bench") == 0 && sscanf(line, "%*s %63s", a) == 1) {
             int n = 20;
             struct timespec t0, t1;

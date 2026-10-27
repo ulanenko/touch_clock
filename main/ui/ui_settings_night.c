@@ -158,22 +158,18 @@ static void gauge_draw_cb(lv_event_t *e)
     }
 }
 
-/* Atelier: the rim becomes a 24 h ring with the schedule in gilt. */
-static void ring_draw_cb(lv_event_t *e)
+/* Atelier: the rim becomes a 24 h ring with the schedule in gilt. The static ring, its hour
+ * marks and dots are baked once; only the schedule arc is live. */
+static void ring_dial_spec(kit_dial_t *dial)
 {
-    clock_ui_context_t *ctx = lv_event_get_user_data(e);
     const ui_skin_t *sk = ui_skin();
-    lv_layer_t *layer = lv_event_get_layer(e);
-    bool on = ctx->settings->night_mode.enabled;
-    kit_dial_t dial;
 
-    /* The static ring, its hour marks and dots, baked once; only the schedule arc is live. */
-    memset(&dial, 0, sizeof(dial));
-    dial.cx = KIT_CENTER;
-    dial.cy = KIT_CENTER;
-    dial.rings[0] = (kit_dial_ring_t) {.r = 356, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 140};
-    dial.rings[1] = (kit_dial_ring_t) {.r = RING_R, .width = 4, .end_deg = 360, .color = sk->line, .opa = LV_OPA_COVER};
-    dial.ticks[0] = (kit_dial_ticks_t) {
+    memset(dial, 0, sizeof(*dial));
+    dial->cx = KIT_CENTER;
+    dial->cy = KIT_CENTER;
+    dial->rings[0] = (kit_dial_ring_t) {.r = 356, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 140};
+    dial->rings[1] = (kit_dial_ring_t) {.r = RING_R, .width = 4, .end_deg = 360, .color = sk->line, .opa = LV_OPA_COVER};
+    dial->ticks[0] = (kit_dial_ticks_t) {
         .count = 24,
         .offset_deg = -90.0f,
         .r_in = 326,
@@ -187,7 +183,7 @@ static void ring_draw_cb(lv_event_t *e)
         .color_major = sk->label,
         .opa = LV_OPA_COVER,
     };
-    dial.ticks[1] = (kit_dial_ticks_t) {
+    dial->ticks[1] = (kit_dial_ticks_t) {
         .count = 24,
         .offset_deg = -90.0f + 7.5f,
         .r_in = RING_R - 1,
@@ -196,6 +192,27 @@ static void ring_draw_cb(lv_event_t *e)
         .color = sk->text_3,
         .opa = LV_OPA_COVER,
     };
+}
+
+void st_night_prewarm(void)
+{
+    kit_dial_t dial;
+
+    if (ui_skin_style() == CLOCK_UI_STYLE_ATELIER) {
+        ring_dial_spec(&dial);
+        kit_dial_prewarm(&dial);
+    }
+}
+
+static void ring_draw_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+    const ui_skin_t *sk = ui_skin();
+    lv_layer_t *layer = lv_event_get_layer(e);
+    bool on = ctx->settings->night_mode.enabled;
+    kit_dial_t dial;
+
+    ring_dial_spec(&dial);
     kit_dial_draw(layer, &dial);
     arc_from(layer, KIT_CENTER, KIT_CENTER, RING_R + 2, 4, minutes_to_lv_angle(start_minutes(ctx)),
              minutes_to_lv_angle(end_minutes(ctx)), on ? sk->accent : sk->text_3, false);

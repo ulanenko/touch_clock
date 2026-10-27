@@ -50,6 +50,7 @@ void ui_chrome_build(clock_ui_context_t *ctx)
     ui_alarms_create(ctx);
     ui_settings_create(ctx);
     ui_face_chrome_create_top(ctx);
+    kit_prewarm();
     ui_debug_register("kit_specimen", ui_kit_specimen_show);
 }
 

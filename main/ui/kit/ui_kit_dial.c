@@ -127,20 +127,6 @@ static float segment_distance(float px, float py, float x0, float y0, float x1, 
     return sqrtf(qx * qx + qy * qy);
 }
 
-/* Composites colour c at coverage a over the pixel (straight alpha, 0..1). */
-static void over(float *r, float *g, float *b, float *a, lv_color_t c, float cover)
-{
-    float out = cover + *a * (1.0f - cover);
-
-    if (out <= 0.0f) {
-        return;
-    }
-    *r = ((float)c.red * cover + *r * *a * (1.0f - cover)) / out;
-    *g = ((float)c.green * cover + *g * *a * (1.0f - cover)) / out;
-    *b = ((float)c.blue * cover + *b * *a * (1.0f - cover)) / out;
-    *a = out;
-}
-
 /* --- Building ----------------------------------------------------------------------------- */
 
 static void dial_extent(const kit_dial_t *dial, float *r_min, float *r_max)
@@ -192,14 +178,57 @@ static bool ring_touches_sector(const kit_dial_ring_t *ring, float a0, float a1)
     return false;
 }
 
+/* Composites colour c at coverage cover (0..1) over an ARGB8888 pixel, straight alpha. */
+static void over_px(lv_color32_t *px, lv_color_t c, float cover)
+{
+    float da = (float)px->alpha / 255.0f;
+    float out = cover + da * (1.0f - cover);
+
+    if (out <= 0.0f) {
+        return;
+    }
+    px->red = (uint8_t)lroundf(((float)c.red * cover + (float)px->red * da * (1.0f - cover)) / out);
+    px->green = (uint8_t)lroundf(((float)c.green * cover + (float)px->green * da * (1.0f - cover)) / out);
+    px->blue = (uint8_t)lroundf(((float)c.blue * cover + (float)px->blue * da * (1.0f - cover)) / out);
+    px->alpha = (uint8_t)lroundf(out * 255.0f);
+}
+
+typedef struct {
+    float u0x, u0y, u1x, u1y;
+} sector_t;
+
+/* Which side of a boundary ray a point lies on. Neighbouring tiles evaluate this same
+ * expression for their shared boundary, so a pixel on the seam can never fall into neither
+ * or both of them (mirrored expressions can round differently once the compiler fuses the
+ * multiply-adds). */
+static float boundary_side(float ux, float uy, float px, float py)
+{
+    return ux * py - uy * px;
+}
+
+/* Whether a point (relative to the centre) lies in the sector [a0, a1) (span under 180 deg),
+ * with cross products instead of atan2. */
+static bool in_sector(const sector_t *sec, float px, float py)
+{
+    return boundary_side(sec->u0x, sec->u0y, px, py) >= 0.0f && boundary_side(sec->u1x, sec->u1y, px, py) < 0.0f;
+}
+
+/* Builds one tile. Only pixels inside the dial's annulus are visited (row by row), ownership
+ * uses cross products, and each tick only touches its own small bounding box: on the device
+ * a per-pixel atan2 over whole tiles took hundreds of milliseconds per dial. */
 static lv_draw_buf_t *build_tile(const kit_dial_t *dial, float a0, float a1, float r_min, float r_max,
                                  lv_area_t *area)
 {
+    sector_t sec = {cosf(a0 * DEG_TO_RAD), sinf(a0 * DEG_TO_RAD), cosf(a1 * DEG_TO_RAD), sinf(a1 * DEG_TO_RAD)};
+    float in2 = LV_MAX(0.0f, r_min - 1.0f);
+    float out2 = r_max + 1.0f;
     lv_draw_buf_t *buf;
     int32_t w;
     int32_t h;
     bool any = false;
 
+    in2 *= in2;
+    out2 *= out2;
     sector_bounds(dial->cx, dial->cy, r_min, r_max, a0, a1, area);
     w = lv_area_get_width(area);
     h = lv_area_get_height(area);
@@ -210,84 +239,117 @@ static lv_draw_buf_t *build_tile(const kit_dial_t *dial, float a0, float a1, flo
     if (buf == NULL) {
         return NULL;
     }
+    lv_draw_buf_clear(buf, NULL);
+
+    /* Rings. */
     for (int32_t y = 0; y < h; y++) {
         lv_color32_t *row = (lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
         float py = (float)(area->y1 + y) + 0.5f - (float)dial->cy;
+        float py2 = py * py;
+        float x_out;
+        float x_in;
 
-        for (int32_t x = 0; x < w; x++) {
-            float px = (float)(area->x1 + x) + 0.5f - (float)dial->cx;
-            float d = sqrtf(px * px + py * py);
-            float ang = norm_deg(atan2f(py, px) / DEG_TO_RAD);
-            float r = 0.0f;
-            float g = 0.0f;
-            float b = 0.0f;
-            float a = 0.0f;
+        if (py2 > out2) {
+            continue;
+        }
+        x_out = sqrtf(out2 - py2);
+        x_in = py2 < in2 ? sqrtf(in2 - py2) : 0.0f;
+        for (int side = 0; side < 2; side++) {
+            /* The annulus crosses this row in [-x_out, -x_in] and [x_in, x_out]. */
+            bool whole = x_in <= 0.0f; /* the row misses the inner circle: one span */
+            float lo = side == 0 ? -x_out : x_in;
+            float hi = whole ? x_out : side == 0 ? -x_in : x_out;
+            int32_t x0 = LV_MAX(0, (int32_t)floorf(lo + (float)dial->cx - (float)area->x1) - 1);
+            int32_t x1 = LV_MIN(w - 1, (int32_t)ceilf(hi + (float)dial->cx - (float)area->x1) + 1);
 
-            /* Each pixel belongs to exactly one tile. */
-            if (ang < a0 || ang >= a1 || d < r_min - 1.0f || d > r_max + 1.0f) {
-                row[x] = (lv_color32_t) {0};
-                continue;
-            }
-            for (int i = 0; i < KIT_DIAL_RINGS; i++) {
-                const kit_dial_ring_t *ring = &dial->rings[i];
-                float cover;
+            for (int32_t x = x0; x <= x1; x++) {
+                float px = (float)(area->x1 + x) + 0.5f - (float)dial->cx;
+                float d;
 
-                if (ring->width <= 0) {
+                if (!in_sector(&sec, px, py)) {
                     continue;
                 }
-                cover = LV_CLAMP(0.0f, (float)ring->width / 2.0f - ring_distance(ring, px, py, d, ang) + 0.5f, 1.0f);
-                if (cover > 0.0f) {
-                    over(&r, &g, &b, &a, ring->color, cover * (float)ring->opa / 255.0f);
-                }
-            }
-            for (int set = 0; set < KIT_DIAL_TICK_SETS; set++) {
-                const kit_dial_ticks_t *tk = &dial->ticks[set];
-                float tick_step;
-                float rel;
-                int32_t nearest;
-
-                if (tk->count <= 0) {
-                    continue;
-                }
-                /* Only the ticks next to this pixel's angle can touch it. */
-                tick_step = 360.0f / (float)tk->count;
-                rel = norm_deg(ang - tk->offset_deg);
-                nearest = (int32_t)lroundf(rel / tick_step);
-                for (int32_t k = nearest - 1; k <= nearest + 1; k++) {
-                    int32_t i = ((k % tk->count) + tk->count) % tk->count;
-                    bool major = tk->major_every > 0 && i % tk->major_every == 0;
-                    float t;
-                    float c;
-                    float s;
-                    float r0;
-                    float r1;
+                d = sqrtf(px * px + py2);
+                for (int i = 0; i < KIT_DIAL_RINGS; i++) {
+                    const kit_dial_ring_t *ring = &dial->rings[i];
+                    float hw = (float)ring->width / 2.0f;
+                    float dist;
                     float cover;
-                    float hw;
 
-                    if (i < 64 && ((tk->skip >> i) & 1u) != 0) {
+                    if (ring->width <= 0 || fabsf(d - (float)ring->r) > hw + 6.0f) {
                         continue;
                     }
-                    t = (tk->offset_deg + tick_step * (float)i) * DEG_TO_RAD;
-                    c = cosf(t);
-                    s = sinf(t);
-                    r0 = (float)(major ? tk->r_in_major : tk->r_in);
-                    r1 = (float)(major ? tk->r_out_major : tk->r_out);
-                    hw = (float)(major ? tk->width_major : tk->width) / 2.0f;
-                    cover = LV_CLAMP(0.0f, hw - segment_distance(px, py, r0 * c, r0 * s, r1 * c, r1 * s) + 0.5f, 1.0f);
+                    dist = ring->end_deg - ring->start_deg >= 360
+                               ? fabsf(d - (float)ring->r)
+                               : ring_distance(ring, px, py, d, norm_deg(atan2f(py, px) / DEG_TO_RAD));
+                    cover = LV_CLAMP(0.0f, hw - dist + 0.5f, 1.0f);
                     if (cover > 0.0f) {
-                        over(&r, &g, &b, &a, major ? tk->color_major : tk->color, cover * (float)tk->opa / 255.0f);
+                        over_px(&row[x], ring->color, cover * (float)ring->opa / 255.0f);
+                        any = true;
                     }
                 }
             }
-            if (a > 0.0f) {
-                any = true;
+            if (whole) {
+                break;
             }
-            row[x].red = (uint8_t)lroundf(r);
-            row[x].green = (uint8_t)lroundf(g);
-            row[x].blue = (uint8_t)lroundf(b);
-            row[x].alpha = (uint8_t)lroundf(a * 255.0f);
         }
     }
+
+    /* Ticks, each within its own bounding box. */
+    for (int set = 0; set < KIT_DIAL_TICK_SETS; set++) {
+        const kit_dial_ticks_t *tk = &dial->ticks[set];
+        float step;
+
+        if (tk->count <= 0) {
+            continue;
+        }
+        step = 360.0f / (float)tk->count;
+        for (int32_t i = 0; i < tk->count; i++) {
+            float ang = norm_deg(tk->offset_deg + step * (float)i);
+            bool major = tk->major_every > 0 && i % tk->major_every == 0;
+            float r0 = (float)(major ? tk->r_in_major : tk->r_in);
+            float r1 = (float)(major ? tk->r_out_major : tk->r_out);
+            float hw = (float)(major ? tk->width_major : tk->width) / 2.0f;
+            float c = cosf(ang * DEG_TO_RAD);
+            float sn = sinf(ang * DEG_TO_RAD);
+            float x0 = r0 * c;
+            float y0 = r0 * sn;
+            float x1 = r1 * c;
+            float y1 = r1 * sn;
+            int32_t bx0;
+            int32_t bx1;
+            int32_t by0;
+            int32_t by1;
+
+            if (i < 64 && ((tk->skip >> i) & 1u) != 0) {
+                continue;
+            }
+            /* Ticks whose box misses this tile cost nothing below (empty loops). */
+            bx0 = LV_MAX(0, (int32_t)floorf(LV_MIN(x0, x1) - hw - 1.0f + (float)dial->cx) - area->x1);
+            bx1 = LV_MIN(w - 1, (int32_t)ceilf(LV_MAX(x0, x1) + hw + 1.0f + (float)dial->cx) - area->x1);
+            by0 = LV_MAX(0, (int32_t)floorf(LV_MIN(y0, y1) - hw - 1.0f + (float)dial->cy) - area->y1);
+            by1 = LV_MIN(h - 1, (int32_t)ceilf(LV_MAX(y0, y1) + hw + 1.0f + (float)dial->cy) - area->y1);
+            for (int32_t y = by0; y <= by1; y++) {
+                lv_color32_t *row = (lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
+                float py = (float)(area->y1 + y) + 0.5f - (float)dial->cy;
+
+                for (int32_t x = bx0; x <= bx1; x++) {
+                    float px = (float)(area->x1 + x) + 0.5f - (float)dial->cx;
+                    float cover;
+
+                    if (!in_sector(&sec, px, py)) {
+                        continue;
+                    }
+                    cover = LV_CLAMP(0.0f, hw - segment_distance(px, py, x0, y0, x1, y1) + 0.5f, 1.0f);
+                    if (cover > 0.0f) {
+                        over_px(&row[x], major ? tk->color_major : tk->color, cover * (float)tk->opa / 255.0f);
+                        any = true;
+                    }
+                }
+            }
+        }
+    }
+
     if (!any) {
         lv_draw_buf_destroy(buf);
         return NULL;
@@ -365,6 +427,11 @@ void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial)
             lv_draw_image(layer, &img, &tiles->area[t]);
         }
     }
+}
+
+void kit_dial_prewarm(const kit_dial_t *dial)
+{
+    (void)dial_get(dial);
 }
 
 void kit_dial_cache_flush(void)

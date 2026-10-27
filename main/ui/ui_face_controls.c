@@ -336,20 +336,19 @@ static bool atelier_tick_skipped(int i)
     return false;
 }
 
-static void draw_atelier_rim(lv_layer_t *layer, const clock_ui_face_chrome_state_t *fc)
+static void atelier_bezel_spec(kit_dial_t *dial)
 {
     const ui_skin_t *sk = ui_skin();
-    kit_dial_t dial;
 
     /* The ink bezel lifted over the dial's rim, its brass inner edge, outer hairline and minute
      * track, baked once into cached tiles. */
-    memset(&dial, 0, sizeof(dial));
-    dial.cx = KIT_CENTER;
-    dial.cy = KIT_CENTER;
-    dial.rings[0] = (kit_dial_ring_t) {.r = 324, .width = 72, .end_deg = 360, .color = sk->bg, .opa = 230};
-    dial.rings[1] = (kit_dial_ring_t) {.r = 289, .width = 1, .end_deg = 360, .color = sk->label, .opa = 230};
-    dial.rings[2] = (kit_dial_ring_t) {.r = 357, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 180};
-    dial.ticks[0] = (kit_dial_ticks_t) {
+    memset(dial, 0, sizeof(*dial));
+    dial->cx = KIT_CENTER;
+    dial->cy = KIT_CENTER;
+    dial->rings[0] = (kit_dial_ring_t) {.r = 324, .width = 72, .end_deg = 360, .color = sk->bg, .opa = 230};
+    dial->rings[1] = (kit_dial_ring_t) {.r = 289, .width = 1, .end_deg = 360, .color = sk->label, .opa = 230};
+    dial->rings[2] = (kit_dial_ring_t) {.r = 357, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 180};
+    dial->ticks[0] = (kit_dial_ticks_t) {
         .count = 60,
         .offset_deg = -90.0f,
         .r_in = 291,
@@ -365,9 +364,17 @@ static void draw_atelier_rim(lv_layer_t *layer, const clock_ui_face_chrome_state
     };
     for (int i = 0; i < 60; i++) {
         if (atelier_tick_skipped(i)) {
-            dial.ticks[0].skip |= 1ull << i;
+            dial->ticks[0].skip |= 1ull << i;
         }
     }
+}
+
+static void draw_atelier_rim(lv_layer_t *layer, const clock_ui_face_chrome_state_t *fc)
+{
+    const ui_skin_t *sk = ui_skin();
+    kit_dial_t dial;
+
+    atelier_bezel_spec(&dial);
     kit_dial_draw(layer, &dial);
     draw_arc_dots(layer, fc, 335.0f, 4.6f, sk->text_2, 4, sk->accent, 6, true);
 }
@@ -760,9 +767,14 @@ void face_controls_create(clock_ui_context_t *ctx)
     case CLOCK_UI_STYLE_INSTRUMENT:
         build_instrument(ctx);
         break;
-    case CLOCK_UI_STYLE_ATELIER:
+    case CLOCK_UI_STYLE_ATELIER: {
+        kit_dial_t bezel;
+
         build_atelier(ctx);
+        atelier_bezel_spec(&bezel);
+        kit_dial_prewarm(&bezel);
         break;
+    }
     case CLOCK_UI_STYLE_ORBIT:
     default:
         build_orbit(ctx);

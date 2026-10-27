@@ -56,3 +56,9 @@ static inline size_t heap_caps_get_largest_free_block(unsigned caps)
     (void)caps;
     return 4u * 1024u * 1024u;
 }
+
+static inline void *heap_caps_realloc(void *ptr, size_t size, unsigned caps)
+{
+    (void)caps;
+    return realloc(ptr, size);
+}
