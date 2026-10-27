@@ -1,0 +1,589 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atelier · Touch Clock</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600&family=Jost:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* ───────────── Device tokens (all RGB565-exact) ───────────── */
+:root{
+  --nuit:#080810; --encre:#100C18; --encre2:#181420; --encre3:#201C28;
+  --line:#282430; --rule:#383040;
+  --brass-deep:#806848; --brass:#B89868; --gilt:#D8B880; --champagne:#E8D8B8; --ivoire:#F0E8D8;
+  --parchment:#A89C88; --taupe:#686058;
+  --ruby:#B83048; --ruby-light:#E07088;
+  --amber:#A06830; --amber2:#805428;
+  /* page (presentation) tokens */
+  --pg:#F2EEE6; --pg-ink:#1C1820; --pg-mute:#6E665A; --pg-line:#DDD5C7; --pg-card:#FAF7F1; --pg-bezel:#0A090C;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --pg:#0C0B0F; --pg-ink:#ECE4D4; --pg-mute:#958B7B; --pg-line:#24202A; --pg-card:#131117; --pg-bezel:#000; }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--pg);color:var(--pg-ink);font-family:'Jost',sans-serif;-webkit-font-smoothing:antialiased}
+
+/* ───────────── Presentation page ───────────── */
+.wrap{max-width:1440px;margin:0 auto;padding:88px 64px 120px}
+.kicker{font:500 13px/1 Jost;letter-spacing:.24em;text-transform:uppercase;color:var(--pg-mute)}
+h1{font:500 132px/0.9 'Cormorant Garamond',serif;margin:18px 0 0;letter-spacing:-.01em}
+.lede{display:grid;grid-template-columns:1.25fr 1fr;gap:72px;align-items:end;margin-bottom:72px}
+.lede p{font:400 18px/1.65 Jost;max-width:660px;margin:28px 0 0;color:var(--pg-ink)}
+.lede p + p{color:var(--pg-mute);font-size:16px;margin-top:14px}
+.hero{justify-self:end}
+h2{font:600 34px/1 'Cormorant Garamond',serif;margin:0 0 6px}
+.sec-sub{font:400 15px/1.5 Jost;color:var(--pg-mute);margin:0 0 26px}
+.spec{display:grid;grid-template-columns:repeat(12,1fr);gap:24px;margin-bottom:96px}
+.card{background:var(--pg-card);border:1px solid var(--pg-line);border-radius:20px;padding:30px 32px}
+.c12{grid-column:span 12}.c7{grid-column:span 7}.c5{grid-column:span 5}.c6{grid-column:span 6}.c4{grid-column:span 4}.c8{grid-column:span 8}
+.swatches{display:grid;grid-template-columns:repeat(8,1fr);gap:18px 16px}
+.sw-tok .chip-c{height:72px;border-radius:14px;border:1px solid rgba(128,104,72,.35)}
+.sw-tok b{display:block;font:500 14px/1.2 Jost;margin-top:10px}
+.sw-tok code{font:400 13px/1.4 'Jost';color:var(--pg-mute);letter-spacing:.04em}
+.sw-tok span{display:block;font:400 12.5px/1.35 Jost;color:var(--pg-mute);margin-top:2px}
+.typerow{display:grid;grid-template-columns:200px 1fr;align-items:baseline;border-top:1px solid var(--pg-line);padding:12px 0 10px;gap:20px}
+.typerow:first-of-type{border-top:0}
+.typerow .meta{font:400 13px/1.45 Jost;color:var(--pg-mute)}
+.typerow .meta b{display:block;color:var(--pg-ink);font-weight:500;font-size:14px}
+.inkpanel{background:#100C18;border-radius:16px;padding:28px;color:var(--ivoire);position:relative}
+.inkpanel *{font-variant-numeric:lining-nums tabular-nums!important}
+.ctl-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:26px 28px;align-items:center}
+.ctl{display:flex;flex-direction:column;gap:12px;align-items:flex-start}
+.ctl small{font:500 12px/1 Jost;letter-spacing:.18em;text-transform:uppercase;color:#806848}
+.radii{display:flex;gap:26px;align-items:flex-end}
+.radii div{display:flex;flex-direction:column;align-items:center;gap:10px;font:400 13px/1.3 Jost;color:var(--pg-mute);text-align:center}
+.radii i{display:block;width:84px;height:84px;border:1.5px solid #B89868;background:rgba(184,152,104,.08)}
+.spacing{display:flex;gap:14px;align-items:flex-end;margin-top:26px}
+.spacing div{display:flex;flex-direction:column;align-items:center;gap:8px;font:400 12.5px/1 Jost;color:var(--pg-mute)}
+.spacing i{display:block;background:#B89868;opacity:.75;width:14px}
+.icons{display:flex;flex-wrap:wrap;gap:14px;color:#E8D8B8}
+.icons div{width:64px;height:64px;border-radius:14px;background:#181420;display:flex;align-items:center;justify-content:center}
+.notes{columns:2;column-gap:56px;font:400 15px/1.6 Jost}
+.notes li{break-inside:avoid;margin:0 0 12px}
+.notes b{font-weight:500}
+
+/* Screens grid */
+.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:64px 40px;justify-items:center}
+figure{margin:0;display:flex;flex-direction:column;align-items:center;cursor:zoom-in}
+figure:last-child:nth-child(3n+1){grid-column:2}
+.bezel{width:420px;height:420px;border-radius:50%;padding:12px;background:radial-gradient(circle at 50% 50%,#000 0 97%,#1a1820 99%,#000 100%);box-shadow:0 0 0 1px rgba(255,255,255,.05),0 24px 60px -24px rgba(0,0,0,.55)}
+.scaler{width:396px;height:396px;border-radius:50%;overflow:hidden;position:relative}
+.scaler .dev{transform:scale(.55);transform-origin:0 0;position:absolute;left:0;top:0}
+figcaption{margin-top:22px;text-align:center;max-width:400px}
+figcaption .no{font:500 12px/1 Jost;letter-spacing:.22em;color:var(--pg-mute)}
+figcaption .nm{display:block;font:600 24px/1.2 'Cormorant Garamond',serif;margin-top:8px}
+figcaption .ds{display:block;font:400 14px/1.5 Jost;color:var(--pg-mute);margin-top:6px}
+
+/* Overlay at 1:1 */
+.ov{position:fixed;inset:0;background:rgba(6,5,9,.94);display:none;align-items:center;justify-content:center;z-index:10;cursor:zoom-out;flex-direction:column;gap:18px}
+.ov.open{display:flex}
+.ov .bz1{width:752px;height:752px;border-radius:50%;padding:16px;background:#000;box-shadow:0 0 0 1px #222}
+.ov .cap{color:#C8BCA8;font:400 15px/1 Jost;letter-spacing:.06em}
+body.shot{background:#000}
+body.shot .wrap{display:none}
+.shotbox{position:absolute;left:0;top:0;width:760px;height:760px;padding:20px;background:#000}
+
+/* ───────────── Device UI ───────────── */
+.dev{position:relative;width:720px;height:720px;border-radius:50%;overflow:hidden;background:var(--encre);color:var(--ivoire);font-family:'Jost',sans-serif;isolation:isolate}
+.dev *{box-sizing:border-box}
+.dev,.dev *{font-variant-numeric:lining-nums tabular-nums}
+svg text{font-variant-numeric:lining-nums tabular-nums}
+.a{position:absolute}
+.full{left:0;top:0;width:720px;height:720px}
+.ctr{position:absolute;left:0;width:720px;text-align:center;white-space:nowrap}
+.fl{display:flex;align-items:center}
+.eb{font:500 18px/18px Jost;letter-spacing:.16em;text-transform:uppercase;color:var(--brass)}
+.tt{font:600 40px/40px 'Cormorant Garamond',serif;color:var(--ivoire);letter-spacing:.005em}
+.rt{font:400 26px/30px Jost;color:var(--ivoire)}
+.bd{font:400 22px/28px Jost;color:var(--parchment)}
+.vl{font:600 30px/30px 'Cormorant Garamond',serif;color:var(--champagne)}
+.nm{font:500 56px/56px 'Cormorant Garamond',serif;color:var(--ivoire)}
+.d104{font:500 104px/104px 'Cormorant Garamond',serif;color:var(--ivoire)}
+.d168{font:500 168px/168px 'Cormorant Garamond',serif;color:var(--ivoire)}
+.btn{font:500 20px/20px Jost;letter-spacing:.12em;text-transform:uppercase}
+.g{color:var(--gilt)} .ch{color:var(--champagne)} .pa{color:var(--parchment)} .ta{color:var(--taupe)} .iv{color:var(--ivoire)}
+
+.row{display:flex;align-items:center;gap:16px}
+.grow{flex:1;min-width:0}
+.hl{position:absolute;height:1px;background:var(--line)}
+.hr{position:absolute;height:2px;background:linear-gradient(#050308 0 1px,#2C2834 1px 2px)}
+.lz{position:absolute;width:11px;height:11px;transform:rotate(45deg);border:1px solid var(--brass);background:var(--encre);box-shadow:0 0 0 5px var(--encre)}
+.sec{position:absolute;left:0;width:720px;display:flex;align-items:center;justify-content:center;gap:16px}
+.sec i{display:block;width:36px;height:1px;background:var(--brass-deep)}
+
+/* pusher: crown-like round button — border + outline ring */
+.pu{position:absolute;width:64px;height:64px;border-radius:50%;background:var(--encre2);border:1px solid var(--brass-deep);box-shadow:0 0 0 4px var(--encre),0 0 0 5px var(--line);display:flex;align-items:center;justify-content:center;color:var(--champagne)}
+.pu.lg{width:84px;height:84px}
+.pu.on{background:var(--gilt);border-color:var(--champagne);color:var(--encre)}
+/* sub-dial icon */
+.sd{width:52px;height:52px;border-radius:50%;border:1px solid var(--brass-deep);display:flex;align-items:center;justify-content:center;color:var(--champagne);flex:none;position:relative}
+.sd::before{content:'';position:absolute;inset:4px;border-radius:50%;border:1px solid var(--line)}
+
+/* jewel: gilt bead with a ruby cabochon */
+.jw{position:absolute;border-radius:50%;background:radial-gradient(circle at 36% 30%,#FFF6E0 0,#ECD29C 20%,#C89C60 58%,#6E5028 100%);box-shadow:0 1px 2px rgba(0,0,0,.7)}
+.jw::after{content:'';position:absolute;left:32%;top:32%;width:36%;height:36%;border-radius:50%;background:radial-gradient(circle at 35% 30%,#FFB0BC 0,#D84860 34%,#8A1E32 100%);box-shadow:0 0 0 1px rgba(80,40,16,.55)}
+/* switch */
+.sw{position:relative;width:72px;height:40px;border-radius:20px;background:var(--encre3);border:1px solid var(--rule);flex:none}
+.sw .jw{width:30px;height:30px;left:4px;top:4px;background:radial-gradient(circle at 36% 30%,#D8D0C0 0,#9A9080 50%,#4C4640 100%)}
+.sw .jw::after{display:none}
+.sw.on{background:#382C20;border-color:var(--gilt)}
+.sw.on .jw{left:36px;background:radial-gradient(circle at 36% 30%,#FFF6E0 0,#ECD29C 20%,#C89C60 58%,#6E5028 100%)}
+.sw.on .jw::after{display:block}
+/* slider */
+.sl{position:relative;height:40px}
+.sl .tr{position:absolute;left:0;right:0;top:19px;height:2px;background:var(--rule)}
+.sl .fi{position:absolute;left:0;top:19px;height:2px;background:var(--gilt)}
+.sl .tk{position:absolute;top:27px;width:1px;height:6px;background:var(--rule)}
+.sl .tk.m{height:9px;background:var(--brass-deep)}
+.sl .jw{width:28px;height:28px;top:6px;margin-left:-14px}
+/* buttons */
+.bt{height:64px;border-radius:32px;padding:0 28px;display:flex;align-items:center;justify-content:center;gap:12px;font:500 20px/20px Jost;letter-spacing:.12em;text-transform:uppercase;color:var(--champagne);border:1px solid var(--brass-deep);background:var(--encre2)}
+.bt.pri{background:linear-gradient(#E4C890,#C8A470);color:var(--encre);border-color:#F0E0B8}
+.bt.del{color:var(--ruby-light);border-color:var(--ruby)}
+.bt.sm{height:52px;border-radius:26px;padding:0 22px;font-size:18px;line-height:18px}
+/* chip */
+.chip{height:44px;border-radius:22px;padding:0 18px;display:inline-flex;align-items:center;gap:10px;border:1px solid var(--brass-deep);background:var(--encre2);font:500 18px/18px Jost;letter-spacing:.14em;text-transform:uppercase;color:var(--champagne);white-space:nowrap}
+.dot-r{width:10px;height:10px;border-radius:50%;background:var(--ruby);box-shadow:0 0 0 2px #2a0c14}
+/* segmented */
+.seg{display:flex;height:72px;border-radius:36px;border:1px solid var(--rule);background:var(--encre2);padding:5px;gap:2px}
+.seg div{flex:auto;display:flex;align-items:center;justify-content:center;border-radius:31px;font:400 22px/22px Jost;color:var(--parchment);padding:0 14px;white-space:nowrap;border:1px solid transparent}
+.seg .on{border-color:var(--gilt);color:var(--ivoire);background:var(--encre3)}
+/* keys */
+.key{position:absolute;height:70px;border-radius:14px;background:var(--encre2);border:1px solid var(--line);border-top-color:var(--rule);display:flex;align-items:center;justify-content:center;font:400 26px/26px Jost;color:var(--ivoire)}
+.key.fn{background:var(--encre3);color:var(--champagne)}
+.key.lb{font:500 18px/18px Jost;letter-spacing:.12em;color:var(--parchment)}
+/* round keys (math pad) */
+.rk{position:absolute;width:84px;height:84px;border-radius:50%;background:var(--encre2);border:1px solid var(--brass-deep);display:flex;align-items:center;justify-content:center;font:600 40px/40px 'Cormorant Garamond',serif;color:var(--ivoire)}
+.rk.ok{background:var(--gilt);border-color:var(--champagne);color:var(--encre)}
+.rk.fn{background:var(--encre3);border-color:var(--rule);color:var(--champagne)}
+.thumb{border-radius:50%;object-fit:cover;display:block}
+.shadow{box-shadow:0 10px 28px rgba(0,0,0,.55)}
+/* lining, tabular figures everywhere on the device (frozen into the converted fonts) */
+.dev,.dev *{font-variant-numeric:lining-nums tabular-nums!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <section class="lede">
+    <div>
+      <div class="kicker">Touch Clock &nbsp;·&nbsp; UI direction &nbsp;·&nbsp; 720 × 720 round</div>
+      <h1>Atelier</h1>
+      <p>The interface as a finished dial. Atelier borrows from the quiet end of fine watchmaking: Lange’s gilt-on-black restraint, the engraved caseback, the chapter ring that gives a dial its structure, the jewel that marks a moving part. On a round bedside clock those are not ornaments but the natural grammar. The rim carries the values (brightness, schedule, minutes) the way a bezel carries a scale; pushers at ten and two hold navigation; every knob that moves is a gilt bead with a ruby cabochon, so a sleepy hand knows at once what can be turned. Surfaces are a warm midnight ink instead of black, text is ivory and champagne rather than white, and accents are gilt hairlines, so the room stays dark and the glass reads as an object, not a screen.</p>
+      <p>Every token is RGB565-exact, every size is a fixed bitmap size, and every texture is a static image. Nothing relies on blur, masks or live transforms.</p>
+    </div>
+    <div class="hero" id="hero"></div>
+  </section>
+
+  <section class="spec">
+    <div class="card c12">
+      <h2>Colour</h2>
+      <p class="sec-sub">Warm midnight surfaces, gilt accents, a ruby jewel. Values are exact in RGB565 (R and B in steps of 8, G in steps of 4), so nothing shifts on the panel. On encre, ivoire reaches 15.8 : 1, champagne 13.7 : 1, gilt 10.2 : 1 and parchment 7.1 : 1, so all text stays readable at 10 % backlight. Taupe (3.1 : 1) is kept for inactive marks that never carry meaning alone.</p>
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="card c7">
+      <h2>Type</h2>
+      <p class="sec-sub">Cormorant Garamond for titles and numerals, Jost for everything read in passing. Both cover Latin Extended and Cyrillic. Nine bitmap sizes in total; the two display sizes are subset to digits and colon.</p>
+      <div id="type"></div>
+    </div>
+    <div class="card c5">
+      <h2>Form</h2>
+      <p class="sec-sub">Four radii and an 8-point spacing scale. Touch targets are 72 px or larger; rows are 76–112 px.</p>
+      <div class="radii">
+        <div><i style="border-radius:0;height:2px;width:84px;margin-bottom:41px"></i>0<br>rules</div>
+        <div><i style="border-radius:14px"></i>14<br>keys</div>
+        <div><i style="border-radius:28px"></i>28<br>cards</div>
+        <div><i style="border-radius:42px;height:56px"></i>full<br>pills, jewels</div>
+      </div>
+      <div class="spacing" id="spacing"></div>
+      <h2 style="margin-top:34px">Icons</h2>
+      <p class="sec-sub">24-unit grid, drawn at 28 px with a 1.75 px round stroke. Line only; state is shown by the surface, never by a filled glyph.</p>
+      <div class="icons" id="icons"></div>
+    </div>
+    <div class="card c12">
+      <h2>Controls</h2>
+      <p class="sec-sub">At true device size. The jewel (gilt bead, ruby cabochon) marks everything that moves.</p>
+      <div class="inkpanel"><div class="ctl-grid" id="controls"></div></div>
+    </div>
+  </section>
+
+  <h2 style="font-size:44px;margin-bottom:8px">Screens</h2>
+  <p class="sec-sub" style="margin-bottom:48px">Each screen is a 720 × 720 element drawn at device pixels and shown here at 55 %. Click any screen to see it at 1 : 1.</p>
+  <section class="grid" id="grid"></section>
+
+  <section class="card" style="margin-top:110px">
+    <h2>Building it in LVGL</h2>
+    <p class="sec-sub">Where the mock uses a CSS shortcut, this is how it maps onto LVGL 9.3 on the ESP32-P4.</p>
+    <ul class="notes" id="notes"></ul>
+  </section>
+</div>
+
+<div class="ov" id="ov"><div class="bz1" id="ovb"></div><div class="cap" id="ovc"></div></div>
+
+<script>
+/* ───────────── helpers ───────────── */
+const RAD=Math.PI/180;
+const pol=(r,a)=>[+(360+r*Math.sin(a*RAD)).toFixed(2),+(360-r*Math.cos(a*RAD)).toFixed(2)];
+const LH={eb:18,tt:40,rt:30,bd:28,vl:30,nm:56,d104:104,d168:168,btn:20};
+const ct=(cls,y,html,st='')=>`<div class="ctr ${cls}" style="top:${y-LH[cls]/2}px;${st}">${html}</div>`;
+const svg=(inner,st='')=>`<svg class="a" style="left:0;top:0;pointer-events:none;${st}" width="720" height="720" viewBox="0 0 720 720">${inner}</svg>`;
+const arcD=(r,a0,a1)=>{const [x0,y0]=pol(r,a0),[x1,y1]=pol(r,a1);return `M${x0} ${y0}A${r} ${r} 0 ${Math.abs(a1-a0)>180?1:0} ${a1>a0?1:0} ${x1} ${y1}`};
+const arc=(r,a0,a1,c,w,cap='round')=>`<path d="${arcD(r,a0,a1)}" fill="none" stroke="${c}" stroke-width="${w}" stroke-linecap="${cap}"/>`;
+const ln=(p,q,c,w)=>`<line x1="${p[0]}" y1="${p[1]}" x2="${q[0]}" y2="${q[1]}" stroke="${c}" stroke-width="${w}"/>`;
+const circ=(r,c,w,op=1)=>`<circle cx="360" cy="360" r="${r}" fill="none" stroke="${c}" stroke-width="${w}" stroke-opacity="${op}"/>`;
+const C={nuit:'#080810',encre:'#100C18',encre2:'#181420',encre3:'#201C28',line:'#282430',rule:'#383040',bd:'#806848',brass:'#B89868',gilt:'#D8B880',champ:'#E8D8B8',iv:'#F0E8D8',pa:'#A89C88',ta:'#686058',ruby:'#B83048',amber:'#A06830',amber2:'#805428'};
+
+/* icons: 24-unit grid, stroke normalised to 1.75 device px */
+function gearD(){let d='';for(let k=0;k<8;k++){const c=k*45;const p=(r,a)=>[(12+r*Math.sin(a*RAD)).toFixed(2),(12-r*Math.cos(a*RAD)).toFixed(2)];
+  const pts=[p(7.3,c-15),p(9.7,c-8.5),p(9.7,c+8.5),p(7.3,c+15)];d+=(k?'L':'M')+pts.map(q=>q.join(' ')).join('L');}return d+'Z'}
+const P={
+ bell:'<path d="M6.5 16.5V11a5.5 5.5 0 0 1 11 0v5.5l1.5 1.5h-14z"/><path d="M10.2 20.5a1.9 1.9 0 0 0 3.6 0"/>',
+ gear:`<path d="${gearD()}"/><circle cx="12" cy="12" r="3"/>`,
+ wifi:'<path d="M2.8 9.2a13.5 13.5 0 0 1 18.4 0"/><path d="M5.9 12.5a9 9 0 0 1 12.2 0"/><path d="M9 15.8a4.6 4.6 0 0 1 6 0"/><circle cx="12" cy="19.2" r="1.1" fill="currentColor" stroke="none"/>',
+ moon:'<path d="M19.5 14.6A8 8 0 1 1 9.4 4.5a6.4 6.4 0 0 0 10.1 10.1z"/>',
+ sliders:'<path d="M4 7.5h9M17 7.5h3M4 16.5h3M11 16.5h9"/><circle cx="15" cy="7.5" r="2"/><circle cx="9" cy="16.5" r="2"/>',
+ left:'<path d="M14.5 5.5 8 12l6.5 6.5"/>', right:'<path d="M9.5 5.5 16 12l-6.5 6.5"/>',
+ down:'<path d="M5.5 9 12 15.5 18.5 9"/>', up:'<path d="M5.5 15 12 8.5l6.5 6.5"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ scan:'<path d="M19.2 9A7.6 7.6 0 1 0 19.6 13"/><path d="M19.6 4.4V9h-4.6"/>',
+ lock:'<rect x="5.5" y="10.5" width="13" height="9.5" rx="2"/><path d="M8.5 10.5V8a3.5 3.5 0 0 1 7 0v2.5"/>',
+ eye:'<path d="M2.5 12s3.5-6.5 9.5-6.5 9.5 6.5 9.5 6.5-3.5 6.5-9.5 6.5S2.5 12 2.5 12z"/><circle cx="12" cy="12" r="3"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+ sunlo:'<circle cx="12" cy="12" r="3"/><path d="M12 5.5V7M12 17v1.5M5.5 12H7M17 12h1.5M7.4 7.4l1 1M15.6 15.6l1 1M7.4 16.6l1-1M15.6 8.4l1-1"/>',
+ speaker:'<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6M18.2 6.6a7.6 7.6 0 0 1 0 10.8"/>',
+ spklo:'<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M15.5 9.2a4 4 0 0 1 0 5.6"/>',
+ quiet:'<path d="M4 9.5h3.5L12 6v12l-4.5-3.5H4z"/><path d="M16 9.5l5 5M21 9.5l-5 5"/>',
+ globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.6 2.4 3.8 5.2 3.8 8.5s-1.2 6.1-3.8 8.5c-2.6-2.4-3.8-5.2-3.8-8.5s1.2-6.1 3.8-8.5z"/>',
+ update:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/>',
+ check:'<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+ x:'<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>',
+ bksp:'<path d="M9 6h11v12H9l-5.5-6z"/><path d="M12 9.5l5 5M17 9.5l-5 5"/>',
+ shift:'<path d="M12 4.5 19.5 12.5H15.5V19h-7v-6.5H4.5z"/>',
+ note:'<path d="M9 17.5V6l10-2v11.5"/><circle cx="6.5" cy="17.5" r="2.5"/><circle cx="16.5" cy="15.5" r="2.5"/>',
+ math:'<path d="M5 7.5h5M7.5 5v5M14 7.5h5M5.5 15l4 4M9.5 15l-4 4M14 15.5h5M14 18.5h5"/>',
+ trash:'<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13"/>',
+ play:'<path d="M8.5 6v12l9.5-6z"/>',
+ arrow:'<path d="M3.5 12h16M14.5 7l5 5-5 5"/>',
+ clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+};
+const I=(n,s=28,c='currentColor')=>`<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="${c}" stroke-width="${(1.75*24/s).toFixed(2)}" stroke-linecap="round" stroke-linejoin="round" style="display:block;flex:none">${P[n]}</svg>`;
+/* signal strength, 4 levels */
+function sig(level,s=28){const on=C.gilt,off=C.rule;const w=(1.75*24/s).toFixed(2);
+  return `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke-width="${w}" stroke-linecap="round" style="display:block;flex:none">
+  <path d="M2.8 9.2a13.5 13.5 0 0 1 18.4 0" stroke="${level>=4?on:off}"/><path d="M5.9 12.5a9 9 0 0 1 12.2 0" stroke="${level>=3?on:off}"/>
+  <path d="M9 15.8a4.6 4.6 0 0 1 6 0" stroke="${level>=2?on:off}"/><circle cx="12" cy="19.2" r="1.2" fill="${level>=1?on:off}" stroke="none"/></svg>`}
+
+/* rim: chapter ring / minute track */
+function rim({from=0,to=360,skip=[],scroll=null,hair=true}={}){
+  let s=hair?circ(355,C.bd,1,.55):'';
+  for(let i=0;i<60;i++){const a=i*6;const aa=((a-from)%360+360)%360; if(aa>((to-from+360)%360||360)) continue;
+    if(skip.some(([p,q])=>a>=p&&a<=q))continue; const maj=i%5===0;
+    s+=ln(pol(maj?331:339,a),pol(347,a),maj?C.bd:C.rule,maj?1.5:1);}
+  if(scroll){s+=arc(342,scroll[0],scroll[1],C.line,4);s+=arc(342,scroll[2],scroll[3],C.gilt,4);}
+  return svg(s);
+}
+/* engraved divider with lozenge */
+const hr=(y,w=240,orn=true,bg)=>`<div class="hr" style="left:${360-w/2}px;top:${y}px;width:${w}px"></div>`+(orn?`<div class="lz" style="left:354.5px;top:${y-4.5}px;${bg?`background:${bg};box-shadow:0 0 0 5px ${bg}`:''}"></div>`:'');
+const sec=(y,t,col)=>`<div class="sec" style="top:${y-9}px"><i></i><span class="eb" ${col?`style="color:${col}"`:''}>${t}</span><i></i></div>`;
+const pu=(cx,cy,icon,cls='',sz=64)=>`<div class="pu ${cls}" style="left:${cx-sz/2}px;top:${cy-sz/2}px;width:${sz}px;height:${sz}px">${I(icon,sz>70?30:28)}</div>`;
+/* row fitted to the circle, aligned to a 150–570 column */
+function row(top,h,inner,{div=true,m=16,L0=144,R0=576,st=''}={}){
+  // content keeps the 144–576 column unless the circle would clip its 44 px content band; hairlines follow the chord
+  const fit=(dy,mm)=>Math.sqrt(Math.max(0,(360-mm)**2-dy*dy));
+  const c=top+h/2,half=fit(Math.max(Math.abs(c-22-360),Math.abs(c+22-360)),m);
+  const L=Math.max(L0,Math.round(360-half)),R=Math.min(R0,Math.round(360+half));
+  const hh=fit(Math.abs(top+h-360),48),HL=Math.max(L0,Math.round(360-hh)),HR=Math.min(R0,Math.round(360+hh));
+  return `<div class="a row" style="left:${L}px;top:${top}px;width:${R-L}px;height:${h}px;${st}">${inner}</div>`+(div?`<div class="hl" style="left:${HL}px;top:${top+h}px;width:${HR-HL}px"></div>`:'');
+}
+const sw=on=>`<div class="sw ${on?'on':''}"><i class="jw"></i></div>`;
+function sl(w,pct,ticks=11){let t='';for(let i=0;i<ticks;i++){const x=Math.round(i*(w-1)/(ticks-1));t+=`<i class="tk ${i%5===0?'m':''}" style="left:${x}px"></i>`}
+  return `<div class="sl" style="width:${w}px;flex:none"><i class="tr"></i>${t}<i class="fi" style="width:${w*pct}px"></i><i class="jw" style="left:${w*pct}px"></i></div>`}
+const jw=(cx,cy,d)=>`<i class="jw" style="left:${cx-d/2}px;top:${cy-d/2}px;width:${d}px;height:${d}px"></i>`;
+const head=(eb,title,left='left',right=null,rlabel='')=>(eb?ct('eb',68,eb):'')+ct('tt',120,title)+(left?pu(180,120,left):'')+(right?pu(540,120,right):'')+(rlabel?`<div class="eb a" style="left:500px;width:80px;text-align:center;top:164px;font-size:18px;color:${C.pa}">${rlabel}</div>`:'')+hr(168);
+const dimFace=(f,o=.3)=>`<div class="a full" style="background:${C.nuit}"></div><img class="a full" src="faces/${f}" style="opacity:${o}">`;
+const chev=`<span style="color:${C.bd};display:flex">${I('right',22)}</span>`;
+const two=(t,s,tc='')=>`<div class="grow"><div class="rt" ${tc}>${t}</div>${s?`<div class="bd" style="margin-top:2px">${s}</div>`:''}</div>`;
+
+/* ───────────── screens ───────────── */
+const S=[];
+
+/* 01 — face with controls (bezel reveal) */
+function faceCtl(img){
+  let s=circ(324,C.encre,72,.9)+circ(288.5,C.brass,1,.9)+circ(356,C.bd,1,.7);
+  for(let i=0;i<60;i++){const a=i*6;if([0,1,59,7,8,52,53,30,29,31,28,32].includes(i))continue;const maj=i%5===0;s+=ln(pol(291,a),pol(maj?303:297,a),maj?C.brass:C.bd,maj?1.5:1)}
+  // page dots along the lower bezel
+  const n=8,cur=5,step=4.6;let dots='';
+  for(let k=0;k<n;k++){const a=180+(k-3.5)*step*-1;const [x,y]=pol(335,a);
+    dots+=k===cur?`<circle cx="${x}" cy="${y}" r="5.5" fill="${C.gilt}"/><circle cx="${x}" cy="${y}" r="9" fill="none" stroke="${C.gilt}" stroke-opacity=".5"/>`:`<circle cx="${x}" cy="${y}" r="3.5" fill="${C.pa}"/>`}
+  return `<img class="a full" src="faces/${img}">`+svg(s+dots)
+   + `<div class="ctr eb" style="top:20px;color:${C.champ}">Themes</div><div class="a" style="left:348px;top:44px;color:${C.gilt}">${I('down',24)}</div>`
+   + `<div class="a" style="left:348px;top:648px;color:${C.gilt}">${I('up',24)}</div>`
+   + pu(131,131,'bell') + pu(589,131,'gear') + `<i class="dot-r a" style="left:560px;top:103px;width:12px;height:12px;box-shadow:0 0 0 3px ${C.encre}"></i>`
+   + `<div class="a fl" style="left:0;width:720px;top:150px;justify-content:center"><div class="chip shadow"><i class="dot-r"></i>Update available</div></div>`
+   + `<div class="a fl" style="left:0;width:720px;top:540px;justify-content:center"><div class="chip shadow" style="height:56px;border-radius:28px;padding:0 24px 0 20px;gap:12px;text-transform:none;letter-spacing:0">
+       <span class="g">${I('bell',24)}</span><span class="vl" style="font-size:30px">06:30</span><span class="bd" style="font-size:22px">in 8 h 12 min</span></div></div>`;
+}
+S.push({t:'Face, controls shown',d:'A tap lifts an ink bezel over the dial’s rim for four seconds: pushers at ten and two, pull hints at twelve and six, the face selector along the lower bezel.',html:faceCtl('face_5.png')});
+S.push({t:'Face, controls shown · dark face',d:'The same bezel over the digital face. On dark faces it reads as a quiet frame; on white faces as a watch bezel.',html:faceCtl('face_0.png')});
+
+/* 02 — theme sheet */
+(function(){
+  const th=[{n:'Porcelain',k:'Theme 1',f:'',sw:['#F8F6F2','#1F4F9E','#1C1C1E']},{n:'Nachtblau',k:'Theme 2',f:'invert(1) sepia(1) hue-rotate(185deg) saturate(2.6) brightness(.62) contrast(1.15)',sw:['#18203C','#E6E8EE','#C8A870']},{n:'Sable',k:'Theme 3',f:'sepia(.6) saturate(1.25) brightness(.92)',sw:['#D8C8A8','#4C3424','#A03040']}];
+  let h=dimFace('face_5.png',.32)+`<div class="a shadow" style="left:0;top:0;width:720px;height:512px;background:${C.encre};border-bottom:1px solid ${C.rule}"></div>`;
+  h+=rim({from:248,to:112});
+  h+=ct('eb',72,'Sternglas · face 6 of 8')+ct('tt',114,'Face themes')+hr(156);
+  th.forEach((t,i)=>{const cx=180+i*180,cy=270;
+    h+=`<img class="a thumb" src="faces/face_5.png" style="left:${cx-68}px;top:${cy-68}px;width:136px;height:136px;filter:${t.f||'none'}">`;
+    h+=`<div class="a" style="left:${cx-68}px;top:${cy-68}px;width:136px;height:136px;border-radius:50%;box-shadow:inset 0 0 0 1px rgba(255,255,255,.08)"></div>`;
+    if(i===0){h+=`<div class="a" style="left:${cx-77}px;top:${cy-77}px;width:154px;height:154px;border-radius:50%;border:2px solid ${C.gilt}"></div>`+
+      `<div class="a fl" style="left:${cx-15}px;top:${cy+62}px;width:30px;height:30px;border-radius:50%;background:${C.gilt};justify-content:center;color:${C.encre};box-shadow:0 0 0 4px ${C.encre}">${I('check',18)}</div>`}
+    h+=`<div class="a" style="left:${cx-90}px;width:180px;text-align:center;top:368px"><div class="eb" style="${i===0?`color:${C.gilt}`:''}">${t.k}</div><div class="vl" style="margin-top:12px;color:${i===0?C.iv:C.champ}">${t.n}</div>
+      <div class="fl" style="justify-content:center;gap:10px;margin-top:16px">${t.sw.map(c=>`<i style="width:20px;height:20px;border-radius:50%;background:${c};box-shadow:0 0 0 1px ${C.rule}"></i>`).join('')}</div></div>`;
+  });
+  h+=`<div class="a" style="left:332px;top:490px;width:56px;height:4px;border-radius:2px;background:${C.bd}"></div>`;
+  S.push({t:'Theme sheet',d:'Pulled down from twelve. Thumbnails are pre-rendered tints of the current face; the selected one wears a gilt ring and a check jewel.',html:h});
+})();
+
+/* 03 — quick actions */
+(function(){
+  let h=dimFace('face_5.png',.3)+`<div class="a" style="left:0;top:196px;width:720px;height:524px;background:${C.encre};border-top:1px solid ${C.rule};box-shadow:0 -10px 30px rgba(0,0,0,.5)"></div>`;
+  h+=`<div class="a" style="left:332px;top:214px;width:56px;height:4px;border-radius:2px;background:${C.bd}"></div>`;
+  const b=[['bell','Alarms'],['moon','Night',1],['quiet','Quiet'],['gear','Settings']];
+  b.forEach(([ic,l,on],i)=>{const cx=186+i*116;h+=pu(cx,300,ic,on?'on':'',84);h+=`<div class="a eb" style="left:${cx-60}px;width:120px;text-align:center;top:358px;letter-spacing:.12em;color:${on?C.gilt:C.pa}">${l}</div>`});
+  h+=hr(410,200);
+  // brightness on the rim
+  let s='';const a0=240,a1=120,v=.4,av=a0-(a0-a1)*v;
+  for(let i=0;i<=20;i++){const a=a0-i*6;const maj=i%2===0;s+=ln(pol(maj?327:332,a),pol(340,a),a>=av?(maj?C.gilt:C.brass):(maj?C.bd:C.rule),maj?1.5:1)}
+  s+=arc(300,a1,a0,C.rule,4)+arc(300,av,a0,C.gilt,4);
+  h+=svg(s);
+  const [kx,ky]=pol(300,av);h+=jw(kx,ky,40);
+  const [sx,sy]=pol(300,248),[bx,by]=pol(300,112);
+  h+=`<div class="a" style="left:${sx-13}px;top:${sy-13}px;color:${C.pa}">${I('sunlo',26)}</div><div class="a" style="left:${bx-15}px;top:${by-15}px;color:${C.champ}">${I('sun',30)}</div>`;
+  h+=ct('eb',468,'Brightness')+ct('nm',528,'40<span class="vl" style="margin-left:4px">%</span>');
+  S.push({t:'Quick actions',d:'Pulled up from six over the dimmed face. Brightness lives on the rim as a bezel scale; drag the jewel. Night is on, shown as a gilt-filled pusher.',html:h});
+})();
+
+/* 04 — settings home */
+(function(){
+  let h=rim()+head('Touch Clock','Settings','left','bell');
+  const r=[['wifi','Wi-Fi','Networks, clock, and time zone'],['moon','Night mode','Schedule, face, and brightness'],['sliders','Other','Language, sound, and device info',1]];
+  r.forEach(([ic,t,s,up],i)=>{h+=row(204+i*104,104,`<div class="sd">${I(ic,26)}</div><div class="grow"><div class="rt fl" style="gap:12px">${t}${up?`<span class="chip" style="height:30px;padding:0 12px;gap:8px;font-size:18px;line-height:18px;letter-spacing:.1em;border-color:${C.ruby}"><i class="dot-r" style="width:8px;height:8px"></i>1.9.0</span>`:''}</div><div class="bd" style="margin-top:3px">${s}</div></div>${chev}`,{div:i<2})});
+  h+=hr(548,120,false);
+  h+=`<div class="a fl" style="left:0;width:720px;top:574px;justify-content:center;gap:10px;color:${C.pa}">${sig(4,22)}<span class="bd">Wi-Fi: Home-5G • synced 14:13</span></div>`;
+  S.push({t:'Settings',d:'Three chapters, each with a sub-dial icon. The ruby chip on Other carries the update; the status line closes the page like a caseback inscription.',html:h});
+})();
+
+/* 05a — Wi-Fi */
+(function(){
+  let h=rim({skip:[[54,126]],scroll:[60,120,60,82]})+head('Settings','Wi-Fi','left','scan','Scan');
+  h+=`<div class="a fl" style="left:0;width:720px;top:192px;justify-content:center;gap:14px">${sig(4,32)}<span class="tt">Home-5G</span><span class="g">${I('check',26)}</span></div>`;
+  h+=ct('bd',256,'Connected · 5 GHz · strong signal');
+  h+=sec(314,'Other networks');
+  const n=[['Home-2G',3],['Neighbours',2],['Café Lumière',3],['iPhone (Anna)',1]];
+  n.forEach(([t,l],i)=>{h+=row(336+i*76,76,`${sig(l,28)}<div class="grow rt">${t}</div><span class="ta">${I('lock',22)}</span>`,{div:i<3})});
+  h+=`<div class="a" style="left:0;top:590px;width:720px;height:130px;background:linear-gradient(rgba(16,12,24,0),${C.encre} 85%)"></div>`;
+  S.push({t:'Wi-Fi',d:'Connected network as a centred lockup, other networks as a ruled list that narrows with the circle. The rim at three o’clock doubles as the scroll register.',html:h});
+})();
+/* 05b — Wi-Fi scrolled */
+(function(){
+  let h=rim({skip:[[54,126]],scroll:[60,120,98,120]});
+  h+=row(84,76,`${sig(1,28)}<div class="grow rt">iPhone (Anna)</div><span class="ta">${I('lock',22)}</span>`);
+  h+=`<div class="a" style="left:0;top:0;width:720px;height:176px;background:linear-gradient(${C.encre} 34%,rgba(16,12,24,.55) 70%,rgba(16,12,24,0))"></div>`;
+  h+=ct('eb',40,'Wi-Fi',`color:${C.champ}`);
+  h+=sec(228,'Time & clock');
+  h+=row(252,100,`<div class="sd">${I('globe',26)}</div>${two('Warsaw, Berlin','Time zone · UTC+1')}${chev}`);
+  h+=row(352,84,`<div class="sd">${I('clock',26)}</div>${two('Auto sync','')}${sw(1)}`);
+  h+=row(436,100,`<div class="sd">${I('scan',24)}</div>${two('Sync time','Last synced 14:13')}<div class="bt sm">Sync now</div>`,{div:false});
+  h+=hr(592,80);
+  S.push({t:'Wi-Fi · scrolled',d:'Further down the same page. Rows leaving the top dissolve under a static fade; the register at three o’clock shows the end of the page.',html:h});
+})();
+
+/* 06 — join network */
+(function(){
+  let h=svg(circ(355,C.bd,1,.55));
+  h+=ct('eb',54,'Join network')+ct('tt',96,'Café Lumière');
+  h+=`<div class="a fl" style="left:150px;top:132px;width:420px;height:72px;border-radius:36px;border:1px solid ${C.gilt};background:${C.encre2};padding:0 8px 0 24px;gap:14px">
+     <span class="ta">${I('lock',22)}</span><span class="fl" style="gap:9px">${('<i style="width:10px;height:10px;border-radius:50%;background:'+C.champ+'"></i>').repeat(10)}</span><i style="width:2px;height:30px;background:${C.gilt};margin-left:-4px"></i>
+     <span class="grow"></span><div class="fl" style="width:56px;height:56px;border-radius:50%;justify-content:center;color:${C.champ};background:${C.encre3}">${I('eye',26)}</div></div>`;
+  const rows=[[...'qwertyuiop'],[...'asdfghjkl'],['⇧',...'zxcvbnm','⌫'],['?123',',','English','.']];
+  const W=56,G=6,H=70,Y=[230,306,382,458];
+  rows.forEach((r,ri)=>{const ws=r.map(k=>k==='⇧'||k==='⌫'?72:k==='?123'?88:k==='English'?232:W);const tot=ws.reduce((a,b)=>a+b,0)+G*(r.length-1);let x=360-tot/2;
+    r.forEach((k,ki)=>{const w=ws[ki];let cls='key',lab=k;if(k==='⇧'){cls+=' fn';lab=I('shift',24)}else if(k==='⌫'){cls+=' fn';lab=I('bksp',26)}else if(k==='?123'){cls+=' fn lb'}else if(k==='English'){cls+=' lb';lab='English'}
+      h+=`<div class="${cls}" style="left:${x}px;top:${Y[ri]}px;width:${w}px">${lab}</div>`;x+=w+G;});});
+  h+=`<div class="a fl" style="left:0;width:720px;top:556px;justify-content:center;gap:16px"><div class="bt" style="width:180px;height:72px;border-radius:36px">Cancel</div><div class="bt pri" style="width:180px;height:72px;border-radius:36px">Connect</div></div>`;
+  S.push({t:'Join network',d:'Password hidden, eye to reveal. The keyboard is laid out on the circle: ten, nine, nine and four keys, each row centred inside the chord.',html:h});
+})();
+
+/* 07 — night mode */
+(function(){
+  let s=circ(355,C.bd,1,.55)+circ(334,C.line,4);
+  for(let i=0;i<48;i++){const a=i*7.5;const hr_=i%2===0,six=i%12===0;if(!hr_){s+=`<circle cx="${pol(334,a)[0]}" cy="${pol(334,a)[1]}" r="1" fill="${C.ta}"/>`;continue}
+    s+=ln(pol(six?322:326,a),pol(six?346:342,a),six?C.brass:C.bd,six?1.5:1)}
+  const a0=22.5*15,a1=7*15+360;s+=arc(334,a0,a1,C.gilt,4,'butt');
+  [['6',90],['12',180],['18',270]].forEach(([t,a])=>{const [x,y]=pol(306,a);s+=`<text x="${x}" y="${y+6}" text-anchor="middle" font-family="Jost" font-weight="500" font-size="18" fill="${C.ta}">${t}</text>`});
+  let h=svg(s);
+  const [mx,my]=pol(334,a0),[ux,uy]=pol(334,a1);
+  h+=`<div class="a fl" style="left:${mx-18}px;top:${my-18}px;width:36px;height:36px;border-radius:50%;background:${C.gilt};justify-content:center;color:${C.encre};box-shadow:0 0 0 3px ${C.encre}">${I('moon',20)}</div>`;
+  h+=`<div class="a fl" style="left:${ux-18}px;top:${uy-18}px;width:36px;height:36px;border-radius:50%;background:${C.gilt};justify-content:center;color:${C.encre};box-shadow:0 0 0 3px ${C.encre}">${I('sun',22)}</div>`;
+  h+=head('Settings','Night mode','left');
+  h+=row(180,80,two('Enabled','')+sw(1));
+  h+=row(260,80,`<div class="grow rt">Schedule</div><span class="vl fl" style="gap:10px">22:30<span class="g">${I('arrow',22)}</span>07:00</span>${chev}`);
+  h+=row(340,92,`<div style="position:relative;width:64px;height:64px;flex:none"><img class="thumb" src="faces/face_1.png" style="width:64px;height:64px;opacity:.7"><i class="a" style="inset:-4px;border-radius:50%;border:1px solid ${C.brass}"></i></div>${two('Night face','Tap to choose')}${chev}`);
+  h+=row(432,80,`<div class="rt" style="flex:none">Brightness</div><div class="grow"></div>${sl(150,.12)}<span class="vl" style="width:56px;text-align:right">12<span style="font:400 22px/22px Jost;margin-left:2px">%</span></span>`);
+  h+=row(512,96,`${two('Sunrise ramp','Brighten during the<br>pre-alarm sunrise')}${sw(1)}`,{div:false});
+  S.push({t:'Night mode',d:'The rim becomes a 24-hour ring: the gilt arc is the schedule, the moon and sun jewels its ends, dragged directly.',html:h});
+})();
+
+/* 08 — other */
+(function(){
+  let h=rim({skip:[[150,210]]})+head('Settings','Other','left');
+  h+=row(180,76,`${two('Language','')}<span class="bd" style="color:${C.champ}">English</span>${chev}`);
+  h+=row(256,116,`<div class="grow" style="display:flex;flex-direction:column;gap:14px"><div class="fl" style="gap:16px"><div class="rt grow">Touch sound</div>${sw(1)}</div>
+     <div class="fl" style="gap:14px"><span class="pa">${I('spklo',24)}</span>${sl(266,.6)}<span class="ch">${I('speaker',24)}</span><span class="vl" style="width:52px;text-align:right">60<span style="font:400 22px/22px Jost;margin-left:2px">%</span></span></div></div>`,{div:false});
+  h+=`<div class="a fl" style="left:144px;top:384px;width:432px;height:100px;border-radius:28px;background:${C.encre2};border:1px solid ${C.bd};padding:0 18px 0 28px;gap:14px">
+      <div class="grow"><div class="eb" style="color:${C.gilt}">Software update</div><div class="vl fl" style="margin-top:12px;gap:10px"><span class="pa">1.8.2</span><span class="g">${I('arrow',22)}</span>1.9.0</div></div>
+      <div class="bt pri" style="height:72px;border-radius:36px;padding:0 24px">Install</div></div>`;
+  h+=sec(514,'About this device');
+  [['Device ID','TC-4F2A91'],['Version','1.8.2'],['Build','Oct 27 2026'],['Target','ESP32-P4'],['ESP-IDF','v5.5.3']].forEach(([k,v],i)=>{
+    h+=`<div class="a fl" style="left:0;width:720px;top:${534+i*30}px;height:30px"><div class="eb" style="width:350px;text-align:right;color:${C.bd}">${k}</div><div style="width:20px;display:flex;justify-content:center"><i style="width:3px;height:3px;border-radius:50%;background:${C.bd}"></i></div><div style="font:400 22px/30px Jost;color:${C.champ}">${v}</div></div>`});
+  S.push({t:'Other',d:'Language, touch sound with its volume, the update as a framed card, and the device details set like a caseback engraving on a central axis.',html:h});
+})();
+
+/* 09 — alarms */
+(function(){
+  let h=rim()+head('3 alarms · 2 on','Alarms','left','plus');
+  h+=`<div class="a fl" style="left:0;width:720px;top:182px;justify-content:center;gap:12px"><span class="eb g">Next up</span><span class="bd"><span class="iv">Tomorrow 06:30</span>, in 8 h 12 min</span></div>`;
+  const days=(on)=>`<div class="fl" style="gap:7px;margin-top:6px">${'MTWTFSS'.split('').map((d,i)=>`<span style="font:500 18px/18px Jost;width:16px;text-align:center;color:${on.includes(i)?C.gilt:C.ta}">${d}</span>`).join('')}</div>`;
+  const al=[['06:30','Weekdays',[0,1,2,3,4],1],['07:45','Weekends',[5,6],1],['09:00','Once · Sat 1 Nov',null,0]];
+  al.forEach(([t,l,d,on],i)=>{h+=row(222+i*100,100,`<span class="nm" style="width:138px;color:${on?C.iv:C.pa}">${t}</span><div class="grow"><div class="bd" style="color:${on?C.iv:C.pa}">${l}</div>${d?days(d):`<div class="bd" style="font-size:18px;line-height:18px;margin-top:6px;letter-spacing:.14em;color:${C.pa};text-transform:uppercase;font-weight:500">Off</div>`}</div>${sw(on)}`,{div:i<2})});
+  h+=hr(530,120,false);
+  h+=`<div class="ctr" style="top:548px"><div class="rt fl" style="justify-content:center;gap:6px">Alarm settings${chev}</div><div class="bd" style="margin-top:4px">Morning Light · snooze 9 min</div></div>`;
+  S.push({t:'Alarms',d:'Times in Cormorant numerals, the active days in gilt, a jewelled switch per alarm. Add is the pusher at two; alarm settings close the page.',html:h});
+})();
+
+/* 10a — alarm editor: set the time like a watch */
+(function(){
+  let s=`<defs><pattern id="guil" width="720" height="720" patternUnits="userSpaceOnUse">${Array.from({length:56},(_,i)=>`<circle cx="360" cy="360" r="${4+i*4}" fill="none" stroke="#1C1824" stroke-width="1.5"/>`).join('')}</pattern></defs>`;
+  s+=`<circle cx="360" cy="360" r="214" fill="url(#guil)"/>`+circ(214,C.line,1)+circ(355,C.bd,1,.55);
+  // minute track: ticks + gilt sweep to the set minute
+  s+=arc(343,0,180,C.gilt,2,'butt')+arc(343,180,360,C.line,2,'butt');
+  for(let i=0;i<60;i++){const a=i*6,maj=i%5===0;s+=ln(pol(maj?316:322,a),pol(334,a),maj?C.bd:C.rule,maj?1.5:1)}
+  for(let m=0;m<60;m+=5){const [x,y]=pol(292,m*6);s+=`<text x="${x}" y="${y+6.5}" text-anchor="middle" font-family="Jost" font-weight="500" font-size="18" fill="${m===30?C.gilt:C.pa}">${String(m).padStart(2,'0')}</text>`}
+  // hour ring (24 h)
+  s+=circ(244,C.line,1,0);
+  for(let hh=0;hh<24;hh++){if(hh===6)continue;const [x,y]=pol(244,hh*15);s+=`<text x="${x}" y="${y+10}" text-anchor="middle" font-family="Cormorant Garamond" font-weight="600" font-size="30" fill="${hh%6===0?C.champ:C.ta}">${String(hh).padStart(2,'0')}</text>`}
+  let h=svg(s);
+  const [hx,hy]=pol(244,90);h+=`<div class="a fl" style="left:${hx-27}px;top:${hy-27}px;width:54px;height:54px;border-radius:50%;background:${C.gilt};justify-content:center;font:600 30px/30px 'Cormorant Garamond';color:${C.encre};box-shadow:0 0 0 4px ${C.encre}">06</div>`;
+  const [mx,my]=pol(326,180);h+=jw(mx,my,36);
+  h+=ct('eb',262,'Weekdays')+ct('d104',338,'06<span style="color:'+C.brass+';margin:0 2px">:</span><span class="g">30</span>')+ct('bd',408,'in 8 h 12 min');
+  h+=pu(298,474,'x','',64)+pu(422,474,'check','on',64);
+  h+=`<div class="a" style="left:348px;top:526px;color:${C.bd}">${I('down',24)}</div>`;
+  S.push({t:'Alarm editor · time',d:'Set like a watch: the inner 24-hour ring carries the hour jewel, the outer minute track the minute jewel. Both rings turn under the finger; the centre confirms.',html:h});
+})();
+/* 10b — alarm editor details */
+(function(){
+  let h=rim({skip:[[54,126]],scroll:[60,120,96,120]});
+  h+=ct('eb',50,'Edit alarm')+ct('nm',100,'06:30');
+  h+=sec(170,'Repeat');
+  h+=`<div class="a seg" style="left:122px;top:198px;width:476px"><div>Once</div><div>Every day</div><div class="on">Weekdays</div><div>Weekends</div></div>`;
+  h+=`<div class="a fl" style="left:108px;top:282px;width:504px;justify-content:space-between">${'MTWTFSS'.split('').map((d,i)=>`<div class="fl" style="width:72px;height:72px;justify-content:center"><div class="fl" style="width:56px;height:56px;border-radius:50%;justify-content:center;font:400 22px/22px Jost;${i<5?`border:1px solid ${C.gilt};background:${C.encre3};color:${C.iv}`:`border:1px solid ${C.line};color:${C.ta}`}">${d}</div></div>`).join('')}</div>`;
+  h+=`<div class="hl" style="left:144px;width:432px;top:370px"></div>`;
+  h+=row(371,84,`<div class="sd">${I('note',24)}</div>${two('Morning Light','')}<div class="bt sm" style="gap:8px">${I('play',16)}Test</div>`);
+  h+=row(455,84,`<div class="sd">${I('math',24)}</div>${two('Math to turn off','')}${sw(1)}`,{div:false});
+  h+=`<div class="a fl" style="left:0;width:720px;top:556px;justify-content:center;gap:16px"><div class="bt del" style="width:176px;height:72px;border-radius:36px">${I('trash',22)}Delete</div><div class="bt pri" style="width:176px;height:72px;border-radius:36px">Save</div></div>`;
+  S.push({t:'Alarm editor · details',d:'Scrolling on from the time: repeat as a segmented control plus individual days, sound with a test, the math lock, then Delete and Save.',html:h});
+})();
+
+/* 11a — ringing */
+(function(){
+  let h=`<div class="a full" style="background:repeating-conic-gradient(from 0deg at 50% 50%,#1A1622 0deg .75deg,#100C18 .75deg 1.5deg)"></div>`;
+  h+=`<div class="a full" style="background:radial-gradient(circle at 50% 50%,rgba(16,12,24,.85) 0,rgba(16,12,24,.35) 55%,rgba(16,12,24,0) 75%)"></div>`;
+  h+=`<div class="a full" style="background:radial-gradient(ellipse 70% 45% at 50% 100%,rgba(160,104,48,.28),rgba(160,104,48,0))"></div>`;
+  let s=circ(355,C.bd,1,.55);
+  for(let i=0;i<60;i++){const a=i*6;if(a>126&&a<234)continue;const maj=i%5===0;s+=ln(pol(maj?331:339,a),pol(347,a),maj?C.brass:C.rule,maj?1.5:1)}
+  // slide-to-stop groove along the lower rim
+  s+=arc(300,232,128,C.encre,64)+arc(300,232,128,C.rule,62.5)+arc(300,232,128,C.encre2,60);
+  h+=svg(s);
+  h+=ct('eb',112,'Alarm',`color:${C.gilt};letter-spacing:.3em`)+ct('d168',214,'06:30')+ct('bd',302,'Wednesday, 28 October · Morning Light');
+  h+=`<div class="a fl" style="left:200px;top:352px;width:320px;height:112px;border-radius:56px;border:1.5px solid ${C.gilt};background:${C.encre2};justify-content:center;flex-direction:column;gap:6px;box-shadow:0 0 0 6px ${C.encre},0 0 0 7px ${C.line}">
+      <span class="tt" style="line-height:40px">Snooze</span><span class="eb" style="color:${C.pa}">9 min</span></div>`;
+  const [kx,ky]=pol(300,226);h+=`<div class="a fl" style="left:${kx-27}px;top:${ky-27}px;width:54px;height:54px;border-radius:50%;justify-content:center;background:radial-gradient(circle at 36% 30%,#FFF6E0 0,#ECD29C 20%,#C89C60 58%,#6E5028 100%);color:${C.encre};box-shadow:0 1px 3px rgba(0,0,0,.7)">${I('right',24)}</div>`;
+  const [ex,ey]=pol(300,134);h+=`<div class="a" style="left:${ex-20}px;top:${ey-20}px;width:40px;height:40px;border-radius:50%;border:1.5px solid ${C.bd}"></div><div class="a" style="left:${ex-7}px;top:${ey-7}px;width:14px;height:14px;border-radius:3px;background:${C.bd}"></div>`;
+  h+=ct('eb',654,'Slide to stop',`color:${C.champ}`);
+  S.push({t:'Alarm ringing',d:'A static sunray dial with a warm sunrise wash. Snooze is the large framed pill; stopping means drawing the jewel along the groove in the lower bezel.',html:h});
+})();
+/* 11b — math challenge */
+(function(){
+  let h=rim();
+  h+=ct('eb',78,'Solve to stop',`color:${C.gilt}`);
+  h+=`<div class="a fl" style="left:0;width:720px;top:104px;justify-content:center;gap:16px"><span class="nm">7 + 15 =</span><span class="fl nm" style="min-width:84px;height:62px;border-bottom:2px solid ${C.gilt};justify-content:center;color:${C.gilt}">2<i style="width:2px;height:44px;background:${C.gilt};margin-left:4px"></i></span></div>`;
+  const keys=['1','2','3','4','5','6','7','8','9','⌫','0','✓'];
+  keys.forEach((k,i)=>{const c=i%3,r=Math.floor(i/3);const cx=260+c*100,cy=236+r*98;let cls='rk',lab=k;if(k==='⌫'){cls+=' fn';lab=I('bksp',28)}if(k==='✓'){cls+=' ok';lab=I('check',30)}
+    h+=`<div class="${cls}" style="left:${cx-42}px;top:${cy-42}px">${lab}</div>`});
+  h+=`<div class="a fl" style="left:0;width:720px;top:604px;justify-content:center"><div class="bt" style="height:64px;padding:0 30px">Snooze · 9 min</div></div>`;
+  S.push({t:'Alarm ringing · math',d:'Optional challenge. A round keypad sits on a 100 px grid inside the circle; the gilt key confirms, snooze stays one tap away.',html:h});
+})();
+
+/* 12 — night mode active */
+(function(){
+  let h=`<div class="a full" style="background:#000"></div><img class="a full" src="faces/face_1.png" style="opacity:.16">`;
+  h+=`<div class="a" style="left:347px;top:78px;color:${C.amber2}">${I('moon',26)}</div>`;
+  h+=`<div class="a fl" style="left:0;width:720px;top:560px;justify-content:center;gap:12px;color:${C.amber}">${I('bell',24)}<span class="vl" style="color:${C.amber}">06:30</span></div>`;
+  h+=ct('bd',622,'in 8 h 12 min',`color:${C.amber}`);
+  S.push({t:'Night mode active',d:'The dot-matrix night face at very low level. The overlay drops to amber (#A06830, 4.5 : 1 on black): a moon at twelve, the next alarm and the time until it at six. No gilt, no white.',html:h,bg:'#000'});
+})();
+
+/* ───────────── render ───────────── */
+const NUM=['01','01 · b','02','03','04','05','05 · b','06','07','08','09','10','10 · b','11','11 · b','12'];
+const devHTML=(s)=>`<div class="dev" ${s.bg?`style="background:${s.bg}"`:''}>${s.html}</div>`;
+const q=new URLSearchParams(location.search).get('shot');
+if(q!==null){document.body.classList.add('shot');const box=document.createElement('div');box.className='shotbox';box.innerHTML=devHTML(S[+q]);document.body.appendChild(box);}
+else{
+  const grid=document.getElementById('grid');
+  grid.innerHTML=S.map((s,i)=>`<figure data-i="${i}"><div class="bezel"><div class="scaler">${devHTML(s)}</div></div><figcaption><span class="no">${NUM[i]}</span><span class="nm">${s.t}</span><span class="ds">${s.d}</span></figcaption></figure>`).join('');
+  document.getElementById('hero').innerHTML=`<div class="bezel">`+`<div class="scaler">${devHTML(S[11])}</div></div>`;
+  const ov=document.getElementById('ov'),ovb=document.getElementById('ovb'),ovc=document.getElementById('ovc');let cur=-1;
+  const open=i=>{cur=(i+S.length)%S.length;ovb.innerHTML=devHTML(S[cur]);ovc.textContent=`${NUM[cur]} · ${S[cur].t} · 1:1 · ← → to browse, Esc to close`;ov.classList.add('open')};
+  grid.addEventListener('click',e=>{const f=e.target.closest('figure');if(f)open(+f.dataset.i)});
+  document.getElementById('hero').addEventListener('click',()=>open(11));
+  ov.addEventListener('click',()=>ov.classList.remove('open'));
+  addEventListener('keydown',e=>{if(!ov.classList.contains('open'))return;if(e.key==='Escape')ov.classList.remove('open');if(e.key==='ArrowRight')open(cur+1);if(e.key==='ArrowLeft')open(cur-1)});
+
+  const op=new URLSearchParams(location.search).get('open');if(op!==null)open(+op);
+  /* specimen */
+  const tok=[['Nuit','#080810','Dim layer, night base'],['Encre','#100C18','Sheet surface'],['Encre 2','#181420','Controls, cards'],['Encre 3','#201C28','Raised, selected'],['Line','#282430','Row hairlines'],['Rule','#383040','Tracks, borders'],['Brass deep','#806848','Ticks, frames'],['Brass','#B89868','Labels, eyebrows'],
+    ['Gilt','#D8B880','Accent, value fill'],['Champagne','#E8D8B8','Values, icons'],['Ivoire','#F0E8D8','Primary text'],['Parchment','#A89C88','Secondary text'],['Taupe','#686058','Inactive'],['Ruby','#B83048','Jewel, badge'],['Ruby light','#E07088','Destructive text'],['Amber','#A06830','Night overlay']];
+  document.getElementById('swatches').innerHTML=tok.map(([n,h,r])=>`<div class="sw-tok"><div class="chip-c" style="background:${h}"></div><b>${n}</b><code>${h}</code><span>${r}</span></div>`).join('');
+  const ty=[['Display XL','Cormorant Garamond 500 · 168','06:30','font:500 168px/150px \'Cormorant Garamond\''],['Display L','Cormorant Garamond 500 · 104','06:30','font:500 104px/100px \'Cormorant Garamond\''],['Numeral','Cormorant Garamond 500 · 56','07:45 Будильник','font:500 56px/60px \'Cormorant Garamond\''],['Title','Cormorant Garamond 600 · 40','Face themes · Jasność','font:600 40px/46px \'Cormorant Garamond\''],['Value','Cormorant Garamond 600 · 30','22:30 → 07:00 · Ночь','font:600 30px/36px \'Cormorant Garamond\''],['Row','Jost 400 · 26','Café Lumière · Źródło','font:400 26px/32px Jost'],['Body','Jost 400 · 22','Networks, clock, and time zone · Мережі','font:400 22px/28px Jost'],['Button','Jost 500 · 20 · +0.12em caps','Connect · Zapisz','font:500 20px/24px Jost;letter-spacing:.12em;text-transform:uppercase'],['Label','Jost 500 · 18 · +0.16em caps','Next up · Яркость','font:500 18px/22px Jost;letter-spacing:.16em;text-transform:uppercase;color:#B89868']];
+  document.getElementById('type').innerHTML=ty.map(([n,m,t,st])=>`<div class="typerow"><div class="meta"><b>${n}</b>${m}</div><div style="${st};font-variant-numeric:lining-nums tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:clip">${t}</div></div>`).join('');
+  document.getElementById('spacing').innerHTML=[8,16,24,32,48,72].map(v=>`<div><i style="height:${v}px"></i>${v}</div>`).join('');
+  document.getElementById('icons').innerHTML=['bell','gear','wifi','moon','sliders','left','right','plus','scan','lock','eye','sun','speaker','quiet','globe','clock','note','math','play','trash','check','x','bksp','shift'].map(n=>`<div title="${n}">${I(n,28)}</div>`).join('');
+  document.getElementById('controls').innerHTML=`
+    <div class="ctl"><small>Buttons · 72 / 64 tall</small><div class="fl" style="gap:12px"><div class="bt pri" style="height:72px;border-radius:36px">Save</div><div class="bt" style="height:72px;border-radius:36px">Cancel</div></div><div class="bt del" style="height:64px">${I('trash',22)}Delete</div></div>
+    <div class="ctl"><small>Switch · 72×40, jewel 30</small><div class="fl" style="gap:28px">${sw(1)}${sw(0)}</div><small style="margin-top:18px">Pusher · 64, ring + outline</small><div class="fl" style="gap:22px;position:relative;height:74px"><div class="pu" style="position:relative;left:5px;top:5px">${I('gear')}</div><div style="width:12px"></div><div class="pu on" style="position:relative;left:5px;top:5px">${I('moon')}</div></div></div>
+    <div class="ctl"><small>Slider · 2 px track, jewel 28</small><div class="fl" style="gap:14px"><span style="color:#A89C88">${I('sunlo',24)}</span>${sl(220,.4)}<span class="vl">40%</span></div><small style="margin-top:18px">Chip · 44</small><div class="fl" style="gap:12px"><div class="chip"><i class="dot-r"></i>Update available</div></div></div>
+    <div class="ctl" style="grid-column:span 2;align-self:start"><small>List row · 76–112, column 144 → 576</small><div class="row" style="width:420px;height:104px;border-bottom:1px solid #282430"><div class="sd">${I('wifi',26)}</div>${two('Wi-Fi','Networks, clock, and time zone')}${chev}</div></div>
+    <div class="ctl"><small>Segmented · 72</small><div class="seg" style="width:340px"><div>Once</div><div class="on">Weekdays</div><div>Weekends</div></div></div>`;
+  const notes=[
+   ['Chapter rings and tick tracks','are drawn with <code>lv_scale</code> in round mode (ticks only, no labels) or as one pre-rendered A8 ring image recoloured to brass. Labels on the rings (minute numerals, 24 h numerals) are ordinary upright labels placed at precomputed positions.'],
+   ['Values on the rim','(brightness, minutes, hours, schedule) are <code>lv_arc</code> objects with a 4 px indicator in gilt and a custom knob. The 24-hour ring uses two arcs sharing a track so both ends can be dragged.'],
+   ['Jewels','(switch knob, slider knob, arc knobs) are small pre-rendered ARGB8565 PNGs at 28, 30, 36, 40 and 54 px. The radial gradient in the mock is only a stand-in.'],
+   ['Pushers','are a circle with a 1 px border plus a 1 px <code>outline</code> at <code>outline_pad</code> 4, so the double ring costs nothing. The inner ring of the sub-dial icons is a child object with its own border.'],
+   ['Sunray and guilloché','textures are static images: the sunray is a 720 × 720 RGB565 image in PSRAM (about 1 MB), the guilloché in the alarm editor a 444 px disc. Their contrast is a single RGB565 step, so banding cannot appear.'],
+   ['Sheets','are solid encre objects over the face drawn at 30 % opacity on nuit. The single soft shadow on the sheet edge is cached; the chips on the face carry the only other two shadows.'],
+   ['The bezel on the face','is one <code>lv_arc</code> (width 72, 90 % opacity on that one object) with two 1 px ring borders. It fades in as one object; nothing else changes opacity.'],
+   ['Fades at list ends','are 720 × 130 ARGB gradient images, not live masks. Rows simply scroll beneath them.'],
+   ['Keyboard','keys are 56 × 70 with 6 px gutters, narrower than the 72 px rule; the hit areas abut, so each key catches 62 × 76. It is the only exception. Function keys are 72 to 232 px wide.'],
+   ['Theme thumbnails','are pre-rendered 136 px PNGs per theme, not runtime colour filters.'],
+   ['Rotated lozenge ornament','in the dividers is a 17 px PNG. All text is upright; there is no text on a path anywhere.'],
+   ['Fonts','are converted at nine fixed sizes: Cormorant Garamond 500 at 168 and 104 (digits and colon only), 56; 600 at 40 and 30; Jost 400 at 26 and 22; Jost 500 at 20 and 18. Each includes Latin Extended-A and Cyrillic.'],
+   ['Figures','in Cormorant Garamond are old-style by default; the mock switches on lining, tabular figures. Freeze <code>lnum</code> and <code>tnum</code> into the font with <code>pyftfeatfreeze</code> before <code>lv_font_conv</code>, since LVGL bitmap fonts cannot apply OpenType features.'],
+   ['Primary button','gradient is two stops over 72 px (#E4C890 to #C8A470). If it bands, use solid gilt #D8B880 with no visual loss.'],
+  ];
+  document.getElementById('notes').innerHTML=notes.map(([b,t])=>`<li><b>${b}</b> ${t}</li>`).join('');
+}
+</script>
+</body>
+</html>

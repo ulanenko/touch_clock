@@ -16,7 +16,11 @@
 #define PERF_SEG_NAME_MAX 24
 #define PERF_RENDER_SAMPLES 512
 #define PERF_SLOW_FRAME_US 33000
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
+#define PERF_THUMB_STEP 1
+#else
 #define PERF_THUMB_STEP 4
+#endif
 
 typedef enum {
     PERF_STEP_IDLE = 0,
@@ -153,6 +157,26 @@ static void call_close_brightness(clock_ui_context_t *ctx)
     DRAG(seg, 360, 620, 360, 220, 120, 150), DRAG(seg, 360, 220, 360, 620, 120, 150), \
     DRAG(seg, 360, 620, 360, 220, 120, 150), DRAG(seg, 360, 220, 360, 620, 120, 900)
 
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
+#define GALLERY_FACE_CALL(id) \
+    static void call_show_face_##id(clock_ui_context_t *ctx) { request_set_current_face(ctx, (clock_face_id_t)(id)); }
+GALLERY_FACE_CALL(0)
+GALLERY_FACE_CALL(1)
+GALLERY_FACE_CALL(2)
+GALLERY_FACE_CALL(3)
+GALLERY_FACE_CALL(4)
+GALLERY_FACE_CALL(5)
+GALLERY_FACE_CALL(6)
+GALLERY_FACE_CALL(7)
+#define GALLERY_FACE(id) CALL("gallery", call_show_face_##id, 2500), THUMB("face_" #id)
+
+/* Full-resolution screenshots of every face, for design mockups. */
+static const perf_step_t s_steps[] = {
+    IDLE("gallery", 3000),
+    GALLERY_FACE(0), GALLERY_FACE(1), GALLERY_FACE(2), GALLERY_FACE(3),
+    GALLERY_FACE(4), GALLERY_FACE(5), GALLERY_FACE(6), GALLERY_FACE(7),
+};
+#else
 static const perf_step_t s_steps[] = {
     IDLE("idle_face", 5000),
     THUMB("face"),
@@ -198,6 +222,7 @@ static const perf_step_t s_steps[] = {
     CALL("alarms_close", call_close_alarms, 1200),
     IDLE("idle_face_end", 5000),
 };
+#endif
 
 #define PERF_STEP_COUNT ((int)(sizeof(s_steps) / sizeof(s_steps[0])))
 
@@ -403,7 +428,7 @@ static void dump_thumbnail(const char *name)
     lv_draw_buf_t *snap = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
     uint32_t w;
     uint32_t h;
-    char line[(SCREEN_SIZE / PERF_THUMB_STEP) * 4 + 16];
+    static char line[(SCREEN_SIZE / PERF_THUMB_STEP) * 4 + 16];
 
     if (snap == NULL) {
         printf("PERF thumb_failed %s\n", name);

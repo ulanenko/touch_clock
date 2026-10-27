@@ -1,0 +1,744 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Instrument · Touch Clock UI</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Inter+Tight:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ───────── Device tokens (all on the RGB565 grid: R,B ÷8, G ÷4) ───────── */
+:root{
+  --well:#100C08;   /* recesses: tracks, fields, readout windows */
+  --base:#181410;   /* screen ground */
+  --surf:#201C18;   /* sheets, dialogs */
+  --key:#302C28;    /* keycaps */
+  --hair:#383430;   /* hairlines */
+  --edge:#484440;   /* key top edge, inactive ticks */
+  --edge2:#585450;  /* grabbers, off thumb */
+  --ink:#E8E4D8;    /* primary text */
+  --ink2:#A8A498;   /* secondary text */
+  --ink3:#888478;   /* micro labels */
+  --sig:#F05818;    /* signal orange */
+  --sigedge:#782C08;/* keycap base under signal */
+  --night:#A03C18;  /* night overlay */
+  --sans:'Inter Tight',system-ui,sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,monospace;
+
+  /* page (presentation) tokens */
+  --pg:#ECE9E2; --pg-ink:#1C1A17; --pg-ink2:#5E5A52; --pg-line:#D2CEC4; --pg-card:#F5F3EE;
+}
+@media (prefers-color-scheme: dark){
+  :root{ --pg:#0F0E0D; --pg-ink:#E8E4D8; --pg-ink2:#8E8A80; --pg-line:#2A2724; --pg-card:#161412; }
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--pg);color:var(--pg-ink);font-family:var(--sans);-webkit-font-smoothing:antialiased}
+
+/* ───────── Presentation page ───────── */
+.page{max-width:1400px;margin:0 auto;padding:72px 24px 120px}
+.kicker{font:500 13px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--pg-ink2)}
+.hero{display:grid;grid-template-columns:1fr 1fr;gap:64px;align-items:end;border-bottom:1px solid var(--pg-line);padding-bottom:48px}
+.hero h1{font:300 120px/0.95 var(--sans);letter-spacing:-.035em;margin:18px 0 0}
+.hero h1 b{font-weight:300;color:var(--sig)}
+.hero p{font:400 19px/1.55 var(--sans);color:var(--pg-ink2);margin:0;max-width:620px}
+.hero p strong{color:var(--pg-ink);font-weight:500}
+.sect{display:flex;justify-content:space-between;align-items:baseline;margin:72px 0 24px;border-bottom:1px solid var(--pg-line);padding-bottom:14px}
+.sect h2{font:500 28px/1 var(--sans);margin:0;letter-spacing:-.01em}
+
+.spec{background:var(--base);color:var(--ink);border-radius:20px;padding:40px;display:grid;grid-template-columns:repeat(12,1fr);gap:40px 40px}
+.spec h3{font:500 18px/22px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3);margin:0 0 20px;padding-bottom:12px;border-bottom:1px solid var(--hair)}
+.spec .c4{grid-column:span 4}.spec .c5{grid-column:span 5}.spec .c7{grid-column:span 7}.spec .c8{grid-column:span 8}.spec .c6{grid-column:span 6}.spec .c12{grid-column:span 12}.spec .c3{grid-column:span 3}
+.sw-list{display:grid;grid-template-columns:1fr 1fr;gap:10px 16px}
+.tok{display:flex;gap:12px;align-items:center}
+.tok i{width:44px;height:44px;border-radius:10px;flex:none;box-shadow:inset 0 0 0 1px rgba(232,228,216,.14)}
+.tok b{display:block;font:500 16px/20px var(--sans)}
+.tok span{display:block;font:400 14px/18px var(--mono);color:var(--ink3)}
+.type-row{display:grid;grid-template-columns:200px 1fr;gap:16px;align-items:baseline;padding:10px 0;border-bottom:1px solid var(--hair)}
+.type-row:last-child{border-bottom:0}
+.type-row .meta{font:400 14px/18px var(--mono);color:var(--ink3)}
+.radii{display:flex;gap:20px;align-items:flex-end}
+.radii div{text-align:center;font:400 14px/18px var(--mono);color:var(--ink3)}
+.radii i{display:block;width:72px;height:72px;background:var(--key);border:1px solid var(--edge);margin-bottom:10px}
+.spacing{display:flex;gap:14px;align-items:flex-end;margin-top:26px}
+.spacing div{text-align:center;font:400 14px/18px var(--mono);color:var(--ink3)}
+.spacing i{display:block;background:var(--sig);height:8px;margin:0 auto 8px;opacity:.9}
+.icons{display:grid;grid-template-columns:repeat(8,1fr);gap:18px 8px}
+.icons div{display:flex;flex-direction:column;align-items:center;gap:8px;font:400 12px/14px var(--mono);color:var(--ink3);text-transform:uppercase;letter-spacing:.06em}
+.icons svg{width:28px;height:28px;color:var(--ink)}
+.ctl{position:relative;display:flex;flex-direction:column;gap:14px}
+.ctl .cap{font:400 14px/18px var(--mono);color:var(--ink3)}
+.ctl-row{display:flex;gap:24px;align-items:center;flex-wrap:wrap}
+.note{font:400 15px/1.5 var(--sans);color:var(--ink2);margin:0}
+
+.grid{display:grid;grid-template-columns:repeat(3,418px);justify-content:space-between;row-gap:56px}
+.cell{margin:0;cursor:zoom-in}
+.frame{width:418px;height:418px}
+.device{width:760px;height:760px;padding:20px;border-radius:50%;transform:scale(.55);transform-origin:0 0;
+  background:radial-gradient(circle at 50% 30%,#34302c 0%,#141210 62%,#0a0908 100%);
+  box-shadow:0 0 0 1px rgba(0,0,0,.5),inset 0 1px 0 rgba(255,255,255,.08),0 40px 80px -20px rgba(0,0,0,.45)}
+figcaption{margin-top:18px;display:grid;grid-template-columns:44px 1fr;gap:4px 0}
+figcaption .n{font:500 14px/22px var(--mono);color:var(--sig)}
+figcaption .t{font:500 18px/22px var(--sans)}
+figcaption .d{grid-column:2;font:400 14px/20px var(--sans);color:var(--pg-ink2)}
+.foot{margin-top:72px;display:grid;grid-template-columns:1fr 1fr;gap:48px;font:400 15px/1.6 var(--sans);color:var(--pg-ink2)}
+.foot h4{font:500 13px/1 var(--mono);letter-spacing:.16em;text-transform:uppercase;color:var(--pg-ink);margin:0 0 14px}
+.foot ul{margin:0;padding-left:18px}
+.foot code{font:400 13px var(--mono);color:var(--pg-ink)}
+
+.ov{position:fixed;inset:0;background:rgba(8,7,6,.92);display:none;align-items:center;justify-content:center;overflow:auto;z-index:10;cursor:zoom-out}
+.ov.on{display:flex}
+.ov .device{transform:none;margin:auto}
+.ov .lab{position:fixed;top:20px;left:24px;font:500 13px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:#A8A498}
+body.solo{background:#000;margin:0}
+body.solo .device{transform:none;box-shadow:none}
+
+/* ───────── Device screen primitives ───────── */
+.scr{position:relative;width:720px;height:720px;border-radius:50%;overflow:hidden;background:var(--base);color:var(--ink);font-family:var(--sans);font-feature-settings:"tnum" 1}
+.a{position:absolute}
+.tc{left:0;right:0;text-align:center}
+.face{position:absolute;left:0;top:0;width:720px;height:720px}
+.dim{position:absolute;inset:0;background:#000}
+
+.f144{font:300 144px/144px var(--sans);letter-spacing:-.03em}
+.f88{font:300 88px/88px var(--sans);letter-spacing:-.02em}
+.f56{font:300 56px/56px var(--sans);letter-spacing:-.02em}
+.f34{font:500 34px/40px var(--sans);letter-spacing:-.01em}
+.f28{font:500 28px/34px var(--sans);letter-spacing:-.005em}
+.f24{font:400 24px/30px var(--sans)}
+.f24m{font:500 24px/30px var(--sans)}
+.f22{font:400 22px/28px var(--sans);color:var(--ink2)}
+.m22{font:400 22px/28px var(--mono);letter-spacing:.01em}
+.m18{font:400 18px/22px var(--mono);letter-spacing:.02em;color:var(--ink2)}
+.lbl{font:500 18px/22px var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--ink3)}
+.tc.lbl{text-indent:.14em}
+.ink{color:var(--ink)}.ink2{color:var(--ink2)}.ink3{color:var(--ink3)}.sigc{color:var(--sig)}
+
+.ic{width:28px;height:28px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round;flex:none}
+.ic.s24{width:24px;height:24px;stroke-width:2.33}
+.ic.s20{width:20px;height:20px;stroke-width:2.8}
+
+/* hardware key */
+.key{display:flex;align-items:center;justify-content:center;gap:10px;background:var(--key);border:1px solid var(--hair);border-top-color:var(--edge);border-radius:10px;box-shadow:0 3px 0 #080808;color:var(--ink);font:500 24px/1 var(--sans)}
+.key.rnd{border-radius:50%}
+.key.sig{background:var(--sig);border-color:#F87830;border-top-color:#F89060;box-shadow:0 3px 0 var(--sigedge);color:var(--base)}
+.key .lbl{color:inherit}
+.key.sig .lbl{color:var(--base)}
+
+/* recessed well */
+.well{background:var(--well);border:1px solid var(--hair);border-radius:10px}
+
+/* plate: floating control on top of a face */
+.plate{position:absolute;display:flex;align-items:center;justify-content:center;gap:10px;height:44px;border-radius:22px;background:rgba(24,20,16,.9);border:1px solid var(--edge);color:var(--ink2)}
+
+.plate.rd{flex-direction:column;align-items:flex-start;justify-content:center;gap:2px;border-radius:16px;padding:0 16px}
+.plate.rd>div{display:flex;align-items:center;gap:8px;height:28px}
+.plate.rd .lbl{letter-spacing:.02em}
+.plate.rd{padding:0 12px}
+.plate.rd>div:first-child .lbl{letter-spacing:0}
+.dots.sm{gap:4px}.dots.sm i.cur{width:12px}
+.tabl{display:flex;justify-content:center;align-items:center;gap:6px}
+.led{width:8px;height:8px;border-radius:50%;background:var(--sig);flex:none}
+.led.off{background:var(--well);box-shadow:inset 0 0 0 1px var(--edge)}
+
+/* slide switch with I/O window */
+.sw{position:relative;width:88px;height:48px;border-radius:10px;background:var(--well);border:1px solid var(--hair);flex:none}
+.sw::before{content:"";position:absolute;top:50%;right:18px;width:10px;height:10px;margin-top:-5px;border-radius:50%;box-shadow:inset 0 0 0 2px var(--edge)}
+.sw .th{position:absolute;top:3px;left:3px;width:40px;height:40px;border-radius:7px;background:var(--edge2);border-top:1px solid #686460}
+.sw .th::after{content:"";position:absolute;left:50%;top:13px;width:1px;height:14px;margin-left:-5px;background:rgba(0,0,0,.35);box-shadow:5px 0 0 rgba(0,0,0,.35),10px 0 0 rgba(0,0,0,.35)}
+.sw.on::before{left:16px;right:auto;width:16px;height:4px;margin-top:-2px;border-radius:2px;background:var(--sig);box-shadow:none}
+.sw.on .th{left:43px;background:var(--ink);border-top-color:#F8F4E8}
+
+/* segmented selector */
+.seg{display:flex;height:72px;padding:4px;gap:0;background:var(--well);border:1px solid var(--hair);border-radius:10px}
+.seg div{flex:1;display:flex;align-items:center;justify-content:center;font:400 22px/1 var(--sans);color:var(--ink3);position:relative;border-radius:7px}
+.seg div+div::before{content:"";position:absolute;left:0;top:18px;bottom:18px;width:1px;background:var(--hair)}
+.seg .on{background:var(--key);color:var(--ink);font-weight:500;border-top:1px solid var(--edge);box-shadow:0 2px 0 #080808}
+.seg .on::after{content:"";position:absolute;top:8px;left:50%;width:18px;height:3px;margin-left:-9px;border-radius:2px;background:var(--sig)}
+.seg .on::before,.seg .on+div::before{display:none}
+
+/* lists */
+.list{position:absolute;left:0;width:720px}
+.row{display:flex;align-items:center;gap:16px;border-top:1px solid var(--hair);min-height:80px}
+.row.last{border-bottom:1px solid var(--hair)}
+.row .r{margin-left:auto;display:flex;align-items:center;gap:12px}
+.row .col{display:flex;flex-direction:column;gap:4px;min-width:0}
+.sec{display:flex;align-items:flex-end;justify-content:space-between;height:52px;padding-bottom:12px}
+.chev{color:var(--ink3)}
+.thumb{border-radius:50%;overflow:hidden;flex:none}
+.thumb img{width:100%;height:100%;display:block}
+.tile{width:56px;height:56px;display:flex;align-items:center;justify-content:center;color:var(--ink2);flex:none}
+.grab{position:absolute;width:56px;height:4px;border-radius:2px;background:var(--edge2);left:332px}
+.bars{display:block;flex:none}
+.vr{width:1px;height:22px;background:var(--edge)}
+.dots{gap:8px}
+.dots i{width:6px;height:6px;border-radius:3px;background:var(--ink3)}
+.dots i.cur{width:20px;background:var(--sig)}
+svg.gen{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
+</style>
+</head>
+<body>
+<svg id="sprite" width="0" height="0" style="position:absolute">
+  <defs>
+  <symbol id="i-chev-l" viewBox="0 0 28 28"><path d="M17 6.5L9.5 14l7.5 7.5"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 28 28"><path d="M11 6.5l7.5 7.5L11 21.5"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 28 28"><path d="M6.5 11l7.5 7.5L21.5 11"/></symbol>
+  <symbol id="i-chev-u" viewBox="0 0 28 28"><path d="M6.5 17.5L14 10l7.5 7.5"/></symbol>
+  <symbol id="i-close" viewBox="0 0 28 28"><path d="M8 8l12 12M20 8L8 20"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 28 28"><path d="M14 6v16M6 14h16"/></symbol>
+  <symbol id="i-minus" viewBox="0 0 28 28"><path d="M6 14h16"/></symbol>
+  <symbol id="i-check" viewBox="0 0 28 28"><path d="M6 14.5l5 5L22 8.5"/></symbol>
+  <symbol id="i-alarm" viewBox="0 0 28 28"><circle cx="14" cy="15" r="8.5"/><path d="M14 10.5V15l3 2M4.5 7l3.5-3M23.5 7L20 4"/></symbol>
+  <symbol id="i-set" viewBox="0 0 28 28"><path d="M4 9h5M14 9h10M4 19h10M19 19h5"/><circle cx="11.5" cy="9" r="2.5"/><circle cx="16.5" cy="19" r="2.5"/></symbol>
+  <symbol id="i-sun" viewBox="0 0 28 28"><circle cx="14" cy="14" r="4.5"/><path d="M14 3v3M14 22v3M3 14h3M22 14h3M6.2 6.2l2.1 2.1M19.7 19.7l2.1 2.1M21.8 6.2l-2.1 2.1M6.2 21.8l2.1-2.1"/></symbol>
+  <symbol id="i-sun-lo" viewBox="0 0 28 28"><circle cx="14" cy="14" r="3.5"/><path d="M14 6.5v1M14 20.5v1M6.5 14h1M20.5 14h1M8.7 8.7l.7.7M18.6 18.6l.7.7M19.3 8.7l-.7.7M8.7 19.3l.7-.7"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 28 28"><path d="M22.5 16.8A9 9 0 1 1 11.2 5.5a7 7 0 0 0 11.3 11.3z"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 28 28"><path d="M4.1 11.1a14 14 0 0 1 19.8 0M7.3 14.3a9.5 9.5 0 0 1 13.4 0M10.5 17.5a5 5 0 0 1 7 0"/><path d="M14 21.2v.1"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 28 28"><rect x="7" y="12.5" width="14" height="11" rx="2"/><path d="M10 12.5V9.5a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-eye" viewBox="0 0 28 28"><path d="M3 14s4-7.5 11-7.5S25 14 25 14s-4 7.5-11 7.5S3 14 3 14z"/><circle cx="14" cy="14" r="3.5"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 28 28"><path d="M3 14s4-7.5 11-7.5S25 14 25 14s-4 7.5-11 7.5S3 14 3 14z"/><circle cx="14" cy="14" r="3.5"/><path d="M5 4.5l18 19"/></symbol>
+  <symbol id="i-scan" viewBox="0 0 28 28"><path d="M22.5 14a8.5 8.5 0 1 1-2.5-6"/><path d="M21 3.5V8.5h-5"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 28 28"><path d="M5.5 8h17M11 8V5h6v3M8 8l1 15h10l1-15M12 12v7M16 12v7"/></symbol>
+  <symbol id="i-play" viewBox="0 0 28 28"><path d="M10 7.5v13l10.5-6.5z"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 28 28"><rect x="8" y="8" width="12" height="12" rx="2"/></symbol>
+  <symbol id="i-sound" viewBox="0 0 28 28"><path d="M5 11h4l5.5-4.5v15L9 17H5z"/><path d="M18.5 10.5a5 5 0 0 1 0 7M21.5 7.5a9.5 9.5 0 0 1 0 13"/></symbol>
+  <symbol id="i-mute" viewBox="0 0 28 28"><path d="M5 11h4l5.5-4.5v15L9 17H5z"/><path d="M18.5 11l5 6M23.5 11l-5 6"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10"/><path d="M4 14h20M14 4c-3 3-4.5 6.5-4.5 10s1.5 7 4.5 10c3-3 4.5-6.5 4.5-10S17 7 14 4z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 28 28"><path d="M14 24.5s-7.5-7-7.5-12.5a7.5 7.5 0 0 1 15 0c0 5.5-7.5 12.5-7.5 12.5z"/><circle cx="14" cy="12" r="2.5"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10"/><path d="M14 8.5V14l4 2.5"/></symbol>
+  <symbol id="i-update" viewBox="0 0 28 28"><path d="M14 4v13M8.5 11.5L14 17l5.5-5.5M5 23h18"/></symbol>
+  <symbol id="i-info" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10"/><path d="M14 13v7M14 9v.1"/></symbol>
+  <symbol id="i-sunrise" viewBox="0 0 28 28"><path d="M4 21h20M8 21a6 6 0 0 1 12 0M14 5v6M11 8l3-3 3 3M6 14.5l1.6 1.2M22 14.5l-1.6 1.2"/></symbol>
+  <symbol id="i-back" viewBox="0 0 28 28"><path d="M10 7h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H10l-6.5-7z"/><path d="M13.5 11l5.5 6M19 11l-5.5 6"/></symbol>
+  <symbol id="i-face" viewBox="0 0 28 28"><circle cx="14" cy="14" r="10"/><path d="M14 7v1.5M14 19.5V21M7 14h1.5M19.5 14H21M14 14l3.5-3"/></symbol>
+  </defs>
+</svg>
+
+<div class="page">
+  <header class="hero">
+    <div>
+      <div class="kicker">Touch Clock · 720 × 720 round · UI direction</div>
+      <h1>Instrument<b>.</b></h1>
+    </div>
+    <p>Treat the clock as a <strong>precision instrument</strong>, not a phone. The direction borrows from Dieter Rams' Braun clocks and radios, Teenage Engineering's labelled hardware and the engraved scales on a Leica lens: <strong>matte warm graphite</strong>, 1&nbsp;px hairlines, monospaced legends printed like panel markings, and one <strong>signal orange</strong> that only ever means "on", "now" or "act". It suits a bedside round display because the rim becomes a scale you can read and drag. Controls look and behave like keys and slide switches, so their state reads at a glance in the dark and a sleepy thumb can hit them. Nothing glows except what matters.</p>
+  </header>
+
+  <div class="sect"><h2>System</h2><span class="kicker">All sizes are device pixels</span></div>
+  <section class="spec">
+    <div class="c5">
+      <h3>Colour · RGB565-exact</h3>
+      <div class="sw-list">
+        <div class="tok"><i style="background:#100C08"></i><div><b>well</b><span>#100C08 · recesses</span></div></div>
+        <div class="tok"><i style="background:#181410"></i><div><b>base</b><span>#181410 · ground</span></div></div>
+        <div class="tok"><i style="background:#201C18"></i><div><b>surface</b><span>#201C18 · sheets</span></div></div>
+        <div class="tok"><i style="background:#302C28"></i><div><b>key</b><span>#302C28 · keycaps</span></div></div>
+        <div class="tok"><i style="background:#383430"></i><div><b>hair</b><span>#383430 · 1 px rules</span></div></div>
+        <div class="tok"><i style="background:#484440"></i><div><b>edge</b><span>#484440 · edges, ticks</span></div></div>
+        <div class="tok"><i style="background:#E8E4D8"></i><div><b>ink</b><span>#E8E4D8 · primary</span></div></div>
+        <div class="tok"><i style="background:#A8A498"></i><div><b>ink-2</b><span>#A8A498 · secondary</span></div></div>
+        <div class="tok"><i style="background:#888478"></i><div><b>ink-3</b><span>#888478 · legends</span></div></div>
+        <div class="tok"><i style="background:#F05818"></i><div><b>signal</b><span>#F05818 · on, now, act</span></div></div>
+        <div class="tok"><i style="background:#782C08"></i><div><b>signal-base</b><span>#782C08 · key skirt</span></div></div>
+        <div class="tok"><i style="background:#A03C18"></i><div><b>night</b><span>#A03C18 · night</span></div></div>
+      </div>
+      <p class="note" style="margin-top:20px">Every value sits on the 16-bit grid (R and B in steps of 8, G in steps of 4), so the warm cast survives conversion exactly instead of collapsing to neutral grey. ink-3 on base is 5.1 : 1, ink on base is 14 : 1.</p>
+    </div>
+    <div class="c7">
+      <h3>Type · Inter Tight + IBM Plex Mono</h3>
+      <div class="type-row"><span class="meta">Tight 300 · 144</span><span class="f144" style="line-height:120px">06:30</span></div>
+      <div class="type-row"><span class="meta">Tight 300 · 88 / 56</span><span><span class="f88">07</span>&nbsp;&nbsp;<span class="f56">40%</span></span></div>
+      <div class="type-row"><span class="meta">Tight 500 · 34</span><span class="f34">Face themes · Нічний режим</span></div>
+      <div class="type-row"><span class="meta">Tight 500 · 28</span><span class="f28">Night mode · Tryb nocny</span></div>
+      <div class="type-row"><span class="meta">Tight 400 · 24</span><span class="f24">Touch sound · Звук нажатия</span></div>
+      <div class="type-row"><span class="meta">Tight 400 · 22</span><span class="f22">Schedule, face, and brightness · Żółć</span></div>
+      <div class="type-row"><span class="meta">Plex Mono 400 · 22</span><span class="m22">TC-4F2A91 · −52 dBm</span></div>
+      <div class="type-row"><span class="meta">Plex Mono 500 · 18 caps +14%</span><span class="lbl">Brightness · Яскравість</span></div>
+    </div>
+
+    <div class="c4">
+      <h3>Radii &amp; spacing</h3>
+      <div class="radii">
+        <div><i style="border-radius:4px"></i>4 · tags</div>
+        <div><i style="border-radius:10px"></i>10 · keys</div>
+        <div><i style="border-radius:20px"></i>20 · panels</div>
+        <div><i style="border-radius:50%"></i>½ · round</div>
+      </div>
+      <div class="spacing">
+        <div><i style="width:8px"></i>8</div><div><i style="width:16px"></i>16</div><div><i style="width:24px"></i>24</div><div><i style="width:32px"></i>32</div><div><i style="width:48px"></i>48</div><div><i style="width:64px"></i>64</div><div><i style="width:72px;background:var(--ink3)"></i>72 hit</div>
+      </div>
+      <p class="note" style="margin-top:20px">Rows 80, content column 104–616 (the inscribed square), 32 px clear of the rim wherever a row narrows.</p>
+    </div>
+    <div class="c8">
+      <h3>Icons · 28 px grid, 2 px stroke, round caps</h3>
+      <div class="icons">
+        <div><svg class="ic"><use href="#i-alarm"/></svg>alarm</div>
+        <div><svg class="ic"><use href="#i-set"/></svg>settings</div>
+        <div><svg class="ic"><use href="#i-moon"/></svg>night</div>
+        <div><svg class="ic"><use href="#i-sun"/></svg>bright</div>
+        <div><svg class="ic"><use href="#i-wifi"/></svg>wi-fi</div>
+        <div><svg class="ic"><use href="#i-lock"/></svg>secured</div>
+        <div><svg class="ic"><use href="#i-eye"/></svg>show</div>
+        <div><svg class="ic"><use href="#i-scan"/></svg>scan</div>
+        <div><svg class="ic"><use href="#i-sound"/></svg>sound</div>
+        <div><svg class="ic"><use href="#i-mute"/></svg>silent</div>
+        <div><svg class="ic"><use href="#i-globe"/></svg>language</div>
+        <div><svg class="ic"><use href="#i-pin"/></svg>zone</div>
+        <div><svg class="ic"><use href="#i-sunrise"/></svg>sunrise</div>
+        <div><svg class="ic"><use href="#i-trash"/></svg>delete</div>
+        <div><svg class="ic"><use href="#i-play"/></svg>test</div>
+        <div><svg class="ic"><use href="#i-back"/></svg>erase</div>
+      </div>
+    </div>
+
+    <div class="c12"><h3 style="margin-bottom:8px">Control set · 1 : 1</h3></div>
+    <div class="c4 ctl">
+      <div class="ctl-row">
+        <div class="key sig" style="width:168px;height:72px">Save</div>
+        <div class="key" style="width:168px;height:72px">Cancel</div>
+      </div>
+      <div class="cap">Key · 72 tall, r10, 1 px top edge, 3 px skirt. Signal fill only for the one primary act.</div>
+      <div class="ctl-row">
+        <div class="key rnd" style="width:72px;height:72px"><svg class="ic"><use href="#i-minus"/></svg></div>
+        <div style="width:96px;text-align:center"><span class="f56">9</span> <span class="lbl">min</span></div>
+        <div class="key rnd" style="width:72px;height:72px"><svg class="ic"><use href="#i-plus"/></svg></div>
+      </div>
+      <div class="cap">Stepper · two round hardware keys around a readout.</div>
+    </div>
+    <div class="c4 ctl">
+      <div class="ctl-row">
+        <div class="sw on"><div class="th"></div></div>
+        <div class="sw"><div class="th"></div></div>
+        <span class="lbl">I · O</span>
+      </div>
+      <div class="cap">Slide switch · 88 × 48. On: light thumb right, orange bar lit in the window. Off: dark thumb left, empty ring.</div>
+      <div style="display:flex;align-items:center;gap:16px;margin-top:6px">
+        <div class="ruler" data-v="40" data-w="300"></div><span class="m22">40%</span>
+      </div>
+      <div class="cap">Ruler slider · ticks every 2 %, majors every 10 %, fader cap with orange index, mono readout.</div>
+    </div>
+    <div class="c4 ctl">
+      <div style="position:relative;height:64px;display:flex;gap:24px;align-items:center">
+        <div class="plate rd" style="position:relative;width:176px;height:64px"><div><svg class="ic s20"><use href="#i-alarm"/></svg><span class="f22 ink" style="font-weight:500">06:30</span><span class="lbl ink2">8h12m</span></div><div><span class="led"></span><span class="lbl ink">Update 1.9</span></div></div>
+        <div style="position:relative;width:200px;height:56px;background:#D8D4CC;border-radius:6px;overflow:hidden">
+          <svg width="200" height="56" style="position:absolute;left:0;top:0"><path d="M23.7 28.7A339 339 0 0 1 176.3 28.7" stroke="#484440" stroke-width="36" fill="none" stroke-linecap="round"/><path d="M23.7 28.7A339 339 0 0 1 176.3 28.7" stroke="rgba(24,20,16,.92)" stroke-width="34" fill="none" stroke-linecap="round"/></svg>
+          <div class="lbl ink2 tabl" style="position:absolute;left:0;right:0;top:8px;text-indent:.14em"><svg class="ic s20"><use href="#i-chev-d"/></svg>Themes</div>
+        </div>
+      </div>
+      <div class="cap">Readout plate · 176 × 64, base at 90 % over the face. Rim tab · lv_arc width 36 on r 339, ±13°, rounded ends, hugs the bezel (shown on a light dial).</div>
+      <div class="seg" style="width:400px"><div>Once</div><div class="on">Weekdays</div><div>Weekends</div></div>
+      <div class="cap">Segmented · recessed well, selected segment is a raised key with an orange index.</div>
+    </div>
+    <div class="c12 ctl">
+      <div class="row last" style="width:512px;border-top:1px solid var(--hair)"><div class="col"><span class="f24">Auto sync</span><span class="m18">pool.ntp.org · every 6 h</span></div><div class="r"><div class="sw on"><div class="th"></div></div></div></div>
+      <div class="cap">List row · 80 min, label 24, mono sub 18, hairline rules; rows inset to stay 32 px inside the circle.</div>
+    </div>
+  </section>
+
+  <div class="sect"><h2>Screens</h2><span class="kicker">Click any screen for 1 : 1</span></div>
+  <div class="grid">
+
+<!-- 01a FACE CONTROLS · STERNGLAS -->
+<figure class="cell" data-id="s01a"><div class="frame"><div class="device"><div class="scr" style="background:#000">
+  <img class="face" src="faces/face_5.png" alt="" style="opacity:.85">
+  <svg class="gen" width="720" height="720" data-gen="tab" data-a="-90" data-s="13"></svg>
+  <div class="a lbl ink2 tc tabl" style="top:10px"><svg class="ic s20"><use href="#i-chev-d"/></svg>Themes</div>
+  <div class="plate rd" style="left:272px;top:138px;width:176px;height:64px">
+    <div><svg class="ic s20"><use href="#i-alarm"/></svg><span class="f22 ink" style="font-weight:500">06:30</span><span class="lbl ink2">8h12m</span></div>
+    <div><span class="led"></span><span class="lbl ink">Update 1.9</span></div>
+  </div>
+  <div class="key rnd a" style="left:234px;top:600px;width:72px;height:72px"><svg class="ic"><use href="#i-set"/></svg></div>
+  <div class="plate dots sm" style="left:314px;top:642px;width:92px;height:24px;border-radius:12px"><i></i><i></i><i></i><i></i><i></i><i class="cur"></i><i></i><i></i></div>
+  <div class="key rnd a" style="left:414px;top:600px;width:72px;height:72px"><svg class="ic"><use href="#i-alarm"/></svg></div>
+  <svg class="gen" width="720" height="720" data-gen="tab" data-a="90" data-s="13"></svg>
+  <div class="a lbl ink2 tc tabl" style="top:688px"><svg class="ic s20"><use href="#i-chev-u"/></svg>Actions</div>
+</div></div></div>
+<figcaption><span class="n">01a</span><span class="t">Face · controls shown (Sternglas)</span><span class="d">Face drawn at 85 %. Pull tabs ride the bezel at 12 and 6; one readout sits in the empty zone under 12; Settings, page dots and Alarms sit on the minute track between the 5 and 7 marks.</span></figcaption></figure>
+
+<!-- 01b FACE CONTROLS · DIGITAL -->
+<figure class="cell" data-id="s01b"><div class="frame"><div class="device"><div class="scr" style="background:#000">
+  <img class="face" src="faces/face_0.png" alt="" style="opacity:.85">
+  <svg class="gen" width="720" height="720" data-gen="tab" data-a="-90" data-s="13"></svg>
+  <div class="a lbl ink2 tc tabl" style="top:10px"><svg class="ic s20"><use href="#i-chev-d"/></svg>Themes</div>
+  <div class="plate rd" style="left:272px;top:138px;width:176px;height:64px">
+    <div><svg class="ic s20"><use href="#i-alarm"/></svg><span class="f22 ink" style="font-weight:500">06:30</span><span class="lbl ink2">8h12m</span></div>
+    <div><span class="led"></span><span class="lbl ink">Update 1.9</span></div>
+  </div>
+  <div class="key rnd a" style="left:234px;top:600px;width:72px;height:72px"><svg class="ic"><use href="#i-set"/></svg></div>
+  <div class="plate dots sm" style="left:314px;top:642px;width:92px;height:24px;border-radius:12px"><i class="cur"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+  <div class="key rnd a" style="left:414px;top:600px;width:72px;height:72px"><svg class="ic"><use href="#i-alarm"/></svg></div>
+  <svg class="gen" width="720" height="720" data-gen="tab" data-a="90" data-s="13"></svg>
+  <div class="a lbl ink2 tc tabl" style="top:688px"><svg class="ic s20"><use href="#i-chev-u"/></svg>Actions</div>
+</div></div></div>
+<figcaption><span class="n">01b</span><span class="t">Face · controls shown (Digital)</span><span class="d">Identical geometry over a dark face: the readout clears the date, the keys clear the weekday row. One layout for all eight faces.</span></figcaption></figure>
+
+<!-- 02 THEME SHEET -->
+<figure class="cell" data-id="s02"><div class="frame"><div class="device"><div class="scr" style="background:#000">
+  <img class="face" src="faces/face_5.png" alt="" style="opacity:.28">
+  <div class="a" style="left:0;top:0;width:720px;height:504px;background:var(--surf);border-bottom:1px solid var(--edge)"></div>
+  <div class="a lbl tc" style="top:62px">Face 06 / 08 · Sternglas</div>
+  <div class="a f34 tc" style="top:92px">Face themes</div>
+  <!-- thumbs: centres x 192 / 360 / 528, y 238 -->
+  <div class="a" style="left:118px;top:164px;width:148px;height:148px;border-radius:50%;border:2px solid var(--sig)"></div>
+  <div class="a thumb" style="left:126px;top:172px;width:132px;height:132px"><img src="faces/face_5.png" alt=""></div>
+  <div class="a thumb" style="left:294px;top:172px;width:132px;height:132px;box-shadow:0 0 0 1px var(--edge)"><img src="faces/face_5.png" alt="" style="filter:hue-rotate(185deg) saturate(1.7)"></div>
+  <div class="a thumb" style="left:462px;top:172px;width:132px;height:132px;box-shadow:0 0 0 1px var(--edge)"><img src="faces/face_5.png" alt="" style="filter:invert(.93) hue-rotate(180deg)"></div>
+  <div class="a" style="left:112px;top:332px;width:160px;text-align:center"><div class="lbl sigc" style="text-indent:.14em">Theme 1</div><div class="f24m" style="margin-top:6px">Paper</div></div>
+  <div class="a" style="left:280px;top:332px;width:160px;text-align:center"><div class="lbl" style="text-indent:.14em">Theme 2</div><div class="f24 ink2" style="margin-top:6px">Signal</div></div>
+  <div class="a" style="left:448px;top:332px;width:160px;text-align:center"><div class="lbl" style="text-indent:.14em">Theme 3</div><div class="f24 ink2" style="margin-top:6px">Ink</div></div>
+  <div class="a swatches" style="left:162px;top:404px" data-c="#F8F8F8,#202020,#1E50A0"></div>
+  <div class="a swatches" style="left:330px;top:404px" data-c="#F0ECE4,#202020,#F05818"></div>
+  <div class="a swatches" style="left:498px;top:404px" data-c="#181818,#E0E0E0,#4C84D8"></div>
+  <div class="grab" style="top:472px"></div>
+</div></div></div>
+<figcaption><span class="n">02</span><span class="t">Theme sheet</span><span class="d">Pulled from 12. Pre-rendered round previews, orange bezel ring marks the active theme; swatches are dial · marks · hands.</span></figcaption></figure>
+
+<!-- 03 QUICK ACTIONS -->
+<figure class="cell" data-id="s03"><div class="frame"><div class="device"><div class="scr" style="background:#000">
+  <img class="face" src="faces/face_5.png" alt="" style="opacity:.28">
+  <div class="a" style="left:0;top:216px;width:720px;height:504px;background:var(--surf);border-top:1px solid var(--edge)"></div>
+  <div class="grab" style="top:232px"></div>
+  <div class="key a" style="left:148px;top:264px;width:88px;height:88px"><svg class="ic"><use href="#i-alarm"/></svg></div>
+  <div class="key a" style="left:260px;top:264px;width:88px;height:88px"><svg class="ic"><use href="#i-moon"/></svg><span class="led off a" style="top:10px;right:10px"></span></div>
+  <div class="key a" style="left:372px;top:264px;width:88px;height:88px"><svg class="ic"><use href="#i-sound"/></svg><span class="led a" style="top:10px;right:10px"></span></div>
+  <div class="key a" style="left:484px;top:264px;width:88px;height:88px"><svg class="ic"><use href="#i-set"/></svg></div>
+  <div class="a lbl" style="left:132px;top:368px;width:120px;text-align:center;text-indent:.14em">Alarms</div>
+  <div class="a lbl" style="left:244px;top:368px;width:120px;text-align:center;text-indent:.14em">Night</div>
+  <div class="a lbl ink2" style="left:356px;top:368px;width:120px;text-align:center;text-indent:.14em">Sound</div>
+  <div class="a lbl" style="left:468px;top:368px;width:120px;text-align:center;text-indent:.14em">Settings</div>
+  <div class="a lbl tc" style="top:470px">Brightness</div>
+  <div class="a tc" style="top:500px"><span class="f56">40</span><span class="f28 ink2" style="font-weight:400;margin-left:4px">%</span></div>
+  <svg class="gen" width="720" height="720" data-gen="bright" data-v="40"></svg>
+</div></div></div>
+<figcaption><span class="n">03</span><span class="t">Quick actions</span><span class="d">Pulled from 6. Four keys, LEDs show toggle state. Brightness is a scale ring along the lower rim: drag the knob around the dial.</span></figcaption></figure>
+
+<!-- 04 SETTINGS HOME -->
+<figure class="cell" data-id="s04"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:58px">14:18 · Tue 27 Oct</div>
+  <div class="a f34 tc" style="top:96px">Settings</div>
+  <div class="key rnd a" style="left:164px;top:84px;width:64px;height:64px"><svg class="ic"><use href="#i-close"/></svg></div>
+  <div class="a well" style="left:144px;top:168px;width:432px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:12px"><span class="led"></span><span class="m18"><span class="ink3">WI-FI</span>&nbsp; Home-5G · synced 14:13</span></div>
+  <div class="list" style="top:236px">
+    <div class="row fit" style="min-height:104px"><div class="tile well"><svg class="ic"><use href="#i-wifi"/></svg></div><div class="col"><span class="f28">Wi-Fi</span><span class="f22">Networks, clock, and time zone</span></div><div class="r"><svg class="ic chev"><use href="#i-chev-r"/></svg></div></div>
+    <div class="row fit" style="min-height:104px"><div class="tile well"><svg class="ic"><use href="#i-moon"/></svg></div><div class="col"><span class="f28">Night mode</span><span class="f22">Schedule, face, and brightness</span></div><div class="r"><svg class="ic chev"><use href="#i-chev-r"/></svg></div></div>
+    <div class="row fit last" style="min-height:104px"><div class="tile well"><svg class="ic"><use href="#i-set"/></svg></div><div class="col"><span class="f28">Other</span><span class="f22">Language, sound, and device info</span></div><div class="r"><span class="led"></span><svg class="ic chev"><use href="#i-chev-r"/></svg></div></div>
+  </div>
+  <div class="a lbl tc" style="top:576px">v1.8.2 · <span class="sigc">1.9.0 ready</span></div>
+</div></div></div>
+<figcaption><span class="n">04</span><span class="t">Settings home</span><span class="d">Status readout in a recessed window. Three sections with tiles; the orange LED on Other carries the update forward.</span></figcaption></figure>
+
+<!-- 05a WI-FI -->
+<figure class="cell" data-id="s05a"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:58px">Settings · 01</div>
+  <div class="a f34 tc" style="top:96px">Wi-Fi</div>
+  <div class="key rnd a" style="left:164px;top:84px;width:64px;height:64px"><svg class="ic"><use href="#i-chev-l"/></svg></div>
+  <div class="list" style="top:168px">
+    <div class="fit well" style="border-radius:20px;height:104px;display:flex;align-items:center;gap:20px;padding:0 24px">
+      <svg class="bars" data-bars="4" data-h="30"></svg>
+      <div class="col" style="display:flex;flex-direction:column;gap:4px"><span class="f28" style="display:flex;align-items:center;gap:12px">Home-5G <span class="led"></span></span><span class="m18">5 GHz · −52 dBm · 192.168.1.42</span></div>
+    </div>
+    <div class="sec fit"><span class="lbl">Clock</span></div>
+    <div class="row fit"><span class="f24">Time zone</span><div class="r"><div class="col" style="align-items:flex-end"><span class="f22 ink">Warsaw, Berlin</span><span class="m18 ink3">UTC+1</span></div><svg class="ic chev"><use href="#i-chev-r"/></svg></div></div>
+    <div class="row fit"><div class="col"><span class="f24">Auto sync</span><span class="m18 ink3">pool.ntp.org</span></div><div class="r"><div class="sw on"><div class="th"></div></div></div></div>
+    <div class="row fit last"><div class="col"><span class="f24">Sync time</span><span class="m18 ink3">Last 14:13 today</span></div><div class="r"><div class="key" style="height:56px;padding:0 18px"><svg class="ic s24"><use href="#i-scan"/></svg><span class="lbl">Sync</span></div></div></div>
+    <div class="sec fit"><span class="lbl">Networks</span><span class="lbl">5 found</span></div>
+    <div class="row fit"><span class="f24">Home-5G</span><div class="r"><svg class="ic s24 sigc"><use href="#i-check"/></svg><svg class="bars" data-bars="4"></svg></div></div>
+  </div>
+  <svg class="gen" width="720" height="720" data-gen="scroll" data-a="0" data-b="0.45"></svg>
+</div></div></div>
+<figcaption><span class="n">05a</span><span class="t">Wi-Fi · top</span><span class="d">Connected network as a readout panel, then Clock. The page scrolls; rows narrow with the circle and the list runs off the lower rim.</span></figcaption></figure>
+
+<!-- 05b WI-FI SCROLLED -->
+<figure class="cell" data-id="s05b"><div class="frame"><div class="device"><div class="scr" id="wifi-list">
+  <div class="a lbl tc" style="top:52px">Wi-Fi</div>
+  <div class="list" style="top:92px">
+    <div class="sec fit"><span class="lbl">Networks</span><span class="lbl">5 found</span></div>
+    <div class="row fit"><div class="col"><span class="f24">Home-5G</span><span class="m18 sigc">Connected</span></div><div class="r"><svg class="ic s24 sigc"><use href="#i-check"/></svg><svg class="bars" data-bars="4"></svg></div></div>
+    <div class="row fit"><span class="f24">Home-2G</span><div class="r"><svg class="ic s24 ink3"><use href="#i-lock"/></svg><svg class="bars" data-bars="3"></svg></div></div>
+    <div class="row fit"><span class="f24">Neighbours</span><div class="r"><svg class="ic s24 ink3"><use href="#i-lock"/></svg><svg class="bars" data-bars="2"></svg></div></div>
+    <div class="row fit"><span class="f24">Café Lumière</span><div class="r"><svg class="ic s24 ink3"><use href="#i-lock"/></svg><svg class="bars" data-bars="2"></svg></div></div>
+    <div class="row fit last"><span class="f24">iPhone (Anna)</span><div class="r"><svg class="ic s24 ink3"><use href="#i-lock"/></svg><svg class="bars" data-bars="1"></svg></div></div>
+  </div>
+  <div class="key a" style="left:272px;top:588px;width:176px;height:72px"><svg class="ic s24"><use href="#i-scan"/></svg><span class="lbl ink">Scan</span></div>
+  <svg class="gen" width="720" height="720" data-gen="scroll" data-a="0.55" data-b="1"></svg>
+</div></div></div>
+<figcaption><span class="n">05b</span><span class="t">Wi-Fi · networks (scrolled)</span><span class="d">Title collapses to a legend. Signal as a four-bar meter, lock for secured networks, Scan as a hardware key at 6.</span></figcaption></figure>
+
+<!-- 06 JOIN NETWORK -->
+<figure class="cell" data-id="s06"><div class="frame"><div class="device"><div class="scr">
+  <div class="clone" data-from="wifi-list"></div>
+  <div class="dim" style="opacity:.72"></div>
+  <div class="a" style="left:96px;top:148px;width:528px;height:424px;border-radius:20px;background:var(--surf);border:1px solid var(--edge);box-shadow:0 24px 48px rgba(0,0,0,.55)"></div>
+  <div class="a lbl tc" style="top:180px;display:flex;justify-content:center;align-items:center;gap:8px"><svg class="ic s20"><use href="#i-lock"/></svg>Join network</div>
+  <div class="a f34 tc" style="top:212px">Café Lumière</div>
+  <div class="a m18 tc" style="top:258px">WPA2 · 2.4 GHz · −71 dBm</div>
+  <div class="a lbl" style="left:136px;top:308px">Password</div>
+  <div class="a well" style="left:136px;top:338px;width:364px;height:72px;display:flex;align-items:center;padding:0 20px;gap:4px">
+    <span style="font:400 28px/1 var(--sans);letter-spacing:.18em;color:var(--ink)">••••••••••</span><span style="width:2px;height:32px;background:var(--sig);margin-left:2px"></span>
+  </div>
+  <div class="key a" style="left:512px;top:338px;width:72px;height:72px"><svg class="ic"><use href="#i-eye"/></svg></div>
+  <div class="key a" style="left:136px;top:452px;width:216px;height:72px">Cancel</div>
+  <div class="key sig a" style="left:368px;top:452px;width:216px;height:72px">Connect</div>
+</div></div></div>
+<figcaption><span class="n">06</span><span class="t">Join network</span><span class="d">Dialog over a dimmed snapshot. Password in a recessed field with orange caret; show/hide is its own 72 px key.</span></figcaption></figure>
+
+<!-- 07 NIGHT MODE -->
+<figure class="cell" data-id="s07"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:58px">Settings · 02</div>
+  <div class="a f34 tc" style="top:96px">Night mode</div>
+  <div class="key rnd a" style="left:164px;top:84px;width:64px;height:64px"><svg class="ic"><use href="#i-chev-l"/></svg></div>
+  <div class="list" style="top:168px">
+    <div class="row fit"><span class="f24">Enabled</span><div class="r"><div class="sw on"><div class="th"></div></div></div></div>
+    <div class="row fit" style="min-height:88px"><div class="col"><span class="f24">Schedule</span><span class="m18 ink3">8 h 30 min</span></div><div class="r"><span class="f24m">22:30 <span class="ink3" style="font-weight:400">→</span> 07:00</span><svg class="mini" data-gen="dial24" width="52" height="52"></svg></div></div>
+    <div class="row fit" style="min-height:88px"><div class="col"><span class="f24">Night face</span><span class="f22">Dot matrix · Tap to choose</span></div><div class="r"><div class="thumb" style="width:60px;height:60px;box-shadow:0 0 0 1px var(--edge)"><img src="faces/face_1.png" alt="" style="opacity:.6"></div></div></div>
+    <div class="row fit" style="flex-direction:column;align-items:stretch;gap:6px;padding:14px 0 10px"><div style="display:flex;justify-content:space-between;align-items:center"><span class="f24">Brightness</span><span class="m22">12%</span></div><div class="ruler" data-v="12" data-fill="1"></div></div>
+    <div class="row fit last" style="flex-direction:column;align-items:stretch;gap:0;padding:12px 0"><div style="display:flex;justify-content:space-between;align-items:center"><span class="f24">Sunrise ramp</span><div class="sw on"><div class="th"></div></div></div><span class="f22">Brighten during the pre-alarm sunrise</span></div>
+  </div>
+  <svg class="gen" width="720" height="720" data-gen="scroll" data-a="0" data-b="0.92"></svg>
+</div></div></div>
+<figcaption><span class="n">07</span><span class="t">Night mode</span><span class="d">Schedule shown as a 24-hour mini dial. Brightness is a ruler with readout; the sunrise ramp row narrows with the rim.</span></figcaption></figure>
+
+<!-- 08a OTHER -->
+<figure class="cell" data-id="s08a"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:58px">Settings · 03</div>
+  <div class="a f34 tc" style="top:96px">Other</div>
+  <div class="key rnd a" style="left:164px;top:84px;width:64px;height:64px"><svg class="ic"><use href="#i-chev-l"/></svg></div>
+  <div class="list" style="top:168px">
+    <div class="row fit"><span class="f24">Language</span><div class="r"><span class="f22 ink">English</span><svg class="ic chev"><use href="#i-chev-r"/></svg></div></div>
+    <div class="row fit"><span class="f24">Touch sound</span><div class="r"><div class="sw on"><div class="th"></div></div></div></div>
+    <div class="row fit" style="gap:14px"><svg class="ic s24 ink3"><use href="#i-sound"/></svg><div class="ruler" data-v="60" data-fill="1" style="flex:1"></div><span class="m22" style="width:52px;text-align:right">60%</span></div>
+    <div style="height:16px;border-top:1px solid var(--hair)" class="fit"></div>
+    <div class="fit well" style="border-radius:20px;height:112px;display:flex;align-items:center;padding:0 16px 0 24px;gap:16px">
+      <div class="col" style="display:flex;flex-direction:column;gap:2px"><span class="lbl">Software update</span><span class="f24m">1.9.0 available</span><span class="m18 ink3">Installed 1.8.2</span></div>
+      <div class="key sig" style="margin-left:auto;width:136px;height:72px"><svg class="ic s24"><use href="#i-update"/></svg>Install</div>
+    </div>
+    <div class="sec fit"><span class="lbl">About this device</span></div>
+    <div class="fit plate-tbl" data-rows="Device ID|TC-4F2A91;Version|1.8.2;Build|Oct 27 2026;Target|ESP32-P4;ESP-IDF|v5.5.3"></div>
+  </div>
+  <svg class="gen" width="720" height="720" data-gen="scroll" data-a="0" data-b="0.6"></svg>
+</div></div></div>
+<figcaption><span class="n">08a</span><span class="t">Other · top</span><span class="d">Language, touch sound with a volume ruler, the update as an orange-keyed panel. About begins below the fold.</span></figcaption></figure>
+
+<!-- 08b OTHER SCROLLED -->
+<figure class="cell" data-id="s08b"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:52px">Other</div>
+  <div class="list" style="top:128px">
+    <div class="sec fit"><span class="lbl">About this device</span><svg class="ic s24 ink3"><use href="#i-info"/></svg></div>
+    <div class="fit plate-tbl" data-rows="Device ID|TC-4F2A91;Version|1.8.2;Build|Oct 27 2026;Target|ESP32-P4;ESP-IDF|v5.5.3"></div>
+  </div>
+  <div class="key a" style="left:260px;top:500px;width:200px;height:72px">Restart</div>
+  <svg class="gen" width="720" height="720" data-gen="scroll" data-a="0.55" data-b="1"></svg>
+</div></div></div>
+<figcaption><span class="n">08b</span><span class="t">Other · about (scrolled)</span><span class="d">Device facts set like the rating plate on the back of a Braun: hairline box, mono legend left, value right.</span></figcaption></figure>
+
+<!-- 09 ALARMS -->
+<figure class="cell" data-id="s09"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:58px">3 alarms</div>
+  <div class="a f34 tc" style="top:96px">Alarms</div>
+  <div class="key rnd a" style="left:164px;top:84px;width:64px;height:64px"><svg class="ic"><use href="#i-chev-l"/></svg></div>
+  <div class="a well" style="left:112px;top:168px;width:496px;height:44px;border-radius:22px;display:flex;align-items:center;justify-content:center;gap:12px"><span class="led"></span><span class="m18"><span class="ink3">NEXT UP</span>&nbsp; <span class="ink">Tomorrow 06:30</span> · in 8 h 12 min</span></div>
+  <div class="list" style="top:232px">
+    <div class="row fit" style="min-height:92px;gap:20px"><span class="f56" style="width:150px">06:30</span><div class="col"><span class="lbl ink2">Weekdays</span><span class="days" data-on="1111100"></span></div><div class="r"><div class="sw on"><div class="th"></div></div></div></div>
+    <div class="row fit" style="min-height:92px;gap:20px"><span class="f56" style="width:150px">07:45</span><div class="col"><span class="lbl ink2">Weekends</span><span class="days" data-on="0000011"></span></div><div class="r"><div class="sw on"><div class="th"></div></div></div></div>
+    <div class="row fit" style="min-height:92px;gap:20px"><span class="f56 ink3" style="width:150px">09:00</span><div class="col"><span class="lbl">Once</span><span class="m18 ink3">Sat 1 Nov</span></div><div class="r"><div class="sw"><div class="th"></div></div></div></div>
+    <div class="row fit last" style="min-height:84px"><svg class="ic ink2"><use href="#i-set"/></svg><div class="col"><span class="f24">Alarm settings</span><span class="m18 ink3">Snooze 9 min · Morning Light</span></div><div class="r"><svg class="ic chev"><use href="#i-chev-r"/></svg></div></div>
+  </div>
+  <div class="key sig rnd a" style="left:324px;top:616px;width:72px;height:72px"><svg class="ic"><use href="#i-plus"/></svg></div>
+</div></div></div>
+<figcaption><span class="n">09</span><span class="t">Alarms</span><span class="d">Next-up readout, alarm times as 56 px figures with a day strip. Add is the single orange key, at 6 o'clock.</span></figcaption></figure>
+
+<!-- 10 ALARM EDITOR -->
+<figure class="cell" data-id="s10"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:46px">Edit alarm</div>
+  <!-- roller -->
+  <div class="a f34 ink3 tn" style="left:250px;top:78px;width:80px;text-align:center;font-weight:300">05</div>
+  <div class="a f34 ink3" style="left:390px;top:78px;width:80px;text-align:center;font-weight:300">29</div>
+  <div class="a well" style="left:216px;top:120px;width:288px;height:96px"></div>
+  <div class="a" style="left:206px;top:166px;width:6px;height:4px;background:var(--sig);border-radius:2px"></div>
+  <div class="a" style="left:508px;top:166px;width:6px;height:4px;background:var(--sig);border-radius:2px"></div>
+  <div class="a f88" style="left:226px;top:124px;width:128px;text-align:center">06</div>
+  <div class="a f88 ink3" style="left:340px;top:120px;width:40px;text-align:center">:</div>
+  <div class="a f88" style="left:366px;top:124px;width:128px;text-align:center">30</div>
+  <div class="a f34 ink3" style="left:250px;top:222px;width:80px;text-align:center;font-weight:300">07</div>
+  <div class="a f34 ink3" style="left:390px;top:222px;width:80px;text-align:center;font-weight:300">31</div>
+  <div class="key rnd a" style="left:112px;top:136px;width:64px;height:64px"><svg class="ic"><use href="#i-close"/></svg></div>
+  <div class="key rnd a" style="left:544px;top:136px;width:64px;height:64px"><svg class="ic"><use href="#i-trash"/></svg></div>
+  <div class="seg a" style="left:104px;top:276px;width:512px"><div>Once</div><div>Every day</div><div class="on">Weekdays</div><div>Weekends</div></div>
+  <div class="a daykeys" style="left:98px;top:364px" data-on="1111100"></div>
+  <div class="list" style="top:444px">
+    <div class="row fit" style="min-height:72px"><div class="col" style="gap:0"><span class="lbl">Sound</span><span class="f24">Morning Light</span></div><div class="r"><div class="key" style="height:56px;padding:0 18px 0 14px"><svg class="ic s24"><use href="#i-play"/></svg><span class="lbl ink">Test</span></div></div></div>
+    <div class="row fit last" style="min-height:72px"><span class="f24">Math to turn off</span><div class="r"><div class="sw"><div class="th"></div></div></div></div>
+  </div>
+  <div class="key sig a" style="left:270px;top:604px;width:180px;height:72px">Save</div>
+</div></div></div>
+<figcaption><span class="n">10</span><span class="t">Alarm editor</span><span class="d">Time on a counter-drum roller in a recessed window. Cancel and Delete flank it; repeat presets and day keys are one linked set.</span></figcaption></figure>
+
+<!-- 11a RINGING -->
+<figure class="cell" data-id="s11a"><div class="frame"><div class="device"><div class="scr">
+  <svg class="gen" width="720" height="720" data-gen="rim" data-s="12"></svg>
+  <div class="a tc" style="top:104px;display:flex;justify-content:center;align-items:center;gap:10px;color:var(--sig)"><svg class="ic"><use href="#i-alarm"/></svg><span class="f28">Alarm</span></div>
+  <div class="a f144 tc" style="top:150px">06:30</div>
+  <div class="a lbl tc" style="top:306px">Wed 28 Oct · Weekdays</div>
+  <div class="key sig a" style="left:168px;top:364px;width:384px;height:112px;border-radius:20px;flex-direction:column;gap:6px"><span class="f34">Snooze</span><span class="lbl">9 min</span></div>
+  <svg class="gen" width="720" height="720" data-gen="hold" data-v="0.32"></svg>
+  <div class="key rnd a" style="left:304px;top:524px;width:112px;height:112px;flex-direction:column;gap:6px"><svg class="ic s24"><use href="#i-stop"/></svg><span class="lbl ink">Hold</span></div>
+</div></div></div>
+<figcaption><span class="n">11a</span><span class="t">Alarm ringing</span><span class="d">Snooze is the big orange key. Stop is press-and-hold: the ring fills in 1.5 s (shown at one third). An orange second tick sweeps the rim.</span></figcaption></figure>
+
+<!-- 11b RINGING MATH -->
+<figure class="cell" data-id="s11b"><div class="frame"><div class="device"><div class="scr">
+  <div class="a lbl tc" style="top:48px"><span class="sigc">06:30</span> · Solve to stop</div>
+  <div class="a f56 tc" style="top:86px">7 + 15 = ?</div>
+  <div class="a well" style="left:270px;top:160px;width:180px;height:68px;display:flex;align-items:center;justify-content:center;gap:4px"><span class="f34" style="font-size:40px">2</span><span style="width:2px;height:36px;background:var(--sig)"></span></div>
+  <div class="a pad" style="left:180px;top:248px"></div>
+  <div class="key a" style="left:272px;top:592px;width:176px;height:64px;border-radius:32px;gap:12px"><span class="f24m">Snooze</span><span class="vr"></span><span class="lbl ink2">9 min</span></div>
+</div></div></div>
+<figcaption><span class="n">11b</span><span class="t">Alarm ringing · math</span><span class="d">Keypad of 112 × 72 keys inside the circle; OK is the only orange key. Snooze stays reachable at 6.</span></figcaption></figure>
+
+<!-- 12 NIGHT ACTIVE -->
+<figure class="cell" data-id="s12"><div class="frame"><div class="device"><div class="scr" style="background:#000">
+  <img class="face" src="faces/face_1.png" alt="" style="opacity:.2">
+  <div class="a tc" style="top:76px;color:var(--night);display:flex;justify-content:center"><svg class="ic s24"><use href="#i-moon"/></svg></div>
+  <div class="a tc" style="top:556px;display:flex;justify-content:center;align-items:center;gap:12px;color:var(--night)"><svg class="ic s24"><use href="#i-alarm"/></svg><span class="f28" style="font-weight:400">06:30</span></div>
+  <div class="a lbl tc" style="top:598px;color:var(--night)">in 8 h 12 min</div>
+</div></div></div>
+<figcaption><span class="n">12</span><span class="t">Night mode active</span><span class="d">Face at 20 %. Only night-red marks remain: a moon at 12 and the next alarm at 6. No white pixel on screen.</span></figcaption></figure>
+
+  </div>
+
+  <div class="foot">
+    <div>
+      <h4>Building it in LVGL 9.3</h4>
+      <ul>
+        <li>Keys: <code>lv_button</code> radius 10, 1 px border, the 3 px skirt is a second rect 3 px lower (no live shadow).</li>
+        <li>Switch: plain <code>lv_obj</code> track + thumb object moved with an x animation; the orange bar and off-ring are two small children toggled by state.</li>
+        <li>Rim scales (brightness, hold-to-stop, 24 h dial): <code>lv_arc</code> for track and fill; tick rings are static pre-rendered PNGs (or <code>lv_scale</code> in round mode).</li>
+        <li>Roller: <code>lv_roller</code>, 3 visible rows, selected-row style 88 px, normal rows 34 px ink-3.</li>
+        <li>Dimmed backgrounds: face image at <code>opa</code> 28 % over black; dialogs over a flat 72 % black rect.</li>
+      </ul>
+    </div>
+    <div>
+      <h4>Rules kept</h4>
+      <ul>
+        <li>No blur, no blend modes, no group opacity, no masks: only solid fills, 1 px borders, arcs, lines and static PNGs.</li>
+        <li>One soft shadow, on the dialog only. Gradients: none on device.</li>
+        <li>Fonts at fixed sizes: Inter Tight 22 / 24 / 28 / 34 / 56 / 88 / 144, IBM Plex Mono 18 / 22.</li>
+        <li>Every tappable thing is ≥ 72 px or sits in a ≥ 72 px row.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="ov" id="ov"><span class="lab" id="ovlab"></span></div>
+
+<script>
+const NS='http://www.w3.org/2000/svg';
+const C={well:'#100C08',base:'#181410',surf:'#201C18',key:'#302C28',hair:'#383430',edge:'#484440',edge2:'#585450',ink:'#E8E4D8',ink2:'#A8A498',ink3:'#888478',sig:'#F05818'};
+const pt=(cx,cy,r,a)=>{const t=a*Math.PI/180;return [cx+r*Math.cos(t),cy+r*Math.sin(t)]};
+function arcD(cx,cy,r,a0,a1){const [x0,y0]=pt(cx,cy,r,a0),[x1,y1]=pt(cx,cy,r,a1);const lg=(a1-a0)>180?1:0;return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 ${lg} 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`}
+const el=(n,at)=>{const e=document.createElementNS(NS,n);for(const k in at)e.setAttribute(k,at[k]);return e};
+function tick(svg,cx,cy,r0,r1,a,col,w){const [x0,y0]=pt(cx,cy,r0,a),[x1,y1]=pt(cx,cy,r1,a);svg.appendChild(el('line',{x1:x0,y1:y0,x2:x1,y2:y1,stroke:col,'stroke-width':w||2,'stroke-linecap':'butt'}))}
+
+/* brightness scale ring: lower rim, 150° → 30° through 6 o'clock */
+function genBright(svg){const v=+svg.dataset.v/100,R=318,cx=360,cy=360;
+  svg.appendChild(el('path',{d:arcD(cx,cy,R,30,150),stroke:C.edge,'stroke-width':2,fill:'none'}));
+  const av=150-v*120;
+  svg.appendChild(el('path',{d:arcD(cx,cy,R,av,150),stroke:C.sig,'stroke-width':6,fill:'none','stroke-linecap':'round'}));
+  for(let i=0;i<=20;i++){const a=150-i*6,maj=i%5==0;tick(svg,cx,cy,maj?290:298,306,a,(i*5<=v*100)?C.ink2:C.edge,2)}
+  const [kx,ky]=pt(cx,cy,R,av);
+  svg.appendChild(el('circle',{cx:kx,cy:ky,r:17,fill:C.surf}));
+  svg.appendChild(el('circle',{cx:kx,cy:ky,r:13,fill:C.ink}));
+  svg.appendChild(el('circle',{cx:kx,cy:ky,r:3,fill:C.sig}));
+  // end icons
+  [[150,'i-sun-lo'],[30,'i-sun']].forEach(([a,id])=>{const [x,y]=pt(cx,cy,266,a);const u=el('svg',{x:x-12,y:y-12,width:24,height:24,class:'ic s24',style:'color:'+C.ink3});u.appendChild(el('use',{href:'#'+id}));svg.appendChild(u)});
+}
+/* scroll indicator on right rim */
+function genScroll(svg){const a=+svg.dataset.a,b=+svg.dataset.b,A0=-22,A1=22,R=346;
+  svg.appendChild(el('path',{d:arcD(360,360,R,A0,A1),stroke:C.hair,'stroke-width':4,fill:'none','stroke-linecap':'round'}));
+  svg.appendChild(el('path',{d:arcD(360,360,R,A0+(A1-A0)*a,A0+(A1-A0)*b),stroke:C.ink3,'stroke-width':4,fill:'none','stroke-linecap':'round'}));
+}
+/* ringing rim: 60 minute ticks, majors every 5, orange second marker */
+function genRim(svg){const s=+svg.dataset.s;
+  for(let i=0;i<60;i++){const a=-90+i*6,maj=i%5==0;tick(svg,360,360,maj?322:332,342,a,maj?C.ink3:C.edge,maj?3:2)}
+  tick(svg,360,360,316,342,-90+s*6,C.sig,4);
+}
+/* hold-to-stop ring around the stop key */
+function genHold(svg){const v=+svg.dataset.v,cx=360,cy=580,R=70;
+  svg.appendChild(el('circle',{cx,cy,r:R,stroke:C.hair,'stroke-width':6,fill:'none'}));
+  svg.appendChild(el('path',{d:arcD(cx,cy,R,-90,-90+360*v),stroke:C.sig,'stroke-width':6,fill:'none','stroke-linecap':'round'}));
+}
+/* rim tab: a short thick arc hugging the bezel (lv_arc, width 36, rounded ends) */
+function genTab(svg){const a=+svg.dataset.a,sp=+svg.dataset.s,R=339;
+  svg.appendChild(el('path',{d:arcD(360,360,R,a-sp,a+sp),stroke:C.edge,'stroke-width':36,fill:'none','stroke-linecap':'round'}));
+  svg.appendChild(el('path',{d:arcD(360,360,R,a-sp,a+sp),stroke:'rgba(24,20,16,.92)','stroke-width':34,fill:'none','stroke-linecap':'round'}));
+}
+/* mini 24h dial: night segment 22:30 → 07:00 */
+function genDial(svg){const c=26,R=22;
+  svg.appendChild(el('circle',{cx:c,cy:c,r:R,stroke:C.edge,'stroke-width':2,fill:'none'}));
+  const h2a=h=>-90+h*15;
+  svg.appendChild(el('path',{d:arcD(c,c,R,h2a(22.5),h2a(31)),stroke:C.sig,'stroke-width':4,fill:'none','stroke-linecap':'butt'}));
+  [0,6,12,18].forEach(h=>tick(svg,c,c,R-8,R-4,h2a(h),C.ink3,2));
+}
+/* ruler slider */
+function genRuler(d){const v=+d.dataset.v,W=+(d.dataset.w||0)||d.offsetWidth||400,H=48,P=12;
+  const svg=el('svg',{width:W+P*2,height:H,style:`display:block;margin:0 -${P}px`});
+  const n=50,pitch=W/n;
+  svg.appendChild(el('line',{x1:P,y1:40,x2:P+W,y2:40,stroke:C.hair,'stroke-width':1}));
+  for(let i=0;i<=n;i++){const x=Math.round(P+i*pitch)+.5,maj=i%5==0;const on=i*2<=v;
+    svg.appendChild(el('line',{x1:x,y1:40,x2:x,y2:maj?22:30,stroke:on?C.ink2:C.edge,'stroke-width':maj?2:1}))}
+  const x=P+v/100*W;
+  svg.appendChild(el('rect',{x:x-10,y:4,width:20,height:42,rx:4,fill:C.ink}));
+  svg.appendChild(el('rect',{x:x-1,y:10,width:2,height:30,fill:C.sig}));
+  d.innerHTML='';d.appendChild(svg);
+}
+/* signal bars */
+function genBars(s){const on=+s.dataset.bars,h=+(s.dataset.h||20),w=Math.round(h*0.22),g=Math.round(h*0.14);
+  const W=4*w+3*g;s.setAttribute('width',W);s.setAttribute('height',h);
+  for(let i=0;i<4;i++){const bh=Math.round(h*(0.3+i*0.233));s.appendChild(el('rect',{x:i*(w+g),y:h-bh,width:w,height:bh,rx:1,fill:i<on?C.ink:C.edge}))}
+}
+function genSwatches(d){d.style.display='flex';d.style.gap='8px';d.dataset.c.split(',').forEach(c=>{const i=document.createElement('i');i.style.cssText=`width:20px;height:20px;border-radius:4px;background:${c};box-shadow:inset 0 0 0 1px rgba(232,228,216,.22)`;d.appendChild(i)})}
+function genDays(d){const L='MTWTFSS';d.style.cssText+=';display:flex;gap:7px;font:500 18px/22px var(--mono)';[...L].forEach((ch,i)=>{const s=document.createElement('span');s.textContent=ch;s.style.color=d.dataset.on[i]=='1'?C.ink2:C.edge;d.appendChild(s)})}
+function genDayKeys(d){const L='MTWTFSS';d.style.display='flex';d.style.gap='12px';[...L].forEach((ch,i)=>{const on=d.dataset.on[i]=='1';const k=document.createElement('div');
+  k.className=on?'key rnd':'well';k.style.cssText=`width:64px;height:64px;border-radius:50%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;font:500 24px/1 var(--sans);color:${on?C.ink:C.ink3}`;
+  k.innerHTML=`<span style="margin-top:${on?6:0}px">${ch}</span>`+(on?`<span class="led" style="width:6px;height:6px"></span>`:'');d.appendChild(k)})}
+function genPad(d){d.style.cssText+=';display:grid;grid-template-columns:repeat(3,112px);gap:12px'; ['1','2','3','4','5','6','7','8','9','⌫','0','OK'].forEach(t=>{const k=document.createElement('div');
+  k.className='key'+(t=='OK'?' sig':'');k.style.height='72px';
+  if(t=='⌫')k.innerHTML='<svg class="ic"><use href="#i-back"/></svg>';else if(t=='OK')k.innerHTML='<svg class="ic"><use href="#i-check"/></svg>';else{k.textContent=t;k.style.font='400 34px/1 var(--sans)'}
+  d.appendChild(k)})}
+function genPlateTbl(d){const rows=d.dataset.rows.split(';').map(r=>r.split('|'));d.style.cssText+=';border:1px solid var(--edge);border-radius:10px;overflow:hidden';
+  rows.forEach((r,i)=>{const e=document.createElement('div');e.style.cssText=`display:flex;justify-content:space-between;align-items:center;height:52px;padding:0 20px;${i?'border-top:1px solid var(--hair)':''}`;
+  e.innerHTML=`<span class="lbl">${r[0]}</span><span class="m18 ink" style="font-size:20px">${r[1]}</span>`;d.appendChild(e)})}
+
+function offsetIn(e,root){let y=0;while(e&&e!==root){y+=e.offsetTop;e=e.offsetParent}return y}
+function mAt(y){const dy=Math.abs(y-360);if(dy>=360)return 360;return 360-Math.sqrt(360*360-dy*dy)+32}
+function fitRows(){document.querySelectorAll('.scr').forEach(scr=>{for(let pass=0;pass<3;pass++)scr.querySelectorAll('.fit').forEach(e=>{const y=offsetIn(e,scr),h=e.offsetHeight;const m=Math.max(104,mAt(y),mAt(Math.min(y+h,y+96,648)));e.style.marginLeft=m+'px';e.style.marginRight=m+'px'})})}
+
+function build(){
+  document.querySelectorAll('.clone').forEach(c=>{const src=document.getElementById(c.dataset.from);c.innerHTML=src.innerHTML});
+  document.querySelectorAll('.swatches').forEach(genSwatches);
+  document.querySelectorAll('.days').forEach(genDays);
+  document.querySelectorAll('.daykeys').forEach(genDayKeys);
+  document.querySelectorAll('.pad').forEach(genPad);
+  document.querySelectorAll('.plate-tbl').forEach(genPlateTbl);
+  document.querySelectorAll('svg.bars').forEach(genBars);
+  document.querySelectorAll('[data-gen="dial24"]').forEach(genDial);
+  fitRows();
+  document.querySelectorAll('.ruler').forEach(genRuler);
+  fitRows();
+  document.querySelectorAll('[data-gen="bright"]').forEach(genBright);
+  document.querySelectorAll('[data-gen="scroll"]').forEach(genScroll);
+  document.querySelectorAll('[data-gen="rim"]').forEach(genRim);
+  document.querySelectorAll('[data-gen="hold"]').forEach(genHold);
+  document.querySelectorAll('[data-gen="tab"]').forEach(genTab);
+
+  const solo=new URLSearchParams(location.search).get('solo');
+  if(solo){const d=document.querySelector(`[data-id="${solo}"] .device`);const sp=document.getElementById('sprite');document.body.className='solo';document.body.replaceChildren(sp,d);return}
+  const ov=document.getElementById('ov'),lab=document.getElementById('ovlab');
+  document.querySelectorAll('.cell').forEach(c=>c.addEventListener('click',()=>{ov.querySelectorAll('.device').forEach(n=>n.remove());const d=c.querySelector('.device').cloneNode(true);ov.appendChild(d);lab.textContent=c.querySelector('.n').textContent+' · '+c.querySelector('.t').textContent+' · 1:1';ov.classList.add('on')}));
+  ov.addEventListener('click',()=>ov.classList.remove('on'));
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')ov.classList.remove('on')});
+}
+(document.fonts?document.fonts.ready:Promise.resolve()).then(build);
+</script>
+</body>
+</html>

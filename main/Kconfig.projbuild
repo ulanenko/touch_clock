@@ -63,7 +63,12 @@ menu "Touch Clock"
         depends on TOUCH_CLOCK_PERF_TOUR
         default n
 
-    config TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
+    config TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
+        bool "Capture full-resolution screenshots of every face instead of the tour"
+        depends on TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
+        default n
+
+config TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
         bool "Dump downscaled screen thumbnails at key steps"
         depends on TOUCH_CLOCK_PERF_TOUR
         default y
