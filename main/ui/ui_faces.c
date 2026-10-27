@@ -918,21 +918,33 @@ static void update_digital_face(clock_ui_context_t *ctx)
     bool date_changed;
     bool day_changed;
     bool content_changed;
+    bool palette_changed;
 
     if (hour12 == 0) {
         hour12 = 12;
     }
 
-    lv_obj_set_style_bg_color(ctx->tiles[CLOCK_FACE_DIGITAL], lv_color_hex(palette.bg), 0);
-    lv_obj_set_style_bg_color(ctx->faces.digital_live_root, lv_color_hex(palette.bg), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_time_bg, lv_color_hex(palette.dim), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_time_glow, lv_color_hex(palette.primary), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_time_fg, lv_color_hex(palette.primary), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_ampm_label, lv_color_hex(palette.primary), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_seconds_bg, lv_color_hex(palette.dim), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_seconds_glow, lv_color_hex(palette.primary), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_seconds_fg, lv_color_hex(palette.primary), 0);
-    lv_obj_set_style_text_color(ctx->faces.digital_date_label, lv_color_hex(palette.primary), 0);
+    /* Setting a style invalidates the object even when the value is the same, so restyle
+     * only when the theme changes: doing it every second redrew the whole face (three
+     * 112 px labels) once a second. */
+    palette_changed = !ctx->faces.digital_cache_valid || ctx->faces.digital_last_colors[0] != palette.bg ||
+                      ctx->faces.digital_last_colors[1] != palette.dim ||
+                      ctx->faces.digital_last_colors[2] != palette.primary;
+    if (palette_changed) {
+        lv_obj_set_style_bg_color(ctx->tiles[CLOCK_FACE_DIGITAL], lv_color_hex(palette.bg), 0);
+        lv_obj_set_style_bg_color(ctx->faces.digital_live_root, lv_color_hex(palette.bg), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_time_bg, lv_color_hex(palette.dim), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_time_glow, lv_color_hex(palette.primary), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_time_fg, lv_color_hex(palette.primary), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_ampm_label, lv_color_hex(palette.primary), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_seconds_bg, lv_color_hex(palette.dim), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_seconds_glow, lv_color_hex(palette.primary), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_seconds_fg, lv_color_hex(palette.primary), 0);
+        lv_obj_set_style_text_color(ctx->faces.digital_date_label, lv_color_hex(palette.primary), 0);
+        ctx->faces.digital_last_colors[0] = palette.bg;
+        ctx->faces.digital_last_colors[1] = palette.dim;
+        ctx->faces.digital_last_colors[2] = palette.primary;
+    }
 
     time_changed = !ctx->faces.digital_cache_valid ||
                    ctx->faces.digital_last_hour12 != hour12 ||
@@ -983,7 +995,7 @@ static void update_digital_face(clock_ui_context_t *ctx)
         lv_obj_align(ctx->faces.digital_date_label, LV_ALIGN_TOP_MID, 0, 98);
     }
 
-    for (int i = 0; i < 7; ++i) {
+    for (int i = 0; i < 7 && (day_changed || palette_changed); ++i) {
         bool active = (i == ti.tm_wday);
         lv_coord_t slot_w = 580 / 7;
         lv_coord_t x = (lv_coord_t)(i * slot_w + slot_w / 2);
@@ -1226,12 +1238,13 @@ static void update_wharton_face(clock_ui_context_t *ctx)
     int colon_x;
 
     build_wharton_state(ctx);
-    lv_obj_set_style_bg_color(ctx->tiles[CLOCK_FACE_WHARTON], lv_color_hex(palette.bg), 0);
     /* Every second used to repaint the whole canvas and invalidate the screen; now only
-     * the dots that changed are redrawn and only their cells invalidated. */
+     * the dots that changed are redrawn and only their cells invalidated. (Setting the
+     * tile's colour invalidates it too, so that also happens only on a full redraw.) */
     full = !f->wharton_drawn || f->wharton_drawn_colors[0] != palette.bg || f->wharton_drawn_colors[1] != palette.off ||
            f->wharton_drawn_colors[2] != palette.on;
     if (full) {
+        lv_obj_set_style_bg_color(ctx->tiles[CLOCK_FACE_WHARTON], lv_color_hex(palette.bg), 0);
         lv_canvas_fill_bg(canvas, lv_color_hex(palette.bg), LV_OPA_COVER);
     }
     lv_canvas_init_layer(canvas, &layer);

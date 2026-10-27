@@ -167,6 +167,7 @@ typedef struct {
     lv_coord_t digital_snapshot_ext_draw;
     bool tileview_scrolling;
     bool digital_cache_valid;
+    uint32_t digital_last_colors[3]; /* bg, dim, primary the labels were styled with */
     uint8_t digital_last_hour12;
     uint8_t digital_last_minute;
     uint8_t digital_last_second;
