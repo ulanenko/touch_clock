@@ -73,10 +73,7 @@ void telemetry_update_get_device_id(char *out, size_t out_size)
         return;
     }
 
-    err = esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    if (err != ESP_OK) {
-        err = esp_read_mac(mac, ESP_MAC_BASE);
-    }
+    err = esp_read_mac(mac, ESP_MAC_BASE);
     if (err != ESP_OK) {
         err = esp_efuse_mac_get_default(mac);
     }
