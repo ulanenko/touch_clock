@@ -1,0 +1,18 @@
+# Flicks that start on buttons must not click them (they used to add and save alarms).
+set alarm_delete 2
+set alarm_delete 3
+set alarm_delete 4
+set style 1
+wait 300
+call open_alarms
+wait 600
+shot flick_list_before
+drag 360 640 360 220 140
+wait 600
+drag 360 640 360 220 140
+wait 600
+shot flick_list_after
+alarms
+tap 360 650
+wait 600
+shot flick_tap_add

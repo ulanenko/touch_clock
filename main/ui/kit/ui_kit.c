@@ -125,6 +125,7 @@ void kit_make_pressable(lv_obj_t *obj)
         return;
     }
     lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_PRESS_LOCK);
     kit_add_pressed_dim(obj);
     ui_attach_click_feedback(obj, LV_EVENT_CLICKED);
 }
@@ -365,7 +366,9 @@ static lv_obj_t *button_base(lv_obj_t *parent, kit_button_kind_t kind)
     lv_obj_t *btn = lv_button_create(parent);
 
     lv_obj_remove_style_all(btn);
-    lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS);
+    /* No press lock: sliding off a button cancels it, so a flick that starts on one (an Add
+     * or Save key) scrolls or does nothing instead of clicking it on release. */
+    lv_obj_remove_flag(btn, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_SCROLL_ON_FOCUS | LV_OBJ_FLAG_PRESS_LOCK);
     set_kind(btn, kind);
     kit_add_pressed_dim(btn);
     ui_attach_click_feedback(btn, LV_EVENT_CLICKED);

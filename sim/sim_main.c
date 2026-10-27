@@ -21,6 +21,7 @@
  *                                  click_sound, alarm_test, sunrise_active, alarm_delete (slot)
  *   shot <name>                    write <output-dir>/<name>.png
  *   alarms                         print the saved alarms
+ *   probe <x> <y>                  print the clickable object under a point and its flags
  *   sliders                        drag every visible slider past both ends and print the range reached
  *   costs [n]                      hide each visible object in turn and print the n that cost the most
  *                                  render time (relative numbers; parents include their children)
@@ -705,6 +706,21 @@ static int run_scenario(FILE *f)
 
             sscanf(line, "%*s %d", &n);
             object_costs(n);
+        } else if (strcmp(cmd, "probe") == 0 && sscanf(line, "%*s %d %d", &x0, &y0) == 2) {
+            lv_point_t p = {x0, y0};
+            lv_obj_t *o = lv_indev_search_obj(lv_screen_active(), &p);
+
+            if (o == NULL) {
+                printf("probe %d,%d: nothing\n", x0, y0);
+            } else {
+                lv_area_t ar;
+
+                lv_obj_get_coords(o, &ar);
+                printf("probe %d,%d: %s %dx%d at %d,%d press_lock=%d clickable=%d\n", x0, y0,
+                       o->class_p->name ? o->class_p->name : "?", (int)lv_area_get_width(&ar),
+                       (int)lv_area_get_height(&ar), (int)ar.x1, (int)ar.y1,
+                       lv_obj_has_flag(o, LV_OBJ_FLAG_PRESS_LOCK), lv_obj_has_flag(o, LV_OBJ_FLAG_CLICKABLE));
+            }
         } else if (strcmp(cmd, "sliders") == 0) {
             test_sliders();
         } else if (strcmp(cmd, "alarms") == 0) {
