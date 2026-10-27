@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "ui/ui_areas.h"
 #include "app_version.h"
 #include "domain/timezone_rules.h"
 #include "esp_system.h"
@@ -1362,14 +1363,8 @@ static void settings_back_event_cb(lv_event_t *event)
 
 void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx)
 {
-    brightness_overlay_hide_immediately(ctx);
-    brightness_panel_hide(ctx);
-    if (ctx->alarms.editor_open) {
-        alarm_editor_close(ctx);
-    }
-    if (ctx->alarms.open) {
-        alarm_management_close(ctx);
-    }
+    ui_face_chrome_close_all(ctx);
+    ui_alarms_close_all(ctx);
 
     ctx->settings_ui.open = true;
     ctx->settings_ui.close_dragging = false;
@@ -1389,22 +1384,6 @@ void settings_button_event_cb(lv_event_t *event)
     open_settings_tab((clock_ui_context_t *)lv_event_get_user_data(event), SETTINGS_TAB_WIFI);
 }
 
-#if CONFIG_TOUCH_CLOCK_PERF_TOUR
-lv_obj_t *settings_perf_open_detail(clock_ui_context_t *ctx, int page)
-{
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
-    if (page == 0) {
-        settings_open_wifi_detail(ctx);
-        return ctx->settings_ui.wifi_content;
-    }
-    if (page == 1) {
-        settings_open_night_detail(ctx);
-        return ctx->settings_ui.night_content;
-    }
-    settings_open_other_detail(ctx);
-    return ctx->settings_ui.other_content;
-}
-#endif
 
 static void close_settings_surface(clock_ui_context_t *ctx)
 {
@@ -1434,7 +1413,7 @@ static void close_settings_surface(clock_ui_context_t *ctx)
     }
     lv_obj_add_flag(ctx->settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     set_root_ui_hidden(ctx, false);
-    show_affordances_temporarily(ctx);
+    ui_face_chrome_show_controls(ctx);
 }
 
 static void settings_navigate_back(clock_ui_context_t *ctx)
@@ -2207,7 +2186,7 @@ static void create_night_face_picker_overlay(clock_ui_context_t *ctx)
     int visible_count = clock_face_visible_count();
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
@@ -2300,7 +2279,7 @@ static void create_night_face_picker_overlay(clock_ui_context_t *ctx)
                                   settings_close_swipe_event_cb,
                                   settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
 
-    ctx->settings_ui.night_face_render_canvas = lv_image_create(ctx->screen);
+    ctx->settings_ui.night_face_render_canvas = lv_image_create(ui_chrome_root(ctx));
     lv_obj_set_pos(ctx->settings_ui.night_face_render_canvas, -2000, -2000);
     lv_obj_clear_flag(ctx->settings_ui.night_face_render_canvas, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_remove_flag(ctx->settings_ui.night_face_render_canvas, LV_OBJ_FLAG_CLICKABLE);
@@ -2315,7 +2294,7 @@ static void create_night_schedule_overlay(clock_ui_context_t *ctx)
     lv_obj_t *row;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
@@ -2401,7 +2380,7 @@ static void create_wifi_dialog(clock_ui_context_t *ctx)
     lv_obj_t *panel;
     lv_obj_t *row;
 
-    ctx->settings_ui.wifi_dialog_overlay = lv_obj_create(ctx->screen);
+    ctx->settings_ui.wifi_dialog_overlay = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->settings_ui.wifi_dialog_overlay, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_set_style_bg_color(ctx->settings_ui.wifi_dialog_overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(ctx->settings_ui.wifi_dialog_overlay, LV_OPA_70, 0);
@@ -2469,7 +2448,7 @@ static void create_wifi_overlay(clock_ui_context_t *ctx)
     lv_obj_t *title;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
@@ -2528,7 +2507,7 @@ static void create_other_overlay(clock_ui_context_t *ctx)
     lv_obj_t *title;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
@@ -2663,7 +2642,7 @@ static void create_night_overlay(clock_ui_context_t *ctx)
     lv_obj_t *title;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
@@ -2730,7 +2709,7 @@ void create_settings_overlay(clock_ui_context_t *ctx)
     }
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0D0D0D),
@@ -2799,4 +2778,123 @@ void create_settings_overlay(clock_ui_context_t *ctx)
     create_night_schedule_overlay(ctx);
     create_night_face_picker_overlay(ctx);
     create_wifi_dialog(ctx);
+}
+
+static void debug_open_settings(clock_ui_context_t *ctx)
+{
+    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+}
+
+static void debug_open_wifi(clock_ui_context_t *ctx)
+{
+    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    settings_open_wifi_detail(ctx);
+}
+
+static void debug_open_night(clock_ui_context_t *ctx)
+{
+    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    settings_open_night_detail(ctx);
+}
+
+static void debug_open_other(clock_ui_context_t *ctx)
+{
+    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    settings_open_other_detail(ctx);
+}
+
+void ui_settings_create(clock_ui_context_t *ctx)
+{
+    create_settings_overlay(ctx);
+    ui_debug_register("open_settings", debug_open_settings);
+    ui_debug_register("open_wifi", debug_open_wifi);
+    ui_debug_register("open_night", debug_open_night);
+    ui_debug_register("open_other", debug_open_other);
+    ui_debug_register("close_settings", ui_settings_close_all);
+}
+
+void ui_settings_destroy(clock_ui_context_t *ctx)
+{
+    lv_draw_buf_t **bufs[] = {
+        &ctx->settings_ui.night_face_preview_buf,
+        &ctx->settings_ui.night_face_preview_scroll_buf,
+    };
+
+    for (size_t i = 0; i < sizeof(bufs) / sizeof(bufs[0]); i++) {
+        if (*bufs[i] != NULL) {
+            lv_draw_buf_destroy(*bufs[i]);
+            *bufs[i] = NULL;
+        }
+    }
+    for (int face = 0; face < CLOCK_FACE_COUNT; face++) {
+        if (ctx->settings_ui.night_face_picker_preview_buf[face] != NULL) {
+            lv_draw_buf_destroy(ctx->settings_ui.night_face_picker_preview_buf[face]);
+            ctx->settings_ui.night_face_picker_preview_buf[face] = NULL;
+        }
+    }
+}
+
+void ui_settings_tick(clock_ui_context_t *ctx, time_t now)
+{
+    LV_UNUSED(now);
+    if (ctx->settings_ui.wifi_open && !ctx->settings_ui.wifi_scrolling && wifi_controls_need_sync(ctx)) {
+        sync_wifi_controls(ctx);
+    }
+    if (ctx->settings_ui.other_open && !ctx->settings_ui.other_scrolling) {
+        sync_other_controls(ctx);
+    }
+    if (ctx->settings_ui.night_open && !ctx->settings_ui.night_scrolling && night_controls_need_sync(ctx)) {
+        sync_night_controls(ctx);
+    }
+}
+
+void ui_settings_refresh(clock_ui_context_t *ctx)
+{
+    refresh_settings_controls(ctx);
+}
+
+void ui_settings_open(clock_ui_context_t *ctx)
+{
+    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+}
+
+void ui_settings_open_page(clock_ui_context_t *ctx, ui_settings_page_t page)
+{
+    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    if (page == UI_SETTINGS_PAGE_WIFI) {
+        settings_open_wifi_detail(ctx);
+    } else if (page == UI_SETTINGS_PAGE_NIGHT) {
+        settings_open_night_detail(ctx);
+    } else if (page == UI_SETTINGS_PAGE_OTHER) {
+        settings_open_other_detail(ctx);
+    }
+}
+
+ui_settings_page_t ui_settings_current_page(const clock_ui_context_t *ctx)
+{
+    if (!settings_surface_is_open(ctx)) {
+        return UI_SETTINGS_PAGE_NONE;
+    }
+    if (ctx->settings_ui.wifi_open) {
+        return UI_SETTINGS_PAGE_WIFI;
+    }
+    if (ctx->settings_ui.night_open) {
+        return UI_SETTINGS_PAGE_NIGHT;
+    }
+    if (ctx->settings_ui.other_open) {
+        return UI_SETTINGS_PAGE_OTHER;
+    }
+    return UI_SETTINGS_PAGE_HOME;
+}
+
+bool ui_settings_is_open(const clock_ui_context_t *ctx)
+{
+    return settings_surface_is_open(ctx);
+}
+
+void ui_settings_close_all(clock_ui_context_t *ctx)
+{
+    if (settings_surface_is_open(ctx)) {
+        settings_surface_close(ctx);
+    }
 }

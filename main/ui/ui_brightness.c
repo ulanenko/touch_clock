@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "ui/ui_areas.h"
 
 static void brightness_overlay_hide(clock_ui_context_t *ctx);
 
@@ -90,7 +91,7 @@ void affordance_hide_timer_cb(lv_timer_t *timer)
 
 void show_affordances_temporarily(clock_ui_context_t *ctx)
 {
-    if (settings_surface_is_open(ctx) || alarm_surface_is_open(ctx) || brightness_panel_is_open(ctx)) {
+    if (ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || brightness_panel_is_open(ctx)) {
         return;
     }
 
@@ -414,7 +415,7 @@ static void brightness_slider_event_cb(lv_event_t *event)
 
 static void brightness_panel_show(clock_ui_context_t *ctx)
 {
-    if (ctx->brightness.panel_overlay == NULL || settings_surface_is_open(ctx) || alarm_surface_is_open(ctx)) {
+    if (ctx->brightness.panel_overlay == NULL || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx)) {
         return;
     }
 
@@ -463,14 +464,14 @@ static void alarms_action_event_cb(lv_event_t *event)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
 
-    alarm_management_open(ctx);
+    ui_alarms_open(ctx);
 }
 
 static void settings_action_event_cb(lv_event_t *event)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
 
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    ui_settings_open(ctx);
 }
 
 static void brightness_overlay_event_cb(lv_event_t *event)
@@ -512,7 +513,7 @@ static void brightness_drag_event_cb(lv_event_t *event)
     int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
     int32_t open_threshold_y = BRIGHTNESS_SHEET_CLOSED_Y - ((travel * 45) / 100);
 
-    if (indev == NULL || settings_surface_is_open(ctx) || alarm_surface_is_open(ctx) || brightness_panel_is_open(ctx)) {
+    if (indev == NULL || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || brightness_panel_is_open(ctx)) {
         return;
     }
 
@@ -617,7 +618,7 @@ static void brightness_drag_event_cb(lv_event_t *event)
 
 void create_brightness_pull_hint(clock_ui_context_t *ctx)
 {
-    ctx->brightness.pull_hint = lv_obj_create(ctx->screen);
+    ctx->brightness.pull_hint = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->brightness.pull_hint, 88, 6);
     lv_obj_set_style_radius(ctx->brightness.pull_hint, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(ctx->brightness.pull_hint, 0, 0);
@@ -632,7 +633,7 @@ void create_brightness_pull_hint(clock_ui_context_t *ctx)
 
 void create_brightness_edge_sensor(clock_ui_context_t *ctx)
 {
-    ctx->brightness.edge_sensor = lv_obj_create(ctx->screen);
+    ctx->brightness.edge_sensor = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->brightness.edge_sensor, SCREEN_SIZE, BOTTOM_EDGE_ZONE);
     lv_obj_align(ctx->brightness.edge_sensor, LV_ALIGN_BOTTOM_MID, 0, 0);
     lv_obj_set_style_bg_opa(ctx->brightness.edge_sensor, LV_OPA_TRANSP, 0);
@@ -676,7 +677,7 @@ void create_brightness_overlay(clock_ui_context_t *ctx)
     lv_obj_t *sheet_grabber;
     lv_obj_t *actions;
 
-    ctx->brightness.overlay = lv_obj_create(ctx->screen);
+    ctx->brightness.overlay = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->brightness.overlay, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_set_style_bg_color(ctx->brightness.overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(ctx->brightness.overlay, LV_OPA_TRANSP, 0);
@@ -769,7 +770,7 @@ void create_brightness_panel(clock_ui_context_t *ctx)
     lv_obj_t *panel;
     lv_obj_t *title;
 
-    ctx->brightness.panel_overlay = lv_obj_create(ctx->screen);
+    ctx->brightness.panel_overlay = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->brightness.panel_overlay, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_set_style_bg_color(ctx->brightness.panel_overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(ctx->brightness.panel_overlay, LV_OPA_70, 0);
@@ -821,11 +822,11 @@ void create_brightness_panel(clock_ui_context_t *ctx)
     lv_obj_set_style_text_color(ctx->brightness.value, lv_color_white(), 0);
     lv_label_set_text(ctx->brightness.value, "50%");
 
-    ctx->brightness.overlay_auto_close_timer = lv_timer_create(quick_actions_auto_close_timer_cb,
+    ctx->brightness.overlay_auto_close_timer = ui_chrome_timer_create(ctx, quick_actions_auto_close_timer_cb,
                                                                QUICK_ACTIONS_AUTO_CLOSE_MS,
                                                                ctx);
     lv_timer_pause(ctx->brightness.overlay_auto_close_timer);
-    ctx->brightness.auto_close_timer = lv_timer_create(brightness_panel_auto_close_timer_cb,
+    ctx->brightness.auto_close_timer = ui_chrome_timer_create(ctx, brightness_panel_auto_close_timer_cb,
                                                        BRIGHTNESS_PANEL_AUTO_CLOSE_MS,
                                                        ctx);
     lv_timer_pause(ctx->brightness.auto_close_timer);

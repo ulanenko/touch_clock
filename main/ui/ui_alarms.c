@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "ui/ui_areas.h"
 
 #include <stdlib.h>
 
@@ -1188,7 +1189,7 @@ static void alarm_banner_event_cb(lv_event_t *event)
 
 void create_alarm_banner(clock_ui_context_t *ctx)
 {
-    ctx->alarms.banner = lv_obj_create(ctx->screen);
+    ctx->alarms.banner = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->alarms.banner, 430, LV_SIZE_CONTENT);
     lv_obj_set_style_bg_color(ctx->alarms.banner, lv_color_hex(0x101010), 0);
     lv_obj_set_style_bg_opa(ctx->alarms.banner, LV_OPA_90, 0);
@@ -1226,7 +1227,7 @@ void create_alarm_overlay(clock_ui_context_t *ctx)
     lv_obj_t *row;
     lv_obj_t *label;
 
-    ctx->alarms.overlay = lv_obj_create(ctx->screen);
+    ctx->alarms.overlay = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->alarms.overlay, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_set_style_bg_color(ctx->alarms.overlay, lv_color_black(), 0);
     lv_obj_set_style_bg_opa(ctx->alarms.overlay, LV_OPA_COVER, 0);
@@ -1877,11 +1878,8 @@ static void alarm_custom_create_event_cb(lv_event_t *event)
 
 void alarm_management_open(clock_ui_context_t *ctx)
 {
-    brightness_overlay_hide_immediately(ctx);
-    brightness_panel_hide(ctx);
-    if (settings_surface_is_open(ctx)) {
-        settings_surface_close(ctx);
-    }
+    ui_face_chrome_close_all(ctx);
+    ui_settings_close_all(ctx);
 
     close_alarm_delete_action(ctx, ctx->alarms.swipe_open_index);
     ctx->alarms.management_scrolling = false;
@@ -1904,7 +1902,7 @@ void alarm_management_close(clock_ui_context_t *ctx)
     ctx->alarms.close_swipe_consumed = false;
     lv_obj_add_flag(ctx->alarms.management_overlay, LV_OBJ_FLAG_HIDDEN);
     if (!ctx->alarms.editor_open) {
-        show_affordances_temporarily(ctx);
+        ui_face_chrome_show_controls(ctx);
     }
 }
 
@@ -1964,7 +1962,7 @@ void alarm_editor_close(clock_ui_context_t *ctx)
         lv_obj_move_foreground(ctx->alarms.management_overlay);
         alarm_management_auto_close_reset(ctx);
     } else {
-        show_affordances_temporarily(ctx);
+        ui_face_chrome_show_controls(ctx);
     }
 }
 
@@ -2024,7 +2022,7 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
     lv_obj_t *label;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_hex(0x070707),
                                  LV_OPA_COVER,
                                  lv_color_hex(0x0B0B0B),
@@ -2223,7 +2221,7 @@ void create_alarm_management_overlay(clock_ui_context_t *ctx)
                                   SETTINGS_CLOSE_EDGE_ZONE,
                                   alarm_close_swipe_event_cb,
                                   alarm_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
-    ctx->alarms.management_auto_close_timer = lv_timer_create(alarm_management_auto_close_timer_cb,
+    ctx->alarms.management_auto_close_timer = ui_chrome_timer_create(ctx, alarm_management_auto_close_timer_cb,
                                                               ALARM_MANAGEMENT_AUTO_CLOSE_MS,
                                                               ctx);
     lv_timer_pause(ctx->alarms.management_auto_close_timer);
@@ -2265,7 +2263,7 @@ void create_alarm_settings_overlay(clock_ui_context_t *ctx)
     lv_obj_t *label;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_80,
                                  lv_color_hex(0x0B0B0B),
@@ -2401,7 +2399,7 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
     lv_obj_t *panel;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_80,
                                  lv_color_hex(0x0B0B0B),
@@ -2550,4 +2548,90 @@ void create_alarm_editor_overlay(clock_ui_context_t *ctx)
                                   SETTINGS_CLOSE_EDGE_ZONE,
                                   alarm_close_swipe_event_cb,
                                   alarm_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
+}
+
+static void debug_open_alarm_editor(clock_ui_context_t *ctx)
+{
+    alarm_management_open(ctx);
+    open_alarm_editor(ctx, 0, false);
+}
+
+static void debug_new_alarm(clock_ui_context_t *ctx)
+{
+    int slot = find_alarm_slot_for_new_alarm(ctx);
+
+    alarm_management_open(ctx);
+    if (slot >= 0) {
+        open_alarm_editor(ctx, (uint8_t)slot, true);
+    }
+}
+
+static void debug_close_alarm_editor(clock_ui_context_t *ctx)
+{
+    alarm_editor_close(ctx);
+}
+
+void ui_alarms_create(clock_ui_context_t *ctx)
+{
+    create_alarm_banner(ctx);
+    create_alarm_management_overlay(ctx);
+    create_alarm_settings_overlay(ctx);
+    create_alarm_editor_overlay(ctx);
+    create_alarm_overlay(ctx);
+    ui_debug_register("open_alarms", ui_alarms_open);
+    ui_debug_register("open_alarm_editor", debug_open_alarm_editor);
+    ui_debug_register("new_alarm", debug_new_alarm);
+    ui_debug_register("close_alarm_editor", debug_close_alarm_editor);
+    ui_debug_register("close_alarms", ui_alarms_close_all);
+}
+
+void ui_alarms_destroy(clock_ui_context_t *ctx)
+{
+    LV_UNUSED(ctx);
+}
+
+void ui_alarms_tick(clock_ui_context_t *ctx, time_t now, bool face_covered)
+{
+    if (!face_covered) {
+        update_alarm_banner(ctx, now);
+    }
+    sync_alarm_overlay(ctx, now);
+    if ((ctx->alarms.open || ctx->alarms.settings_open) &&
+        !ctx->alarms.editor_open &&
+        !ctx->alarms.management_scrolling &&
+        alarm_controls_need_sync(ctx)) {
+        sync_alarm_controls(ctx);
+    }
+}
+
+void ui_alarms_refresh(clock_ui_context_t *ctx)
+{
+    if (alarm_controls_need_sync(ctx)) {
+        sync_alarm_controls(ctx);
+    }
+}
+
+void ui_alarms_on_face_changed(clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    sync_alarm_banner_style(ctx, face);
+}
+
+void ui_alarms_open(clock_ui_context_t *ctx)
+{
+    alarm_management_open(ctx);
+}
+
+bool ui_alarms_is_open(const clock_ui_context_t *ctx)
+{
+    return ctx->alarms.open || ctx->alarms.editor_open || ctx->alarms.settings_open;
+}
+
+void ui_alarms_close_all(clock_ui_context_t *ctx)
+{
+    if (ctx->alarms.editor_open) {
+        alarm_editor_close(ctx);
+    }
+    if (ctx->alarms.open || ctx->alarms.settings_open) {
+        alarm_management_close(ctx);
+    }
 }

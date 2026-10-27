@@ -213,6 +213,23 @@ app_action_result_t app_action_set_language(app_state_t *state, clock_language_t
     return result;
 }
 
+app_action_result_t app_action_set_ui_style(app_state_t *state, clock_ui_style_t style)
+{
+    app_action_result_t result;
+
+    app_action_result_init(&result);
+    if (style >= CLOCK_UI_STYLE_COUNT) {
+        style = CLOCK_UI_STYLE_DEFAULT;
+    }
+    if (state->settings.ui_style == style) {
+        return result;
+    }
+
+    state->settings.ui_style = style;
+    emit_settings_changed(&result);
+    return result;
+}
+
 app_action_result_t app_action_set_current_face(app_state_t *state, clock_face_id_t face)
 {
     app_action_result_t result;

@@ -39,6 +39,7 @@ void request_ui_click_feedback(clock_ui_context_t *ctx);
 void request_set_ui_click_sound_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_ui_click_volume(clock_ui_context_t *ctx, uint8_t volume);
 void request_set_language(clock_ui_context_t *ctx, clock_language_t language);
+void request_set_ui_style(clock_ui_context_t *ctx, clock_ui_style_t style);
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t start_hour,
@@ -70,7 +71,6 @@ bool settings_surface_is_open(const clock_ui_context_t *ctx);
 void settings_surface_close(clock_ui_context_t *ctx);
 void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx);
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
-lv_obj_t *settings_perf_open_detail(clock_ui_context_t *ctx, int page);
 void ui_perf_tour_start(clock_ui_context_t *ctx);
 void ui_ppa_blend_benchmark(void);
 #endif
@@ -90,6 +90,7 @@ void update_alarm_banner(clock_ui_context_t *ctx, time_t now);
 void sync_alarm_overlay(clock_ui_context_t *ctx, time_t now);
 bool alarm_controls_need_sync(const clock_ui_context_t *ctx);
 void build_root_ui(clock_ui_context_t *ctx);
+clock_ui_context_t *clock_ui_get_context(void);
 void ui_install_theme_overrides(lv_display_t *disp);
 void ui_ppa_blend_install(void);
 lv_obj_t *ui_backdrop_create(lv_obj_t *overlay);
@@ -137,7 +138,6 @@ void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
                          float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1);
 uint8_t brightness_ui_to_hw(int ui_percent);
 uint8_t brightness_hw_to_ui(int hw_percent);
-bool alarm_surface_is_open(const clock_ui_context_t *ctx);
 void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute);
 int count_enabled_alarms(const clock_ui_context_t *ctx);
 int find_alarm_slot_for_new_alarm(const clock_ui_context_t *ctx);

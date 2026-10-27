@@ -1,0 +1,28 @@
+# Current UI smoke test: face, controls, sheets, settings, alarms
+wait 500
+shot face
+call show_controls
+wait 300
+shot face_controls
+wait 2500
+drag 360 140 360 560 400
+wait 500
+shot theme_open
+call close_theme
+wait 600
+drag 360 700 360 260 450
+wait 600
+shot quick_actions
+call close_quick
+wait 400
+call open_settings
+wait 600
+shot settings
+call close_settings
+wait 400
+call open_alarms
+wait 600
+shot alarms
+call open_alarm_editor
+wait 600
+shot alarm_editor

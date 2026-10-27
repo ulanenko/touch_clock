@@ -44,6 +44,15 @@ typedef enum {
     CLOCK_LANGUAGE_COUNT = 5,
 } clock_language_t;
 
+typedef enum {
+    CLOCK_UI_STYLE_INSTRUMENT = 0,
+    CLOCK_UI_STYLE_ORBIT = 1,
+    CLOCK_UI_STYLE_ATELIER = 2,
+    CLOCK_UI_STYLE_COUNT = 3,
+} clock_ui_style_t;
+
+#define CLOCK_UI_STYLE_DEFAULT CLOCK_UI_STYLE_ORBIT
+
 typedef struct {
     bool enabled;
     uint8_t hour;

@@ -12,6 +12,7 @@
 #include "freertos/task.h"
 
 #include "clock_ui_private.h"
+#include "ui/ui_areas.h"
 
 #define PERF_SEG_NAME_MAX 24
 #define PERF_RENDER_SAMPLES 512
@@ -85,64 +86,21 @@ static int64_t s_refr_start;
 static int64_t s_render_start;
 static int64_t s_last_refr_start;
 
-static void call_open_settings_root(clock_ui_context_t *ctx)
-{
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
-}
+#define DEBUG_CALL(fn_name, debug_name) \
+    static void fn_name(clock_ui_context_t *ctx) { ui_debug_call(ctx, debug_name); }
 
-static void call_open_wifi(clock_ui_context_t *ctx)
-{
-    settings_perf_open_detail(ctx, 0);
-}
-
-static void call_open_night(clock_ui_context_t *ctx)
-{
-    settings_perf_open_detail(ctx, 1);
-}
-
-static void call_open_other(clock_ui_context_t *ctx)
-{
-    settings_perf_open_detail(ctx, 2);
-}
-
-static void call_close_settings(clock_ui_context_t *ctx)
-{
-    settings_surface_close(ctx);
-}
-
-static void call_open_alarms(clock_ui_context_t *ctx)
-{
-    alarm_management_open(ctx);
-}
-
-static void call_open_alarm_editor(clock_ui_context_t *ctx)
-{
-    int slot = find_alarm_slot_for_new_alarm(ctx);
-
-    if (slot >= 0) {
-        open_alarm_editor(ctx, (uint8_t)slot, true);
-    }
-}
-
-static void call_close_alarm_editor(clock_ui_context_t *ctx)
-{
-    alarm_editor_close(ctx);
-}
-
-static void call_close_alarms(clock_ui_context_t *ctx)
-{
-    alarm_management_close(ctx);
-}
-
-static void call_close_theme(clock_ui_context_t *ctx)
-{
-    face_theme_overlay_close(ctx);
-}
-
-static void call_close_brightness(clock_ui_context_t *ctx)
-{
-    brightness_panel_hide(ctx);
-}
+/* Screens are opened through the areas' named debug calls (see ui_areas.h). */
+DEBUG_CALL(call_open_settings_root, "open_settings")
+DEBUG_CALL(call_open_wifi, "open_wifi")
+DEBUG_CALL(call_open_night, "open_night")
+DEBUG_CALL(call_open_other, "open_other")
+DEBUG_CALL(call_close_settings, "close_settings")
+DEBUG_CALL(call_open_alarms, "open_alarms")
+DEBUG_CALL(call_open_alarm_editor, "new_alarm")
+DEBUG_CALL(call_close_alarm_editor, "close_alarm_editor")
+DEBUG_CALL(call_close_alarms, "close_alarms")
+DEBUG_CALL(call_close_theme, "close_theme")
+DEBUG_CALL(call_close_brightness, "close_quick")
 
 #define IDLE(seg, ms) {seg, PERF_STEP_IDLE, 0, 0, 0, 0, 0, NULL, ms}
 #define DRAG(seg, ax, ay, bx, by, dur, ms) {seg, PERF_STEP_GESTURE, ax, ay, bx, by, dur, NULL, ms}
@@ -354,8 +312,8 @@ static void display_event_cb(lv_event_t *event)
         if (s_seg.name[0] != '\0' && frame_looks_white(lv_event_get_target(event))) {
             s_seg.white_frames++;
             printf("PERF white_frame seg=%s t=%lld settings=%d alarms=%d theme=%d face=%d\n", s_seg.name, now,
-                   settings_surface_is_open(s_ctx), alarm_surface_is_open(s_ctx),
-                   face_theme_overlay_is_open(s_ctx), (int)s_ctx->settings->current_face);
+                   ui_settings_is_open(s_ctx), ui_alarms_is_open(s_ctx),
+                   ui_face_chrome_covers_face(s_ctx), (int)s_ctx->settings->current_face);
         }
     } else if (code == LV_EVENT_RENDER_READY) {
         size_t internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);

@@ -35,6 +35,7 @@
 #define SETTINGS_KEY_UI_CLICK_SOUND "ui_click"
 #define SETTINGS_KEY_UI_CLICK_VOLUME "ui_clk_vol"
 #define SETTINGS_KEY_LANGUAGE "lang"
+#define SETTINGS_KEY_UI_STYLE "ui_style"
 #define SETTINGS_KEY_ASCENDING_ALARM "alarm_ramp"
 #define SETTINGS_KEY_SNOOZE "snooze"
 #define SETTINGS_KEY_CURRENT_FACE "face"
@@ -104,6 +105,11 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .key = SETTINGS_KEY_LANGUAGE,
         .kind = SETTINGS_FIELD_U8,
         .offset = offsetof(app_settings_t, language),
+    },
+    {
+        .key = SETTINGS_KEY_UI_STYLE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, ui_style),
     },
     {
         .key = SETTINGS_KEY_ASCENDING_ALARM,
@@ -378,6 +384,7 @@ static esp_err_t load_legacy_v4_settings(const app_settings_storage_t *storage, 
     settings->ui_click_sound_enabled = true;
     settings->ui_click_volume = 70;
     settings->language = CLOCK_LANGUAGE_ENGLISH;
+    settings->ui_style = CLOCK_UI_STYLE_DEFAULT;
     settings->wifi.timezone_id = timezone_id_from_legacy_offset(settings->wifi.timezone_offset_hours);
     settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
     settings_policy_sanitize(settings);

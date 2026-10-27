@@ -22,4 +22,5 @@ typedef struct {
     int8_t skipped_alarm_index;
     uint8_t ui_click_volume;
     uint8_t language;
+    uint8_t ui_style;
 } app_settings_t;

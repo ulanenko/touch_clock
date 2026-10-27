@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "ui/ui_areas.h"
 #include "domain/timezone_rules.h"
 
 static clock_ui_context_t s_ctx = {0};
@@ -394,6 +395,13 @@ void request_set_language(clock_ui_context_t *ctx, clock_language_t language)
     }
 }
 
+void request_set_ui_style(clock_ui_context_t *ctx, clock_ui_style_t style)
+{
+    if (ctx->callbacks.on_set_ui_style != NULL) {
+        ctx->callbacks.on_set_ui_style(ctx->user_ctx, style);
+    }
+}
+
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled)
 {
     if (ctx->callbacks.on_set_night_mode_enabled != NULL) {
@@ -483,57 +491,19 @@ void ui_play_click_feedback(void)
 
 void set_root_ui_hidden(clock_ui_context_t *ctx, bool hidden)
 {
-    if (ctx->tileview != NULL) {
-        if (hidden) {
-            lv_obj_add_flag(ctx->tileview, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(ctx->tileview, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    lv_obj_t *objs[] = {ctx->tileview, ctx->faces.face_swipe_layer};
 
-    if (ctx->settings_button != NULL) {
-        if (hidden) {
-            lv_obj_add_flag(ctx->settings_button, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(ctx->settings_button, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    if (ctx->update_button != NULL) {
-        if (hidden) {
-            lv_obj_add_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            sync_update_button(ctx);
-        }
-    }
-
-    if (ctx->face_theme.button != NULL) {
-        if (hidden) {
-            lv_obj_add_flag(ctx->face_theme.button, LV_OBJ_FLAG_HIDDEN);
-        } else if (ctx->face_theme.button_visible) {
-            lv_obj_clear_flag(ctx->face_theme.button, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    if (ctx->faces.face_swipe_layer != NULL) {
-        if (hidden) {
-            lv_obj_add_flag(ctx->faces.face_swipe_layer, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(ctx->faces.face_swipe_layer, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {
-        if (ctx->page_dots[face] == NULL) {
+    for (size_t i = 0; i < sizeof(objs) / sizeof(objs[0]); i++) {
+        if (objs[i] == NULL) {
             continue;
         }
-
         if (hidden) {
-            lv_obj_add_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_clear_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_clear_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
+    ui_face_chrome_set_hidden(ctx, hidden);
 }
 
 clock_face_id_t sanitize_enabled_face(clock_face_id_t face)
@@ -584,11 +554,6 @@ uint8_t brightness_ui_to_hw(int ui_percent)
 uint8_t brightness_hw_to_ui(int hw_percent)
 {
     return brightness_policy_hw_to_ui((uint8_t)clamp_brightness(hw_percent));
-}
-
-bool alarm_surface_is_open(const clock_ui_context_t *ctx)
-{
-    return ctx->alarms.open || ctx->alarms.editor_open || ctx->alarms.settings_open;
 }
 
 void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
@@ -696,16 +661,17 @@ esp_err_t clock_ui_finish_boot(void)
     build_root_ui(ctx);
     boot_overlay_advance(ctx, "Preparing faces");
     prewarm_face_previews(ctx);
-    ctx->affordance_hide_timer = lv_timer_create(affordance_hide_timer_cb, AFFORDANCE_VISIBLE_MS, ctx);
-    lv_timer_pause(ctx->affordance_hide_timer);
-    refresh_settings_controls(ctx);
-    update_brightness_ui(ctx);
-    sync_update_button(ctx);
+    ui_chrome_refresh(ctx);
     boot_overlay_advance(ctx, "Ready");
     boot_overlay_destroy(ctx);
-    show_affordances_temporarily(ctx);
+    ui_face_chrome_show_controls(ctx);
     lv_refr_now(NULL);
     return ESP_OK;
+}
+
+clock_ui_context_t *clock_ui_get_context(void)
+{
+    return &s_ctx;
 }
 
 void clock_ui_refresh(void)
@@ -714,8 +680,12 @@ void clock_ui_refresh(void)
     clock_face_id_t current_face;
     clock_face_id_t night_face;
 
-    refresh_settings_controls(ctx);
-    update_brightness_ui(ctx);
+    if (ctx->chrome_root != NULL && ctx->settings->ui_style != ctx->applied_style) {
+        ui_chrome_rebuild_async(ctx);
+    }
+    ui_settings_refresh(ctx);
+    ui_face_chrome_refresh(ctx);
+    ui_alarms_refresh(ctx);
 
     current_face = sanitize_enabled_face(ctx->settings->current_face);
     night_face = sanitize_enabled_face(ctx->settings->night_mode.face);
@@ -729,48 +699,17 @@ void clock_ui_tick(time_t now)
         ctx->runtime->in_night_mode ? sanitize_enabled_face(ctx->settings->night_mode.face)
                                     : sanitize_enabled_face(ctx->settings->current_face);
     clock_face_id_t active_face;
-    bool opaque_menu_open = ctx->settings_ui.open ||
-                            ctx->alarms.open ||
-                            ctx->alarms.editor_open ||
-                            ctx->alarms.settings_open ||
-                            ctx->face_theme.overlay_open;
+    bool face_covered = ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || ui_face_chrome_covers_face(ctx);
 
     if (!ctx->faces.face_reveal_animating &&
         tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)) != desired_face) {
         set_active_face(ctx, desired_face, LV_ANIM_OFF);
     }
     active_face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
-    if (!opaque_menu_open && !ctx->faces.tileview_scrolling) {
+    if (!face_covered && !ctx->faces.tileview_scrolling) {
         update_face(ctx, active_face);
-        update_dots(ctx, active_face);
     }
-    sync_update_button(ctx);
-
-    if (!opaque_menu_open) {
-        update_alarm_banner(ctx, now);
-    }
-    sync_alarm_overlay(ctx, now);
-    if ((ctx->alarms.open || ctx->alarms.settings_open) &&
-        !ctx->alarms.editor_open &&
-        !ctx->alarms.management_scrolling &&
-        alarm_controls_need_sync(ctx)) {
-        sync_alarm_controls(ctx);
-    }
-    if (ctx->settings_ui.wifi_open &&
-        !ctx->settings_ui.wifi_scrolling &&
-        wifi_controls_need_sync(ctx)) {
-        sync_wifi_controls(ctx);
-    }
-    if (ctx->settings_ui.other_open && !ctx->settings_ui.other_scrolling) {
-        sync_other_controls(ctx);
-    }
-    if (ctx->settings_ui.night_open && !ctx->settings_ui.night_scrolling && night_controls_need_sync(ctx)) {
-        sync_night_controls(ctx);
-    }
-    if (ctx->brightness.animating ||
-        ctx->brightness.dragging ||
-        brightness_panel_is_open(ctx) ||
-        (ctx->brightness.overlay != NULL && !lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN))) {
-        update_brightness_ui(ctx);
-    }
+    ui_face_chrome_tick(ctx, now, active_face, face_covered);
+    ui_alarms_tick(ctx, now, face_covered);
+    ui_settings_tick(ctx, now);
 }

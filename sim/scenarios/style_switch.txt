@@ -1,0 +1,31 @@
+# Switch styles repeatedly with screens open, then use the UI.
+wait 300
+call open_settings
+wait 300
+set style 0
+wait 300
+shot after_switch_0
+call open_alarms
+wait 300
+set style 2
+wait 300
+call open_wifi
+wait 300
+shot after_switch_2
+drag 360 140 360 560 400
+wait 400
+call close_theme
+wait 300
+drag 360 700 360 260 450
+wait 500
+set style 1
+wait 300
+call new_alarm
+wait 400
+shot after_switch_1
+call close_alarm_editor
+call close_alarms
+wait 300
+tap 360 360
+wait 300
+shot face_after

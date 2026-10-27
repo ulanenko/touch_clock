@@ -287,6 +287,7 @@ static int test_v5_round_trip(void)
     saved.alarm_volume = 61;
     saved.ui_click_sound_enabled = false;
     saved.ui_click_volume = 42;
+    saved.ui_style = CLOCK_UI_STYLE_ATELIER;
     saved.ascending_alarm_enabled = true;
     saved.snooze_minutes = 12;
     saved.current_face = CLOCK_FACE_MATRIX;
@@ -316,6 +317,7 @@ static int test_v5_round_trip(void)
     EXPECT_TRUE(find_entry(&store, "alarm_vol") != NULL);
     EXPECT_TRUE(find_entry(&store, "ui_click") != NULL);
     EXPECT_TRUE(find_entry(&store, "ui_clk_vol") != NULL);
+    EXPECT_TRUE(find_entry(&store, "ui_style") != NULL);
     EXPECT_TRUE(find_entry(&store, "alarm_ramp") != NULL);
     EXPECT_TRUE(find_entry(&store, "snooze") != NULL);
     EXPECT_TRUE(find_entry(&store, "face") != NULL);
@@ -335,6 +337,7 @@ static int test_v5_round_trip(void)
     EXPECT_EQ_INT(61, loaded.alarm_volume);
     EXPECT_FALSE(loaded.ui_click_sound_enabled);
     EXPECT_EQ_INT(42, loaded.ui_click_volume);
+    EXPECT_EQ_INT(CLOCK_UI_STYLE_ATELIER, loaded.ui_style);
     EXPECT_TRUE(loaded.ascending_alarm_enabled);
     EXPECT_EQ_INT(CLOCK_FACE_MATRIX, loaded.current_face);
     EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_DIGITAL]);
@@ -375,7 +378,7 @@ static int test_legacy_migration_and_sanitize(void)
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
     EXPECT_EQ_INT(70, loaded.ui_click_volume);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(10, loaded.version);
+    EXPECT_EQ_INT(11, loaded.version);
     return 0;
 }
 
@@ -403,7 +406,7 @@ static int test_partial_v5_and_invalid_values(void)
     EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
     EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(10, loaded.version);
+    EXPECT_EQ_INT(11, loaded.version);
     return 0;
 }
 
@@ -427,7 +430,7 @@ static int test_v7_alarm_blob_migration(void)
     EXPECT_EQ_INT(7, loaded.alarms[0].hour);
     EXPECT_EQ_INT(30, loaded.alarms[0].minute);
     EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
-    EXPECT_EQ_INT(10, loaded.version);
+    EXPECT_EQ_INT(11, loaded.version);
     return 0;
 }
 
@@ -450,7 +453,7 @@ static int test_future_structured_version_loads_without_reset(void)
     EXPECT_TRUE(loaded.ui_click_sound_enabled);
     EXPECT_EQ_INT(33, loaded.ui_click_volume);
     EXPECT_STR_EQ("Office", loaded.wifi.ssid);
-    EXPECT_EQ_INT(10, loaded.version);
+    EXPECT_EQ_INT(11, loaded.version);
     return 0;
 }
 

@@ -1,3 +1,9 @@
+file(GLOB_RECURSE UI_SOURCES
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/skin_fonts/*.c
+    ${CMAKE_CURRENT_SOURCE_DIR}/assets/ui_assets/*.c
+)
+
 idf_component_register(
     SRCS
         alarm_audio.c
@@ -43,16 +49,7 @@ idf_component_register(
         assets/montserrat_math_72.c
         assets/ui_i18n_20.c
         assets/ui_i18n_24.c
-        ui/ui_alarms.c
-        ui/ui_brightness.c
-        ui/ui_controls.c
-        ui/ui_faces.c
-        ui/ui_l10n.c
-        ui/ui_perf_tour.c
-        ui/ui_ppa_blend.c
-        ui/ui_settings.c
-        ui/ui_shell.c
-        ui/ui_surface.c
+        ${UI_SOURCES}
     INCLUDE_DIRS .
     REQUIRES esp_wifi
     PRIV_REQUIRES app_update esp_driver_ppa esp_http_client esp_hw_support esp_mm esp_timer mbedtls nvs_flash)

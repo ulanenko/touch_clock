@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "ui/ui_areas.h"
 
 static const char *s_day_caps[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 static const char *s_month_caps[12] = {
@@ -364,7 +365,7 @@ void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face)
                              !ctx->face_theme.animating &&
                              !ctx->face_theme.dragging &&
                              !face_theme_overlay_visible &&
-                             !brightness_panel_is_open(ctx);
+                             !ui_face_chrome_dims_face(ctx);
 
     if (keep_digital_live) {
         show_digital_face_live(ctx);

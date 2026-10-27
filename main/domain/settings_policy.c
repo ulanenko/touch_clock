@@ -26,6 +26,9 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (settings->language >= CLOCK_LANGUAGE_COUNT) {
         settings->language = CLOCK_LANGUAGE_ENGLISH;
     }
+    if (settings->ui_style >= CLOCK_UI_STYLE_COUNT) {
+        settings->ui_style = CLOCK_UI_STYLE_DEFAULT;
+    }
     settings->ascending_alarm_enabled = settings->ascending_alarm_enabled ? true : false;
 
     if (settings->snooze_minutes < 1 || settings->snooze_minutes > 60) {
@@ -112,6 +115,7 @@ void settings_policy_set_defaults(app_settings_t *settings)
     settings->ui_click_sound_enabled = true;
     settings->ui_click_volume = 70;
     settings->language = CLOCK_LANGUAGE_ENGLISH;
+    settings->ui_style = CLOCK_UI_STYLE_DEFAULT;
     settings->ascending_alarm_enabled = false;
     settings->snooze_minutes = 10;
     settings->current_face = face_catalog_default_face();

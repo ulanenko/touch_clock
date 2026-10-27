@@ -1,4 +1,5 @@
 #include "ui/clock_ui_private.h"
+#include "ui/ui_areas.h"
 
 #include <string.h>
 
@@ -820,7 +821,7 @@ static void face_theme_button_event_cb(lv_event_t *event)
 
 static void create_face_theme_pull_hint(clock_ui_context_t *ctx)
 {
-    ctx->face_theme.pull_hint = lv_obj_create(ctx->screen);
+    ctx->face_theme.pull_hint = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->face_theme.pull_hint, 88, 6);
     lv_obj_set_style_radius(ctx->face_theme.pull_hint, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_border_width(ctx->face_theme.pull_hint, 0, 0);
@@ -854,7 +855,7 @@ static void shell_settings_button_event_cb(lv_event_t *event)
     }
 
     face_theme_overlay_close(ctx);
-    settings_button_event_cb(event);
+    ui_settings_open((clock_ui_context_t *)lv_event_get_user_data(event));
 }
 
 static void update_button_event_cb(lv_event_t *event)
@@ -949,7 +950,7 @@ static void face_swipe_event_cb(lv_event_t *event)
     clock_face_id_t current_face;
     clock_face_id_t target_face;
 
-    if (settings_surface_is_open(ctx) || alarm_surface_is_open(ctx) || brightness_panel_is_open(ctx) ||
+    if (ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || brightness_panel_is_open(ctx) ||
         (face_theme_overlay_is_open(ctx) && !ctx->face_theme.drag_from_face)) {
         ctx->faces.face_swipe_tracking = false;
         return;
@@ -1120,7 +1121,7 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
     sync_face_animation_state(ctx, face);
     lv_tileview_set_tile_by_index(ctx->tileview, visible_index, 0, anim);
     update_dots(ctx, face);
-    sync_alarm_banner_style(ctx, face);
+    ui_alarms_on_face_changed(ctx, face);
     ctx->suppress_events = false;
 }
 
@@ -1141,7 +1142,7 @@ static void tileview_value_changed_cb(lv_event_t *event)
     apply_face_navigation_mode(ctx, face);
     sync_face_animation_state(ctx, face);
     update_dots(ctx, face);
-    sync_alarm_banner_style(ctx, face);
+    ui_alarms_on_face_changed(ctx, face);
     show_affordances_temporarily(ctx);
 
     if (ctx->runtime->in_night_mode) {
@@ -1186,7 +1187,7 @@ static void create_dots(clock_ui_context_t *ctx)
     for (int index = 0; index < visible_count; ++index) {
         clock_face_id_t face = clock_face_visible_index_to_id(index);
 
-        ctx->page_dots[face] = lv_obj_create(ctx->screen);
+        ctx->page_dots[face] = lv_obj_create(ui_chrome_root(ctx));
         lv_obj_set_size(ctx->page_dots[face], 10, 10);
         lv_obj_set_style_radius(ctx->page_dots[face], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(ctx->page_dots[face], 0, 0);
@@ -1204,7 +1205,7 @@ static void create_settings_button(clock_ui_context_t *ctx)
 {
     lv_obj_t *label;
 
-    ctx->settings_button = lv_button_create(ctx->screen);
+    ctx->settings_button = lv_button_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->settings_button, 56, 56);
     lv_obj_align(ctx->settings_button, LV_ALIGN_TOP_RIGHT, -28, 28);
     lv_obj_set_style_radius(ctx->settings_button, LV_RADIUS_CIRCLE, 0);
@@ -1223,7 +1224,7 @@ static void create_settings_button(clock_ui_context_t *ctx)
 
 void create_update_button(clock_ui_context_t *ctx)
 {
-    ctx->update_button = lv_button_create(ctx->screen);
+    ctx->update_button = lv_button_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->update_button, 210, 44);
     lv_obj_align(ctx->update_button, LV_ALIGN_TOP_MID, 0, 30);
     lv_obj_set_style_radius(ctx->update_button, 22, 0);
@@ -1249,7 +1250,7 @@ void create_face_theme_button(clock_ui_context_t *ctx)
 {
     lv_obj_t *label;
 
-    ctx->face_theme.button = lv_button_create(ctx->screen);
+    ctx->face_theme.button = lv_button_create(ui_chrome_root(ctx));
     lv_obj_set_size(ctx->face_theme.button, 56, 56);
     lv_obj_align(ctx->face_theme.button, LV_ALIGN_LEFT_MID, 52, 72);
     lv_obj_set_style_radius(ctx->face_theme.button, LV_RADIUS_CIRCLE, 0);
@@ -1272,7 +1273,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     ui_surface_t surface;
 
     ui_surface_create_fullscreen(&surface,
-                                 ctx->screen,
+                                 ui_chrome_root(ctx),
                                  lv_color_black(),
                                  LV_OPA_70,
                                  lv_color_hex(0x0D0D0D),
@@ -1378,7 +1379,7 @@ void create_face_theme_overlay(clock_ui_context_t *ctx)
     }
 
     ctx->face_theme.snapshot_dirty = true;
-    ctx->face_theme.auto_close_timer = lv_timer_create(face_theme_auto_close_timer_cb, FACE_THEME_AUTO_CLOSE_MS, ctx);
+    ctx->face_theme.auto_close_timer = ui_chrome_timer_create(ctx, face_theme_auto_close_timer_cb, FACE_THEME_AUTO_CLOSE_MS, ctx);
     lv_timer_pause(ctx->face_theme.auto_close_timer);
     face_theme_overlay_close(ctx);
 }
@@ -1428,6 +1429,25 @@ void build_root_ui(clock_ui_context_t *ctx)
 
     create_face_reveal_layer(ctx);
     create_face_swipe_layer(ctx);
+    ui_chrome_build(ctx);
+    set_active_face(ctx, ctx->settings->current_face, LV_ANIM_OFF);
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    ui_perf_tour_start(ctx);
+#endif
+}
+
+static void debug_close_theme(clock_ui_context_t *ctx)
+{
+    face_theme_overlay_close(ctx);
+}
+
+static void debug_close_quick(clock_ui_context_t *ctx)
+{
+    brightness_overlay_hide_immediately(ctx);
+}
+
+void ui_face_chrome_create(clock_ui_context_t *ctx)
+{
     create_dots(ctx);
     create_face_theme_pull_hint(ctx);
     create_brightness_pull_hint(ctx);
@@ -1436,18 +1456,103 @@ void build_root_ui(clock_ui_context_t *ctx)
     create_brightness_panel(ctx);
     create_settings_button(ctx);
     create_update_button(ctx);
-    create_alarm_banner(ctx);
-    create_alarm_management_overlay(ctx);
-    create_alarm_settings_overlay(ctx);
-    create_alarm_editor_overlay(ctx);
-    create_alarm_overlay(ctx);
-    create_settings_overlay(ctx);
+    ctx->affordance_hide_timer = ui_chrome_timer_create(ctx, affordance_hide_timer_cb, AFFORDANCE_VISIBLE_MS, ctx);
+    lv_timer_pause(ctx->affordance_hide_timer);
+    ui_debug_register("show_controls", ui_face_chrome_show_controls);
+    ui_debug_register("close_theme", debug_close_theme);
+    ui_debug_register("close_quick", debug_close_quick);
+}
+
+void ui_face_chrome_create_top(clock_ui_context_t *ctx)
+{
     create_face_theme_overlay(ctx);
     lv_obj_move_foreground(ctx->face_theme.pull_hint);
     lv_obj_move_foreground(ctx->brightness.pull_hint);
     lv_obj_move_foreground(ctx->brightness.edge_sensor);
-    set_active_face(ctx, ctx->settings->current_face, LV_ANIM_OFF);
-#if CONFIG_TOUCH_CLOCK_PERF_TOUR
-    ui_perf_tour_start(ctx);
-#endif
+}
+
+void ui_face_chrome_destroy(clock_ui_context_t *ctx)
+{
+    if (ctx->face_theme.snapshot_buf != NULL) {
+        lv_draw_buf_destroy(ctx->face_theme.snapshot_buf);
+        ctx->face_theme.snapshot_buf = NULL;
+    }
+}
+
+void ui_face_chrome_tick(clock_ui_context_t *ctx, time_t now, clock_face_id_t active_face, bool face_covered)
+{
+    LV_UNUSED(now);
+    if (!face_covered && !ctx->faces.tileview_scrolling) {
+        update_dots(ctx, active_face);
+    }
+    sync_update_button(ctx);
+    if (ctx->brightness.animating ||
+        ctx->brightness.dragging ||
+        brightness_panel_is_open(ctx) ||
+        (ctx->brightness.overlay != NULL && !lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN))) {
+        update_brightness_ui(ctx);
+    }
+}
+
+void ui_face_chrome_refresh(clock_ui_context_t *ctx)
+{
+    update_brightness_ui(ctx);
+    sync_update_button(ctx);
+}
+
+void ui_face_chrome_on_face_changed(clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    update_dots(ctx, face);
+}
+
+void ui_face_chrome_show_controls(clock_ui_context_t *ctx)
+{
+    show_affordances_temporarily(ctx);
+}
+
+void ui_face_chrome_set_hidden(clock_ui_context_t *ctx, bool hidden)
+{
+    lv_obj_t *objs[] = {ctx->settings_button, ctx->update_button, ctx->face_theme.button};
+
+    for (size_t i = 0; i < sizeof(objs) / sizeof(objs[0]); i++) {
+        if (objs[i] == NULL) {
+            continue;
+        }
+        if (hidden) {
+            lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
+        } else if (objs[i] == ctx->update_button) {
+            sync_update_button(ctx);
+        } else if (objs[i] != ctx->face_theme.button || ctx->face_theme.button_visible) {
+            lv_obj_clear_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+    for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {
+        if (ctx->page_dots[face] == NULL) {
+            continue;
+        }
+        if (hidden) {
+            lv_obj_add_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_clear_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+void ui_face_chrome_close_all(clock_ui_context_t *ctx)
+{
+    brightness_overlay_hide_immediately(ctx);
+    brightness_panel_hide(ctx);
+    if (face_theme_overlay_is_open(ctx)) {
+        face_theme_overlay_close(ctx);
+    }
+}
+
+bool ui_face_chrome_covers_face(const clock_ui_context_t *ctx)
+{
+    return ctx->face_theme.overlay_open;
+}
+
+bool ui_face_chrome_dims_face(const clock_ui_context_t *ctx)
+{
+    return brightness_panel_is_open(ctx);
 }

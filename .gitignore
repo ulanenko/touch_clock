@@ -16,3 +16,5 @@ docs/*.private.md
 build_perf/
 perf_reports/
 perf_images/
+sim/build*/
+sim/out/
