@@ -1,0 +1,135 @@
+# Style changes with every settings page and state open (run under ASAN too).
+wait 300
+call open_settings
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_open_settings
+call open_wifi
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_open_wifi
+call join_dialog
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_join_dialog
+call timezone_picker
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_timezone_picker
+call manual_time
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_manual_time
+call open_night
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_open_night
+call night_schedule
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_night_schedule
+call night_face_picker
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_night_face_picker
+call night_brightness
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_night_brightness
+call open_other
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_open_other
+call language_picker
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_language_picker
+call style_picker
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_style_picker
+call about
+wait 200
+set style 0
+wait 300
+set style 2
+wait 300
+set style 1
+wait 300
+shot styles_about
+# Atelier: drag the sunrise jewel of the 24 h ring, then the moon.
+set style 2
+wait 300
+call open_night
+wait 200
+shot styles_ring_before
+drag 689 448 640 600 400
+wait 200
+shot styles_ring_after_sun
+drag 232 53 120 140 400
+wait 200
+shot styles_ring_after_moon
+call close_settings
+wait 200
+set style 1
+wait 300

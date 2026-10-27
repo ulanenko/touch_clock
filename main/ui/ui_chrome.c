@@ -6,7 +6,7 @@
 #include "ui/kit/ui_kit.h"
 #include "ui/kit/ui_skin.h"
 
-#define UI_DEBUG_CALL_MAX 64
+#define UI_DEBUG_CALL_MAX 160
 
 typedef struct {
     const char *name;
@@ -129,6 +129,8 @@ void ui_debug_register(const char *name, ui_debug_call_t fn)
     }
     if (s_debug_call_count < UI_DEBUG_CALL_MAX) {
         s_debug_calls[s_debug_call_count++] = (ui_debug_entry_t) {.name = name, .fn = fn};
+    } else {
+        LV_LOG_ERROR("debug call table full, dropping %s", name);
     }
 }
 

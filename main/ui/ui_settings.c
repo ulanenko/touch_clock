@@ -1,162 +1,162 @@
-#include "ui/clock_ui_private.h"
-#include "ui/ui_areas.h"
+/*
+ * Settings area: lifecycle, navigation between its pages, the settings home page and the
+ * widgets the settings pages share. The pages themselves are in ui_settings_wifi.c,
+ * ui_settings_night.c and ui_settings_other.c.
+ *
+ * Every page is a kit page (ui_kit.h) under the chrome root, built the first time it is shown
+ * and kept until the chrome is rebuilt. Only the page on screen is synced, once a second and
+ * on refresh, and only labels and controls whose value changed are touched.
+ */
+#include "ui/ui_settings_internal.h"
+
+#include <math.h>
+#include <stdio.h>
+#include <string.h>
+
 #include "app_version.h"
 #include "domain/timezone_rules.h"
-#include "esp_system.h"
-#include "sdkconfig.h"
-#include "telemetry_update.h"
 
-static void style_centered_label(lv_obj_t *label, const lv_font_t *font, lv_color_t color)
+static const ui_l10n_str_t s_settings_n = UI_L10N_STR("%s · %02d", "%s · %02d", "%s · %02d", "%s · %02d", "%s · %02d");
+static const ui_l10n_str_t s_months = UI_L10N_STR("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec",
+                                                  "sty lut mar kwi maj cze lip sie wrz paź lis gru",
+                                                  "січ лют бер кві тра чер лип сер вер жов лис гру",
+                                                  "янв фев мар апр мая июн июл авг сен окт ноя дек",
+                                                  "jan feb mrt apr mei jun jul aug sep okt nov dec");
+static const ui_l10n_str_t s_synced_at = UI_L10N_STR("synced %s", "synchr. %s", "синхр. %s", "синхр. %s",
+                                                     "gesynchr. %s");
+static const ui_l10n_str_t s_not_synced = UI_L10N_STR("not synced", "bez synchr.", "без синхр.", "без синхр.",
+                                                      "niet gesynchr.");
+static const ui_l10n_str_t s_not_connected = UI_L10N_STR("Not connected", "Brak połączenia", "Не підключено",
+                                                         "Не подключено", "Niet verbonden");
+static const ui_l10n_str_t s_update_ready = UI_L10N_STR("%s ready", "%s gotowa", "%s готова", "%s готова",
+                                                        "%s klaar");
+
+/* --- Texts ----------------------------------------------------------------------------- */
+
+bool st_text_set(st_text_t t)
 {
-    lv_obj_set_width(label, lv_pct(100));
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_set_style_text_color(label, color, 0);
-    if (font != NULL) {
-        lv_obj_set_style_text_font(label, font, 0);
+    return t.str != NULL || t.id < L10N_COUNT;
+}
+
+const char *st_text(const clock_ui_context_t *ctx, st_text_t t)
+{
+    if (t.str != NULL) {
+        return ui_l10n_str(ctx, t.str);
     }
+    if (t.id < L10N_COUNT) {
+        return ui_l10n_text(ctx, t.id);
+    }
+    return "";
 }
 
-static const char *settings_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id)
+void st_bind(clock_ui_context_t *ctx, lv_obj_t *label, st_text_t t)
 {
-    return ui_l10n_text(ctx, text_id);
-}
-
-static void settings_apply_i18n_font(lv_obj_t *label)
-{
-    const lv_font_t *font;
-
-    if (label == NULL) {
+    if (label == NULL || !st_text_set(t)) {
         return;
     }
+    if (t.str != NULL) {
+        ui_l10n_bind_kit_str(ctx, label, t.str);
+    } else {
+        ui_l10n_bind_kit(ctx, label, t.id);
+    }
+}
 
-    font = lv_obj_get_style_text_font(label, LV_PART_MAIN);
-    if (font == &lv_font_montserrat_20) {
-        lv_obj_set_style_text_font(label, &ui_i18n_20, 0);
+lv_obj_t *st_label(clock_ui_context_t *ctx, lv_obj_t *parent, kit_text_role_t role, st_text_t t)
+{
+    lv_obj_t *label = kit_label(parent, role, st_text(ctx, t));
+
+    st_bind(ctx, label, t);
+    return label;
+}
+
+void st_row(clock_ui_context_t *ctx, kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts, st_text_t title,
+            st_text_t subtitle)
+{
+    kit_row_opts_t o = *opts;
+
+    o.title = st_text(ctx, title);
+    o.subtitle = st_text_set(subtitle) ? st_text(ctx, subtitle) : opts->subtitle;
+    kit_row_create(row, group, &o);
+    st_bind(ctx, row->title, title);
+    st_bind(ctx, row->subtitle, subtitle);
+}
+
+/* --- Small widgets --------------------------------------------------------------------- */
+
+static lv_obj_t *plain(lv_obj_t *parent)
+{
+    lv_obj_t *obj = lv_obj_create(parent);
+
+    lv_obj_remove_style_all(obj);
+    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICK_FOCUSABLE);
+    return obj;
+}
+
+lv_obj_t *st_hbox(lv_obj_t *parent, int32_t gap)
+{
+    lv_obj_t *box = plain(parent);
+
+    lv_obj_set_size(box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(box, gap, 0);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_EVENT_BUBBLE);
+    return box;
+}
+
+lv_obj_t *st_vbox(lv_obj_t *parent, int32_t gap)
+{
+    lv_obj_t *box = plain(parent);
+
+    lv_obj_set_size(box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+    lv_obj_set_flex_flow(box, LV_FLEX_FLOW_COLUMN);
+    lv_obj_set_flex_align(box, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_set_style_pad_row(box, gap, 0);
+    lv_obj_add_flag(box, LV_OBJ_FLAG_EVENT_BUBBLE);
+    return box;
+}
+
+lv_obj_t *st_dot(lv_obj_t *parent, int32_t size, lv_color_t color)
+{
+    lv_obj_t *dot = plain(parent);
+
+    lv_obj_set_size(dot, size, size);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_set_style_bg_color(dot, color, 0);
+    lv_obj_add_flag(dot, LV_OBJ_FLAG_EVENT_BUBBLE);
+    return dot;
+}
+
+lv_obj_t *st_image(lv_obj_t *parent, const lv_image_dsc_t *src, lv_color_t color)
+{
+    lv_obj_t *img = lv_image_create(parent);
+
+    lv_image_set_src(img, src);
+    lv_obj_set_style_image_recolor(img, color, 0);
+    lv_obj_set_style_image_recolor_opa(img, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(img, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(img, LV_OBJ_FLAG_EVENT_BUBBLE);
+    return img;
+}
+
+void st_show(lv_obj_t *obj, bool show)
+{
+    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) == !show) {
         return;
     }
+    if (show) {
+        lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+}
 
-    if (font == &lv_font_montserrat_24 || font == NULL) {
-        lv_obj_set_style_text_font(label, &ui_i18n_24, 0);
+void st_set_enabled(lv_obj_t *obj, bool enabled)
+{
+    if (obj == NULL || lv_obj_has_state(obj, LV_STATE_DISABLED) == !enabled) {
         return;
     }
-
-    if (font == LV_FONT_DEFAULT) {
-        lv_obj_set_style_text_font(label, &ui_i18n_20, 0);
-    }
-}
-
-static void settings_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
-{
-    settings_apply_i18n_font(label);
-    ui_l10n_bind_label(ctx, label, text_id);
-}
-
-static void settings_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id)
-{
-    ui_l10n_bind_button_label(ctx, button, text_id);
-}
-
-static void settings_apply_l10n(clock_ui_context_t *ctx)
-{
-    ui_l10n_apply(ctx);
-
-    if (ctx->settings_ui.other_language_dropdown != NULL) {
-        lv_dropdown_set_options(ctx->settings_ui.other_language_dropdown, l10n_language_options());
-    }
-    if (ctx->settings_ui.wifi_password_ta != NULL) {
-        lv_textarea_set_placeholder_text(ctx->settings_ui.wifi_password_ta,
-                                         settings_text(ctx, L10N_PASSWORD));
-    }
-}
-
-static void close_wifi_dialog(clock_ui_context_t *ctx);
-static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text);
-static void settings_set_slider_value_if_changed(lv_obj_t *slider, int32_t value);
-static void wifi_network_btn_event_cb(lv_event_t *event);
-static void sync_night_face_preview(clock_ui_context_t *ctx);
-static void sync_night_face_picker_previews(clock_ui_context_t *ctx);
-static void sync_night_face_picker_selection(clock_ui_context_t *ctx);
-static void settings_navigate_back(clock_ui_context_t *ctx);
-static void close_night_face_picker(clock_ui_context_t *ctx);
-static void close_night_schedule_editor(clock_ui_context_t *ctx);
-static void ota_check_event_cb(lv_event_t *event);
-static void ota_install_event_cb(lv_event_t *event);
-static void create_localized_section_title(clock_ui_context_t *ctx,
-                                           lv_obj_t *parent,
-                                           l10n_text_id_t title,
-                                           l10n_text_id_t subtitle);
-void sync_wifi_controls(clock_ui_context_t *ctx);
-void sync_other_controls(clock_ui_context_t *ctx);
-static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked);
-static void settings_render_face_preview(clock_ui_context_t *ctx,
-                                         lv_obj_t *canvas,
-                                         lv_draw_buf_t **draw_buf,
-                                         uint16_t size,
-                                         clock_face_id_t face);
-static void style_settings_switch(lv_obj_t *sw);
-static ui_edge_ctx_t *settings_edge_ctx(clock_ui_context_t *ctx, ui_surface_edge_t edge);
-#define WIFI_UI_MAX_VISIBLE_NETWORKS 8
-#define NIGHT_FACE_PREVIEW_SIZE 120
-#define SETTINGS_CONTROL_SCROLL_CANCEL_TRIGGER 12
-
-static size_t settings_get_scan_results(const clock_ui_context_t *ctx,
-                                        const clock_wifi_scan_result_t **results,
-                                        uint32_t *generation)
-{
-    if (results != NULL) {
-        *results = ctx->runtime->wifi_scan_results;
-    }
-    if (generation != NULL) {
-        *generation = ctx->runtime->wifi_scan_generation;
-    }
-
-    if (ctx->runtime->wifi_scan_count > CLOCK_WIFI_SCAN_RESULT_MAX) {
-        return CLOCK_WIFI_SCAN_RESULT_MAX;
-    }
-
-    return ctx->runtime->wifi_scan_count;
-}
-
-static void invalidate_settings_ui_cache(clock_ui_context_t *ctx)
-{
-    ctx->settings_ui.wifi_cache_valid = false;
-    ctx->settings_ui.night_cache_valid = false;
-    ctx->settings_ui.cached_ui_click_sound_enabled = !ctx->settings->ui_click_sound_enabled;
-    ctx->settings_ui.cached_ui_click_volume = (uint8_t)(ctx->settings->ui_click_volume + 1U);
-    ctx->cached_language = (clock_language_t)CLOCK_LANGUAGE_COUNT;
-}
-
-static void settings_set_label_text_if_changed(lv_obj_t *label, const char *text)
-{
-    const char *current_text;
-
-    if (label == NULL || text == NULL) {
-        return;
-    }
-
-    current_text = lv_label_get_text(label);
-    if (current_text == NULL || strcmp(current_text, text) != 0) {
-        lv_label_set_text(label, text);
-    }
-}
-
-static void settings_set_roller_selected_if_changed(lv_obj_t *roller, uint16_t selected)
-{
-    if (roller == NULL) {
-        return;
-    }
-
-    if (lv_roller_get_selected(roller) != selected) {
-        lv_roller_set_selected(roller, selected, LV_ANIM_OFF);
-    }
-}
-
-static void settings_set_enabled_state(lv_obj_t *obj, bool enabled)
-{
-    if (obj == NULL) {
-        return;
-    }
-
     if (enabled) {
         lv_obj_remove_state(obj, LV_STATE_DISABLED);
     } else {
@@ -164,2737 +164,1205 @@ static void settings_set_enabled_state(lv_obj_t *obj, bool enabled)
     }
 }
 
-static void settings_set_clickable_enabled(lv_obj_t *obj, bool enabled)
+void st_set_clickable(lv_obj_t *obj, bool clickable)
 {
-    if (obj == NULL) {
+    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_CLICKABLE) == clickable) {
         return;
     }
-
-    if (enabled) {
+    if (clickable) {
         lv_obj_add_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     } else {
-        lv_obj_clear_flag(obj, LV_OBJ_FLAG_CLICKABLE);
+        lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE);
     }
 }
 
-static void settings_format_time_mode_label(const clock_ui_context_t *ctx,
-                                            char *buffer,
-                                            size_t size,
-                                            time_sync_mode_t mode)
+void st_keep_gestures(lv_obj_t *obj)
 {
-    snprintf(buffer,
-             size,
-             "%s",
-             mode == TIME_SYNC_MODE_MANUAL ? settings_text(ctx, L10N_MANUAL_TIME)
-                                           : settings_text(ctx, L10N_AUTO_SYNC));
+    if (obj != NULL) {
+        lv_obj_remove_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    }
 }
 
-static void settings_format_face_label(char *buffer, size_t size, clock_face_id_t face)
+void st_one_line(lv_obj_t *label, int32_t width)
 {
-    snprintf(buffer, size, "%s", clock_face_name(face));
+    lv_obj_set_width(label, width);
+    lv_obj_set_height(label, lv_font_get_line_height(lv_obj_get_style_text_font(label, 0)));
+    lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 }
 
-static void create_about_info_row(clock_ui_context_t *ctx, lv_obj_t *parent, l10n_text_id_t title, const char *value)
+void st_text_color(lv_obj_t *obj, lv_color_t color)
 {
-    lv_obj_t *row = create_row(parent);
-    lv_obj_t *label;
-
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-
-    label = lv_label_create(row);
-    lv_obj_set_width(label, 190);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xA8A8A8), 0);
-    settings_bind_label(ctx, label, title);
-
-    label = lv_label_create(row);
-    lv_obj_set_width(label, 280);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_RIGHT, 0);
-    lv_label_set_long_mode(label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(label, value);
+    if (obj != NULL && !lv_color_eq(lv_obj_get_style_text_color(obj, 0), color)) {
+        lv_obj_set_style_text_color(obj, color, 0);
+    }
 }
 
-static void create_about_device_card(clock_ui_context_t *ctx, lv_obj_t *parent)
+void st_bg_color(lv_obj_t *obj, lv_color_t color)
 {
-    lv_obj_t *card = create_card(parent);
-    char build[40];
-    char device_id[64];
-
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 12, 0);
-    create_localized_section_title(ctx, card, L10N_ABOUT_DEVICE, L10N_ABOUT_DEVICE_SUBTITLE);
-
-    create_about_info_row(ctx, card, L10N_DEVICE, "Touch Clock");
-    telemetry_update_get_device_id(device_id, sizeof(device_id));
-    create_about_info_row(ctx, card, L10N_DEVICE_ID, device_id);
-    create_about_info_row(ctx, card, L10N_VERSION, TOUCH_CLOCK_FIRMWARE_VERSION);
-    snprintf(build, sizeof(build), "%s %s", __DATE__, __TIME__);
-    create_about_info_row(ctx, card, L10N_BUILD, build);
-    create_about_info_row(ctx, card, L10N_TARGET, CONFIG_IDF_TARGET);
-    create_about_info_row(ctx, card, L10N_FLASH, CONFIG_ESPTOOLPY_FLASHSIZE);
-    create_about_info_row(ctx, card, L10N_ESP_IDF, esp_get_idf_version());
-    create_about_info_row(ctx, card, L10N_UPDATES, settings_text(ctx, L10N_WIFI_OTA_CAPABLE));
+    if (obj != NULL && !lv_color_eq(lv_obj_get_style_bg_color(obj, 0), color)) {
+        lv_obj_set_style_bg_color(obj, color, 0);
+    }
 }
 
-static void create_update_card(clock_ui_context_t *ctx, lv_obj_t *parent)
+void st_recolor(lv_obj_t *obj, lv_color_t color)
 {
-    lv_obj_t *card = create_card(parent);
-    lv_obj_t *row;
-
-    ctx->settings_ui.other_update_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 12, 0);
-    create_localized_section_title(ctx, card, L10N_SOFTWARE_UPDATE, L10N_SOFTWARE_UPDATE_SUBTITLE);
-
-    ctx->settings_ui.other_update_available_label = lv_label_create(card);
-    lv_obj_set_width(ctx->settings_ui.other_update_available_label, lv_pct(100));
-    lv_obj_set_style_text_font(ctx->settings_ui.other_update_available_label, &lv_font_montserrat_20, 0);
-    settings_apply_i18n_font(ctx->settings_ui.other_update_available_label);
-    lv_obj_set_style_text_color(ctx->settings_ui.other_update_available_label, lv_color_white(), 0);
-    lv_label_set_text_fmt(ctx->settings_ui.other_update_available_label,
-                          "%s: %s",
-                          settings_text(ctx, L10N_CURRENT),
-                          TOUCH_CLOCK_FIRMWARE_VERSION);
-
-    ctx->settings_ui.other_update_status_label = lv_label_create(card);
-    lv_obj_set_width(ctx->settings_ui.other_update_status_label, lv_pct(100));
-    lv_obj_set_style_text_font(ctx->settings_ui.other_update_status_label, &lv_font_montserrat_20, 0);
-    settings_apply_i18n_font(ctx->settings_ui.other_update_status_label);
-    lv_obj_set_style_text_color(ctx->settings_ui.other_update_status_label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_long_mode(ctx->settings_ui.other_update_status_label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(ctx->settings_ui.other_update_status_label, settings_text(ctx, L10N_OTA_STATUS_UNAVAILABLE));
-
-    ctx->settings_ui.other_update_progress_label = lv_label_create(card);
-    lv_obj_set_width(ctx->settings_ui.other_update_progress_label, lv_pct(100));
-    lv_obj_set_style_text_font(ctx->settings_ui.other_update_progress_label, &ui_i18n_20, 0);
-    lv_obj_set_style_text_color(ctx->settings_ui.other_update_progress_label, lv_color_hex(0xA8A8A8), 0);
-    lv_label_set_text(ctx->settings_ui.other_update_progress_label, settings_text(ctx, L10N_MANIFEST_NOT_CONFIGURED));
-
-    row = create_row(card);
-    center_row(row);
-    ctx->settings_ui.other_update_check_btn =
-        create_action_button(row, settings_text(ctx, L10N_CHECK), ota_check_event_cb, ctx);
-    settings_bind_button_label(ctx, ctx->settings_ui.other_update_check_btn, L10N_CHECK);
-    ctx->settings_ui.other_update_install_btn =
-        create_action_button(row, settings_text(ctx, L10N_INSTALL), ota_install_event_cb, ctx);
-    settings_bind_button_label(ctx, ctx->settings_ui.other_update_install_btn, L10N_INSTALL);
+    if (obj != NULL && !lv_color_eq(lv_obj_get_style_image_recolor(obj, 0), color)) {
+        lv_obj_set_style_image_recolor(obj, color, 0);
+    }
 }
 
-void sync_other_controls(clock_ui_context_t *ctx)
+/* --- Signal meter ---------------------------------------------------------------------- */
+
+int st_signal_level(int rssi)
 {
-    char volume_label[32];
-    char progress_label[64];
-    char available_label[64];
-    bool sound_enabled;
-    bool update_controls_enabled;
+    if (rssi == 0) {
+        return 0;
+    }
+    if (rssi >= -55) {
+        return 4;
+    }
+    if (rssi >= -65) {
+        return 3;
+    }
+    if (rssi >= -75) {
+        return 2;
+    }
+    return 1;
+}
 
-    if (wifi_controls_need_sync(ctx)) {
-        sync_wifi_controls(ctx);
-    }
+static void fill_rect(lv_layer_t *layer, int32_t x1, int32_t y1, int32_t x2, int32_t y2, lv_color_t c, int32_t r)
+{
+    lv_draw_rect_dsc_t d;
+    lv_area_t a = {x1, y1, x2, y2};
 
-    if (ctx->settings_ui.other_sound_sw == NULL) {
-        return;
-    }
+    lv_draw_rect_dsc_init(&d);
+    d.bg_color = c;
+    d.radius = r;
+    lv_draw_rect(layer, &d, &a);
+}
 
-    sound_enabled = ctx->settings->ui_click_sound_enabled;
-    ctx->suppress_events = true;
-    if (ctx->settings_ui.other_language_dropdown != NULL) {
-        lv_dropdown_set_selected(ctx->settings_ui.other_language_dropdown,
-                                 (uint16_t)l10n_sanitize_language(ctx->settings->language));
-    }
-    settings_set_switch_checked_if_changed(ctx->settings_ui.other_sound_sw,
-                                           sound_enabled);
-    settings_set_slider_value_if_changed(ctx->settings_ui.other_sound_volume_slider,
-                                         ctx->settings->ui_click_volume);
-    ctx->suppress_events = false;
-    snprintf(volume_label, sizeof(volume_label), "%u%%", ctx->settings->ui_click_volume);
-    settings_set_label_text_if_changed(ctx->settings_ui.other_sound_volume_label, volume_label);
-    settings_set_enabled_state(ctx->settings_ui.other_sound_volume_slider, sound_enabled);
-    if (ctx->settings_ui.other_sound_volume_label != NULL &&
-        ctx->settings_ui.cached_ui_click_sound_enabled != sound_enabled) {
-        lv_obj_set_style_text_color(ctx->settings_ui.other_sound_volume_label,
-                                    sound_enabled ? lv_color_white() : lv_color_hex(0xA8A8A8),
-                                    0);
-    }
+static void signal_draw_cb(lv_event_t *e)
+{
+    lv_obj_t *obj = lv_event_get_current_target(e);
+    const ui_skin_t *sk = ui_skin();
+    lv_layer_t *layer = lv_event_get_layer(e);
+    int level = (int)(intptr_t)lv_obj_get_user_data(obj);
+    lv_area_t a;
+    int32_t h;
 
-    if (ctx->settings_ui.other_update_status_label != NULL) {
-        settings_set_label_text_if_changed(ctx->settings_ui.other_update_status_label,
-                                           ctx->runtime->ota_status[0] != '\0'
-                                               ? l10n_runtime_status(ctx->settings->language, ctx->runtime->ota_status)
-                                               : settings_text(ctx, L10N_OTA_STATUS_UNAVAILABLE));
-    }
-    if (ctx->settings_ui.other_update_progress_label != NULL) {
-        if (ctx->runtime->ota_busy) {
-            snprintf(progress_label,
-                     sizeof(progress_label),
-                     "%s: %u%%",
-                     settings_text(ctx, L10N_PROGRESS),
-                     ctx->runtime->ota_progress);
-        } else if (ctx->runtime->ota_configured) {
-            snprintf(progress_label, sizeof(progress_label), "%s", settings_text(ctx, L10N_MANIFEST_CONFIGURED));
-        } else {
-            snprintf(progress_label, sizeof(progress_label), "%s", settings_text(ctx, L10N_MANIFEST_NOT_CONFIGURED));
+    lv_obj_get_coords(obj, &a);
+    h = lv_area_get_height(&a);
+    if (st_atelier()) {
+        /* Three arcs and a dot, gilt up to the level (the Atelier wifi glyph). */
+        static const float radii[3] = {4.6f, 9.0f, 13.5f};
+        float k = (float)h / 24.0f;
+        lv_draw_arc_dsc_t arc;
+        lv_draw_rect_dsc_t dot;
+        lv_area_t da;
+        int32_t cx = a.x1 + h / 2;
+        int32_t cy = a.y1 + (int32_t)(19.2f * k);
+        int32_t w = LV_MAX(2, (int32_t)(1.9f * k + 0.5f));
+
+        for (int i = 0; i < 3; i++) {
+            lv_draw_arc_dsc_init(&arc);
+            arc.color = level >= i + 2 ? sk->accent : sk->line_strong;
+            arc.width = w;
+            arc.rounded = 1;
+            arc.center.x = cx;
+            arc.center.y = cy;
+            arc.radius = (uint16_t)(radii[i] * k + w / 2.0f);
+            arc.start_angle = 227;
+            arc.end_angle = 313;
+            lv_draw_arc(layer, &arc);
         }
-        settings_set_label_text_if_changed(ctx->settings_ui.other_update_progress_label, progress_label);
+        lv_draw_rect_dsc_init(&dot);
+        dot.bg_color = level >= 1 ? sk->accent : sk->line_strong;
+        dot.radius = LV_RADIUS_CIRCLE;
+        da.x1 = cx - w;
+        da.x2 = cx + w - 1;
+        da.y1 = cy - w;
+        da.y2 = cy + w - 1;
+        lv_draw_rect(layer, &dot, &da);
+        return;
     }
-    if (ctx->settings_ui.other_update_available_label != NULL) {
-        if (ctx->runtime->ota_update_available && ctx->runtime->ota_available_version[0] != '\0') {
-            snprintf(available_label,
-                     sizeof(available_label),
-                     "%s: %s",
-                     settings_text(ctx, L10N_AVAILABLE),
-                     ctx->runtime->ota_available_version);
+
+    {
+        /* Four bars rising to the right. */
+        int32_t bw;
+        int32_t gap;
+        lv_color_t on = sk->text;
+        lv_color_t off = st_orbit() ? lv_color_mix(sk->text, sk->bg, 72) : sk->line_strong;
+
+        if (st_orbit()) {
+            bw = LV_MAX(4, h / 4);
+            gap = LV_MAX(3, h / 6);
         } else {
-            snprintf(available_label,
-                     sizeof(available_label),
-                     "%s: %s",
-                     settings_text(ctx, L10N_CURRENT),
-                     TOUCH_CLOCK_FIRMWARE_VERSION);
+            bw = (h * 22 + 50) / 100;
+            gap = (h * 14 + 50) / 100;
         }
-        settings_set_label_text_if_changed(ctx->settings_ui.other_update_available_label, available_label);
+        for (int i = 0; i < 4; i++) {
+            int32_t bh = st_orbit() ? h * (6 + 4 * i) / 18 : (h * (300 + 233 * i) + 500) / 1000;
+            int32_t x = a.x1 + i * (bw + gap);
+
+            fill_rect(layer, x, a.y2 - bh + 1, x + bw - 1, a.y2, i < level ? on : off, st_orbit() ? 2 : 1);
+        }
     }
-
-    update_controls_enabled = ctx->runtime->ota_configured && ctx->runtime->wifi_connected &&
-                              !ctx->runtime->ota_busy && !ctx->runtime->ota_reboot_pending;
-    settings_set_enabled_state(ctx->settings_ui.other_update_check_btn, update_controls_enabled);
-    settings_set_clickable_enabled(ctx->settings_ui.other_update_check_btn, update_controls_enabled);
-    settings_set_enabled_state(ctx->settings_ui.other_update_install_btn,
-                               update_controls_enabled && ctx->runtime->ota_update_available);
-    settings_set_clickable_enabled(ctx->settings_ui.other_update_install_btn,
-                                   update_controls_enabled && ctx->runtime->ota_update_available);
-
-    ctx->settings_ui.cached_ui_click_sound_enabled = sound_enabled;
-    ctx->settings_ui.cached_ui_click_volume = ctx->settings->ui_click_volume;
-    ctx->cached_language = ctx->settings->language;
 }
 
-static void settings_format_night_schedule_label(const clock_ui_context_t *ctx, char *buffer, size_t size)
+lv_obj_t *st_signal(lv_obj_t *parent, int32_t size)
 {
-    snprintf(buffer, size, "%02u:%02u  " LV_SYMBOL_RIGHT "  %02u:%02u",
-             ctx->settings->night_mode.start_hour,
-             ctx->settings->night_mode.start_minute,
-             ctx->settings->night_mode.end_hour,
-             ctx->settings->night_mode.end_minute);
-}
+    lv_obj_t *meter = plain(parent);
+    int32_t w;
 
-static void settings_set_switch_checked_if_changed(lv_obj_t *sw, bool checked)
-{
-    bool current_checked;
-
-    if (sw == NULL) {
-        return;
-    }
-
-    current_checked = lv_obj_has_state(sw, LV_STATE_CHECKED);
-    if (current_checked == checked) {
-        return;
-    }
-
-    if (checked) {
-        lv_obj_add_state(sw, LV_STATE_CHECKED);
+    if (st_atelier()) {
+        w = size;
+    } else if (st_orbit()) {
+        w = 4 * LV_MAX(4, size / 4) + 3 * LV_MAX(3, size / 6);
     } else {
-        lv_obj_remove_state(sw, LV_STATE_CHECKED);
+        w = 4 * ((size * 22 + 50) / 100) + 3 * ((size * 14 + 50) / 100);
+    }
+    lv_obj_set_size(meter, w, size);
+    lv_obj_add_flag(meter, LV_OBJ_FLAG_EVENT_BUBBLE);
+    lv_obj_add_event_cb(meter, signal_draw_cb, LV_EVENT_DRAW_MAIN, NULL);
+    return meter;
+}
+
+void st_signal_set(lv_obj_t *meter, int level, bool on_accent)
+{
+    LV_UNUSED(on_accent);
+    if (meter != NULL && (int)(intptr_t)lv_obj_get_user_data(meter) != level) {
+        lv_obj_set_user_data(meter, (void *)(intptr_t)level);
+        lv_obj_invalidate(meter);
     }
 }
 
-static void settings_set_slider_value_if_changed(lv_obj_t *slider, int32_t value)
+/* --- Formatting ------------------------------------------------------------------------ */
+
+void st_format_synced(clock_ui_context_t *ctx, char *out, size_t size, const ui_l10n_str_t *fmt)
 {
-    if (slider == NULL) {
+    char clock[8];
+
+    if (ctx->settings->last_synced_epoch <= 0) {
+        snprintf(out, size, "%s", ui_l10n_str(ctx, &s_not_synced));
         return;
     }
+    ui_format_clock(ctx->settings->last_synced_epoch, clock, sizeof(clock));
+    snprintf(out, size, ui_l10n_str(ctx, fmt != NULL ? fmt : &s_synced_at), clock);
+}
 
-    if (lv_slider_get_value(slider) != value) {
-        lv_slider_set_value(slider, value, LV_ANIM_OFF);
+void st_format_tz(uint8_t timezone_id, char *name, size_t name_size, char *offset, size_t offset_size)
+{
+    char picker[40];
+    const char *open;
+    const char *close;
+    char *slash;
+
+    timezone_format_label(name, name_size, timezone_id);
+    /* "Warsaw / Berlin" reads better as "Warsaw, Berlin" in a row. */
+    while ((slash = strstr(name, " / ")) != NULL) {
+        slash[0] = ',';
+        memmove(slash + 1, slash + 2, strlen(slash + 2) + 1);
+    }
+    offset[0] = '\0';
+    timezone_format_picker_label(picker, sizeof(picker), timezone_picker_index_from_id(timezone_id));
+    open = strchr(picker, '(');
+    close = open != NULL ? strchr(open, ')') : NULL;
+    if (open != NULL && close != NULL && (size_t)(close - open) < offset_size) {
+        snprintf(offset, offset_size, "%.*s", (int)(close - open - 1), open + 1);
     }
 }
 
-static void settings_control_scroll_passthrough_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *target = lv_event_get_target(event);
-    lv_indev_t *indev = lv_event_get_indev(event);
-    lv_point_t point;
+/* --- Pages ----------------------------------------------------------------------------- */
 
-    if ((!ctx->settings_ui.night_open && !ctx->settings_ui.other_open) || indev == NULL || target == NULL) {
+kit_page_t *st_page(clock_ui_context_t *ctx, ui_st_page_t id)
+{
+    return &ST(ctx)->pages[id];
+}
+
+ui_st_page_t st_parent(ui_st_page_t id)
+{
+    switch (id) {
+    case UI_ST_TIMEZONE:
+    case UI_ST_MANUAL_TIME:
+        return UI_ST_WIFI;
+    case UI_ST_SCHEDULE:
+    case UI_ST_FACE:
+    case UI_ST_NIGHT_BRIGHT:
+        return UI_ST_NIGHT;
+    case UI_ST_LANGUAGE:
+    case UI_ST_STYLE:
+        return UI_ST_OTHER;
+    default:
+        return UI_ST_HOME;
+    }
+}
+
+static void gesture_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+    lv_indev_t *indev = lv_indev_active();
+
+    if (indev == NULL || lv_indev_get_gesture_dir(indev) != LV_DIR_RIGHT) {
         return;
     }
-
-    lv_indev_get_point(indev, &point);
-
-    if (code == LV_EVENT_PRESSED) {
-        ctx->settings_ui.settings_control_dragging = true;
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        ctx->settings_ui.settings_control_drag_target = target;
-        ctx->settings_ui.settings_control_drag_start_point = point;
+    if (ST(ctx)->join_open || ST(ctx)->night_drag >= 0) {
         return;
     }
+    lv_indev_wait_release(indev);
+    st_back(ctx);
+}
 
-    if (code == LV_EVENT_PRESSING &&
-        ctx->settings_ui.settings_control_dragging &&
-        ctx->settings_ui.settings_control_drag_target == target) {
-        int32_t dx = point.x - ctx->settings_ui.settings_control_drag_start_point.x;
-        int32_t dy = point.y - ctx->settings_ui.settings_control_drag_start_point.y;
+static void set_scrolling(clock_ui_context_t *ctx, lv_obj_t *scroll, bool scrolling)
+{
+    ST(ctx)->scrolling = scrolling;
+    ST(ctx)->wifi_scrolling = scrolling && scroll == ST(ctx)->pages[UI_ST_WIFI].scroll;
+    ST(ctx)->night_scrolling = scrolling && scroll == ST(ctx)->pages[UI_ST_NIGHT].scroll;
+    ST(ctx)->other_scrolling = scrolling && scroll == ST(ctx)->pages[UI_ST_OTHER].scroll;
+}
 
-        if (LV_ABS(dy) > LV_ABS(dx) && LV_ABS(dy) >= SETTINGS_CONTROL_SCROLL_CANCEL_TRIGGER) {
-            ctx->settings_ui.settings_control_dragging = false;
-            ctx->settings_ui.settings_control_interaction_suppressed = true;
-            ctx->settings_ui.settings_control_drag_target = NULL;
-            lv_indev_reset(indev, target);
-            lv_indev_stop_processing(indev);
-            return;
-        }
+static void scroll_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+    lv_obj_t *scroll = lv_event_get_current_target(e);
+    lv_event_code_t code = lv_event_get_code(e);
+
+    if (code == LV_EVENT_SCROLL_BEGIN) {
+        set_scrolling(ctx, scroll, true);
+    } else if (code == LV_EVENT_SCROLL_END) {
+        set_scrolling(ctx, scroll, false);
+    }
+}
+
+/* Instrument and Atelier: the title collapses to a legend at the top once it has scrolled
+ * away. One flag change when the threshold is crossed. */
+static void legend_scroll_cb(lv_event_t *e)
+{
+    lv_obj_t *scroll = lv_event_get_current_target(e);
+    lv_obj_t *legend = lv_event_get_user_data(e);
+
+    st_show(legend, lv_obj_get_scroll_y(scroll) > 96);
+}
+
+/* Scroll register on the right rim, drawn after the page (Instrument and Atelier). It reads
+ * the scroll position when the screen is drawn, so it costs nothing extra while scrolling. */
+static void register_draw_cb(lv_event_t *e)
+{
+    kit_page_t *page = lv_event_get_user_data(e);
+    const ui_skin_t *sk = ui_skin();
+    lv_layer_t *layer = lv_event_get_layer(e);
+    lv_draw_arc_dsc_t arc;
+    int32_t y = lv_obj_get_scroll_y(page->scroll);
+    int32_t rest = lv_obj_get_scroll_bottom(page->scroll);
+    int32_t total = y + rest;
+    int32_t a0;
+    int32_t a1;
+    int32_t span;
+    int32_t len;
+    int32_t pos;
+    int32_t radius;
+
+    if (total <= 8) {
         return;
     }
-
-    if ((code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) &&
-        ctx->settings_ui.settings_control_drag_target == target) {
-        ctx->settings_ui.settings_control_dragging = false;
-        ctx->settings_ui.settings_control_drag_target = NULL;
-    }
-}
-
-static void style_settings_switch(lv_obj_t *sw)
-{
-    if (sw == NULL) {
-        return;
-    }
-
-    lv_obj_set_size(sw, 96, 56);
-    lv_obj_set_style_pad_all(sw, 4, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(0x2E2E2E), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_MAIN);
-    lv_obj_set_style_border_width(sw, 0, LV_PART_MAIN);
-    lv_obj_set_style_radius(sw, LV_RADIUS_CIRCLE, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(0x7D8894), LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_set_style_radius(sw, LV_RADIUS_CIRCLE, LV_PART_INDICATOR | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(0xF4F6F8), LV_PART_KNOB);
-    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_KNOB);
-    lv_obj_set_style_shadow_width(sw, 0, LV_PART_KNOB);
-    lv_obj_set_style_shadow_opa(sw, LV_OPA_TRANSP, LV_PART_KNOB);
-    lv_obj_set_style_bg_color(sw, lv_color_white(), LV_PART_KNOB | LV_STATE_CHECKED);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(0x252525), LV_PART_MAIN | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_MAIN | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(0x59636D), LV_PART_INDICATOR | LV_STATE_CHECKED | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_opa(sw, LV_OPA_COVER, LV_PART_INDICATOR | LV_STATE_CHECKED | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(sw, lv_color_hex(0xC5CBD1), LV_PART_KNOB | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_opa(sw, LV_OPA_70, LV_PART_KNOB | LV_STATE_DISABLED);
-}
-
-static void style_night_detail_card(lv_obj_t *card)
-{
-    if (card == NULL) {
-        return;
-    }
-}
-
-static void style_night_detail_button(lv_obj_t *button)
-{
-    if (button == NULL) {
-        return;
-    }
-}
-
-static void attach_settings_control_passthrough(lv_obj_t *obj, clock_ui_context_t *ctx)
-{
-    if (obj == NULL) {
-        return;
-    }
-
-    lv_obj_add_flag(obj, LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_add_event_cb(obj, settings_control_scroll_passthrough_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(obj, settings_control_scroll_passthrough_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(obj, settings_control_scroll_passthrough_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(obj, settings_control_scroll_passthrough_event_cb, LV_EVENT_PRESS_LOST, ctx);
-}
-
-static void bind_night_control(lv_obj_t *obj,
-                               clock_ui_context_t *ctx,
-                               lv_event_code_t action_code,
-                               lv_event_cb_t action_cb,
-                               lv_event_code_t feedback_code)
-{
-    if (obj == NULL) {
-        return;
-    }
-
-    attach_settings_control_passthrough(obj, ctx);
-    if (action_cb != NULL) {
-        lv_obj_add_event_cb(obj, action_cb, action_code, ctx);
-    }
-    ui_attach_click_feedback(obj, feedback_code);
-}
-
-static void settings_apply_night_card_visual(lv_obj_t *card, bool enabled)
-{
-    if (card == NULL) {
-        return;
-    }
-
-    lv_obj_set_style_bg_color(card, enabled ? lv_color_hex(0x171717) : lv_color_hex(0x141414), 0);
-    lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(card, enabled ? 0 : 1, 0);
-    lv_obj_set_style_border_color(card, lv_color_hex(0x262626), 0);
-    lv_obj_set_style_border_opa(card, enabled ? LV_OPA_TRANSP : LV_OPA_80, 0);
-}
-
-static void settings_apply_night_button_visual(lv_obj_t *button, bool enabled)
-{
-    if (button == NULL) {
-        return;
-    }
-
-    lv_obj_set_style_bg_color(button, enabled ? lv_color_hex(0x232323) : lv_color_hex(0x1C1C1C), 0);
-    lv_obj_set_style_bg_opa(button, enabled ? LV_OPA_COVER : LV_OPA_90, 0);
-}
-
-static void settings_apply_night_preview_visual(clock_ui_context_t *ctx, bool enabled)
-{
-    if (ctx->settings_ui.night_face_preview_shell != NULL) {
-        lv_obj_set_style_bg_color(ctx->settings_ui.night_face_preview_shell,
-                                  enabled ? lv_color_hex(0x0F0F0F) : lv_color_hex(0x121212),
-                                  0);
-        lv_obj_set_style_border_color(ctx->settings_ui.night_face_preview_shell,
-                                      enabled ? lv_color_hex(0x323232) : lv_color_hex(0x262626),
-                                      0);
-    }
-    if (ctx->settings_ui.night_face_preview != NULL) {
-        lv_obj_set_style_image_opa(ctx->settings_ui.night_face_preview,
-                                   enabled ? LV_OPA_COVER : LV_OPA_60,
-                                   0);
-    }
-}
-
-static ui_edge_ctx_t *settings_edge_ctx(clock_ui_context_t *ctx, ui_surface_edge_t edge)
-{
-    return &ctx->settings_ui.close_edge_ctx[edge];
-}
-
-static void create_localized_centered_card_title(clock_ui_context_t *ctx, lv_obj_t *parent, l10n_text_id_t title)
-{
-    lv_obj_t *label = lv_label_create(parent);
-
-    style_centered_label(label, &lv_font_montserrat_24, lv_color_white());
-    settings_bind_label(ctx, label, title);
-}
-
-static void create_localized_section_title(clock_ui_context_t *ctx,
-                                           lv_obj_t *parent,
-                                           l10n_text_id_t title,
-                                           l10n_text_id_t subtitle)
-{
-    lv_obj_t *heading = lv_label_create(parent);
-
-    lv_obj_set_style_text_font(heading, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(heading, lv_color_white(), 0);
-    lv_obj_set_style_text_color(heading, lv_color_hex(0x7A7A7A), LV_STATE_DISABLED);
-    settings_bind_label(ctx, heading, title);
-
-    if (subtitle < L10N_COUNT) {
-        lv_obj_t *desc = lv_label_create(parent);
-        lv_obj_set_style_text_color(desc, lv_color_hex(0xA8A8A8), 0);
-        lv_obj_set_style_text_color(desc, lv_color_hex(0x686868), LV_STATE_DISABLED);
-        settings_bind_label(ctx, desc, subtitle);
-    }
-}
-
-static void center_card_children(lv_obj_t *card)
-{
-    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-}
-
-static lv_obj_t *create_network_button(lv_obj_t *parent, const char *ssid, const char *meta, network_ctx_t *ctx)
-{
-    lv_obj_t *button = lv_button_create(parent);
-    lv_obj_t *title = lv_label_create(button);
-
-    lv_obj_set_width(button, lv_pct(100));
-    lv_obj_set_height(button, LV_SIZE_CONTENT);
-    lv_obj_set_style_radius(button, 22, 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x232323), 0);
-    lv_obj_set_style_bg_color(button, lv_color_hex(0x343434), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(button, 0, 0);
-    lv_obj_set_style_pad_hor(button, 22, 0);
-    lv_obj_set_style_pad_ver(button, 18, 0);
-    lv_obj_set_style_shadow_width(button, 0, 0);
-    lv_obj_clear_flag(button, LV_OBJ_FLAG_SCROLLABLE);
-
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_20, 0);
-    lv_label_set_text_fmt(title, "%s  %s", ssid, meta);
-    lv_obj_center(title);
-
-    lv_obj_add_event_cb(button, wifi_network_btn_event_cb, LV_EVENT_CLICKED, ctx);
-    ui_attach_click_feedback(button, LV_EVENT_CLICKED);
-    return button;
-}
-
-static void sync_wifi_list(clock_ui_context_t *ctx)
-{
-    const clock_wifi_scan_result_t *results = NULL;
-    uint32_t generation = 0;
-    size_t count;
-    size_t visible_count;
-
-    if (ctx->settings_ui.wifi_network_list == NULL) {
-        return;
-    }
-
-    count = settings_get_scan_results(ctx, &results, &generation);
-    if (generation == ctx->settings_ui.scan_generation &&
-        lv_obj_get_child_count(ctx->settings_ui.wifi_network_list) != 0) {
-        return;
-    }
-
-    ctx->settings_ui.scan_generation = generation;
-    lv_obj_clean(ctx->settings_ui.wifi_network_list);
-
-    if (count == 0) {
-        lv_obj_t *label = lv_label_create(ctx->settings_ui.wifi_network_list);
-
-        style_centered_label(label, NULL, lv_color_hex(0xA8A8A8));
-        lv_label_set_text(label, settings_text(ctx, L10N_NO_NETWORKS));
-        return;
-    }
-
-    visible_count = LV_MIN(count, WIFI_UI_MAX_VISIBLE_NETWORKS);
-    for (size_t i = 0; i < visible_count; ++i) {
-        char meta[64];
-        const char *ssid = results[i].ssid[0] ? results[i].ssid : "<hidden>";
-
-        ctx->settings_ui.network_ctx[i].ui = ctx;
-        ctx->settings_ui.network_ctx[i].network_index = i;
-        snprintf(meta, sizeof(meta), "%ddBm", results[i].rssi);
-        create_network_button(ctx->settings_ui.wifi_network_list, ssid, meta, &ctx->settings_ui.network_ctx[i]);
-    }
-
-    if (count > visible_count) {
-        lv_obj_t *label = lv_label_create(ctx->settings_ui.wifi_network_list);
-
-        style_centered_label(label, NULL, lv_color_hex(0x8F8F8F));
-        lv_label_set_text_fmt(label, settings_text(ctx, L10N_SHOWING_NETWORKS),
-                              (unsigned)visible_count,
-                              (unsigned)count);
-    }
-}
-
-void sync_night_controls(clock_ui_context_t *ctx)
-{
-    char face_label[64];
-    char brightness_label[32];
-    char schedule_label[32];
-    uint8_t brightness_ui;
-    bool night_enabled;
-    bool face_changed;
-    bool visuals_changed;
-
-    if (ctx->settings_ui.night_enabled_sw == NULL) {
-        return;
-    }
-
-    ctx->suppress_events = true;
-    settings_set_switch_checked_if_changed(ctx->settings_ui.night_enabled_sw, ctx->settings->night_mode.enabled);
-    settings_set_switch_checked_if_changed(ctx->settings_ui.night_sunrise_sw,
-                                           ctx->settings->night_mode.sunrise_brightness_enabled);
-    settings_set_roller_selected_if_changed(ctx->settings_ui.night_start_hour_dd, ctx->settings->night_mode.start_hour);
-    settings_set_roller_selected_if_changed(ctx->settings_ui.night_start_min_dd, ctx->settings->night_mode.start_minute);
-    settings_set_roller_selected_if_changed(ctx->settings_ui.night_end_hour_dd, ctx->settings->night_mode.end_hour);
-    settings_set_roller_selected_if_changed(ctx->settings_ui.night_end_min_dd, ctx->settings->night_mode.end_minute);
-    ctx->suppress_events = false;
-    settings_format_night_schedule_label(ctx, schedule_label, sizeof(schedule_label));
-    settings_set_label_text_if_changed(ctx->settings_ui.night_schedule_summary, schedule_label);
-
-    clock_face_id_t night_face = sanitize_enabled_face(ctx->settings->night_mode.face);
-
-    face_changed = !ctx->settings_ui.night_cache_valid ||
-                   ctx->settings_ui.cached_night_face != night_face;
-    settings_format_face_label(face_label, sizeof(face_label), night_face);
-    settings_set_label_text_if_changed(ctx->settings_ui.night_face_dd, face_label);
-    if (face_changed) {
-        if (ctx->settings_ui.night_face_picker_open) {
-            sync_night_face_picker_previews(ctx);
-            sync_night_face_picker_selection(ctx);
-        }
-    }
-
-    brightness_ui = brightness_hw_to_ui(ctx->settings->night_mode.brightness);
-    snprintf(brightness_label, sizeof(brightness_label), "%u%%", brightness_ui);
-    settings_set_label_text_if_changed(ctx->settings_ui.night_brightness_dd, brightness_label);
-    if (ctx->settings_ui.night_brightness_slider != NULL) {
-        ctx->suppress_events = true;
-        settings_set_slider_value_if_changed(ctx->settings_ui.night_brightness_slider, brightness_ui);
-        ctx->suppress_events = false;
-    }
-
-    night_enabled = ctx->settings->night_mode.enabled;
-    visuals_changed = !ctx->settings_ui.night_cache_valid || ctx->settings_ui.cached_night_enabled != night_enabled;
-    if (visuals_changed) {
-        settings_apply_night_card_visual(ctx->settings_ui.night_schedule_card, night_enabled);
-        settings_apply_night_card_visual(ctx->settings_ui.night_face_card, night_enabled);
-        settings_apply_night_card_visual(ctx->settings_ui.night_brightness_card, night_enabled);
-        settings_apply_night_card_visual(ctx->settings_ui.night_sunrise_card, night_enabled);
-        settings_apply_night_button_visual(ctx->settings_ui.night_schedule_button, night_enabled);
-        settings_apply_night_button_visual(ctx->settings_ui.night_face_button, night_enabled);
-        settings_apply_night_preview_visual(ctx, night_enabled);
-    }
-    if (face_changed || visuals_changed) {
-        sync_night_face_preview(ctx);
-    }
-    settings_set_clickable_enabled(ctx->settings_ui.night_schedule_button, night_enabled);
-    settings_set_clickable_enabled(ctx->settings_ui.night_face_button, night_enabled);
-    settings_set_enabled_state(ctx->settings_ui.night_brightness_slider, night_enabled);
-    settings_set_enabled_state(ctx->settings_ui.night_sunrise_sw, night_enabled);
-    if (ctx->settings_ui.night_status_label != NULL) {
-        settings_set_label_text_if_changed(ctx->settings_ui.night_status_label,
-                                           settings_text(ctx, L10N_NIGHT_DISABLED_HINT));
-        if (night_enabled) {
-            lv_obj_add_flag(ctx->settings_ui.night_status_label, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(ctx->settings_ui.night_status_label, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-    if (visuals_changed && ctx->settings_ui.night_schedule_summary != NULL) {
-        lv_obj_set_style_text_color(ctx->settings_ui.night_schedule_summary,
-                                    night_enabled ? lv_color_white() : lv_color_hex(0xC4C4C4),
-                                    0);
-    }
-    if (visuals_changed && ctx->settings_ui.night_brightness_dd != NULL) {
-        lv_obj_set_style_text_color(ctx->settings_ui.night_brightness_dd,
-                                    night_enabled ? lv_color_white() : lv_color_hex(0xC4C4C4),
-                                    0);
-    }
-
-    ctx->settings_ui.cached_night_enabled = ctx->settings->night_mode.enabled;
-    ctx->settings_ui.cached_night_sunrise_brightness_enabled =
-        ctx->settings->night_mode.sunrise_brightness_enabled;
-    ctx->settings_ui.cached_in_night_mode = ctx->runtime->in_night_mode;
-    ctx->settings_ui.cached_night_start_hour = ctx->settings->night_mode.start_hour;
-    ctx->settings_ui.cached_night_start_minute = ctx->settings->night_mode.start_minute;
-    ctx->settings_ui.cached_night_end_hour = ctx->settings->night_mode.end_hour;
-    ctx->settings_ui.cached_night_end_minute = ctx->settings->night_mode.end_minute;
-    ctx->settings_ui.cached_night_brightness = ctx->settings->night_mode.brightness;
-    ctx->settings_ui.cached_night_face = night_face;
-    ctx->settings_ui.night_cache_valid = true;
-}
-
-void sync_wifi_controls(clock_ui_context_t *ctx)
-{
-    char saved[160];
-    char mode_label[24];
-    time_t now;
-    struct tm local_tm;
-
-    if (ctx->settings_ui.wifi_timezone_dd == NULL) {
-        return;
-    }
-
-    ctx->suppress_events = true;
-    lv_dropdown_set_selected(ctx->settings_ui.wifi_timezone_dd,
-                             timezone_picker_index_from_id(ctx->settings->wifi.timezone_id));
-    ctx->suppress_events = false;
-    settings_format_time_mode_label(ctx, mode_label, sizeof(mode_label), ctx->settings->wifi.time_sync_mode);
-    settings_set_label_text_if_changed(ctx->settings_ui.time_mode_label, mode_label);
-    if (ctx->settings_ui.manual_time_card != NULL) {
-        if (ctx->settings->wifi.time_sync_mode == TIME_SYNC_MODE_MANUAL) {
-            lv_obj_clear_flag(ctx->settings_ui.manual_time_card, LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_add_flag(ctx->settings_ui.manual_time_card, LV_OBJ_FLAG_HIDDEN);
-        }
-    }
-
-    settings_set_label_text_if_changed(ctx->settings_ui.wifi_status_label,
-                                       ctx->runtime->wifi_status[0]
-                                           ? l10n_runtime_status(ctx->settings->language, ctx->runtime->wifi_status)
-                                           : settings_text(ctx, L10N_WIFI_IDLE));
-
-    if (ctx->settings->wifi.ssid[0] != '\0') {
-        snprintf(saved, sizeof(saved), "%s: %s", settings_text(ctx, L10N_SAVED), ctx->settings->wifi.ssid);
+    y = LV_CLAMP(0, y, total);
+    if (st_atelier()) {
+        a0 = -30;
+        a1 = 30;
+        radius = 344;
+        /* Clear the minute track under the register. */
+        lv_draw_arc_dsc_init(&arc);
+        arc.color = sk->bg;
+        arc.width = 22;
+        arc.center.x = KIT_CENTER;
+        arc.center.y = KIT_CENTER;
+        arc.radius = 350;
+        arc.start_angle = 360 - 36;
+        arc.end_angle = 36;
+        lv_draw_arc(layer, &arc);
     } else {
-        snprintf(saved, sizeof(saved), "%s", settings_text(ctx, L10N_SAVED_NONE));
+        a0 = -22;
+        a1 = 22;
+        radius = 348;
     }
-    settings_set_label_text_if_changed(ctx->settings_ui.wifi_saved_label, saved);
+    span = a1 - a0;
+    len = LV_MAX(8, span * KIT_SCREEN / (KIT_SCREEN + total));
+    pos = a0 + (span - len) * y / total;
 
-    sync_wifi_list(ctx);
+    lv_draw_arc_dsc_init(&arc);
+    arc.width = 4;
+    arc.rounded = 1;
+    arc.center.x = KIT_CENTER;
+    arc.center.y = KIT_CENTER;
+    arc.radius = (uint16_t)radius;
+    arc.color = sk->line;
+    arc.start_angle = (lv_value_precise_t)((a0 + 360) % 360);
+    arc.end_angle = (lv_value_precise_t)((a1 + 360) % 360);
+    lv_draw_arc(layer, &arc);
+    arc.color = st_atelier() ? sk->accent : sk->text_3;
+    arc.start_angle = (lv_value_precise_t)((pos + 360) % 360);
+    arc.end_angle = (lv_value_precise_t)((pos + len + 360) % 360);
+    lv_draw_arc(layer, &arc);
+}
 
-    now = time(NULL);
-    localtime_r(&now, &local_tm);
-    if (ctx->settings_ui.manual_year_dd != NULL) {
-        int year = local_tm.tm_year + 1900;
-        if (year < 2024) {
-            year = 2024;
-        } else if (year > 2035) {
-            year = 2035;
+void st_back_event_cb(lv_event_t *e)
+{
+    st_back((clock_ui_context_t *)lv_event_get_user_data(e));
+}
+
+kit_page_t *st_page_begin(clock_ui_context_t *ctx, ui_st_page_t id, st_text_t eyebrow, st_text_t title, kit_nav_t nav)
+{
+    kit_page_t *p = st_page(ctx, id);
+
+    kit_page_create(p, ui_chrome_root(ctx), st_text_set(eyebrow) ? st_text(ctx, eyebrow) : NULL, st_text(ctx, title),
+                    nav, st_back_event_cb, ctx);
+    st_bind(ctx, p->title, title);
+    st_bind(ctx, p->eyebrow, eyebrow);
+    /* One line, ending in dots when a translation is too long for the header. */
+    lv_obj_set_height(p->title, lv_font_get_line_height(lv_obj_get_style_text_font(p->title, 0)));
+    ST(ctx)->built[id] = true;
+
+    /* A swipe to the right goes back (it stops at the page root). */
+    lv_obj_remove_flag(p->root, LV_OBJ_FLAG_GESTURE_BUBBLE);
+    lv_obj_add_event_cb(p->root, gesture_cb, LV_EVENT_GESTURE, ctx);
+    lv_obj_add_event_cb(p->scroll, scroll_cb, LV_EVENT_SCROLL_BEGIN, ctx);
+    lv_obj_add_event_cb(p->scroll, scroll_cb, LV_EVENT_SCROLL_END, ctx);
+
+    if (!st_orbit() && id != UI_ST_HOME) {
+        lv_obj_t *legend = kit_label(p->root, KIT_TEXT_LABEL, st_text(ctx, title));
+
+        st_bind(ctx, legend, title);
+        lv_obj_set_width(legend, 300);
+        lv_label_set_long_mode(legend, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_text_align(legend, LV_TEXT_ALIGN_CENTER, 0);
+        lv_obj_align(legend, LV_ALIGN_TOP_MID, 0, st_atelier() ? 40 : 52);
+        if (st_atelier()) {
+            lv_obj_set_style_text_color(legend, ui_skin()->value, 0);
         }
-        ctx->suppress_events = true;
-        lv_dropdown_set_selected(ctx->settings_ui.manual_year_dd, (uint16_t)(year - 2024));
-        lv_dropdown_set_selected(ctx->settings_ui.manual_month_dd, (uint16_t)local_tm.tm_mon);
-        lv_dropdown_set_selected(ctx->settings_ui.manual_day_dd, (uint16_t)local_tm.tm_mday - 1);
-        lv_dropdown_set_selected(ctx->settings_ui.manual_hour_dd, (uint16_t)local_tm.tm_hour);
-        lv_dropdown_set_selected(ctx->settings_ui.manual_min_dd, (uint16_t)local_tm.tm_min);
-        ctx->suppress_events = false;
+        lv_obj_add_flag(legend, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_event_cb(p->scroll, legend_scroll_cb, LV_EVENT_SCROLL, legend);
+        ST(ctx)->legend[id] = legend;
+        if (!(st_atelier() && id == UI_ST_NIGHT)) {
+            lv_obj_add_event_cb(p->root, register_draw_cb, LV_EVENT_DRAW_POST, p);
+        }
     }
-
-    ctx->settings_ui.cached_timezone_id = ctx->settings->wifi.timezone_id;
-    ctx->settings_ui.cached_time_sync_mode = ctx->settings->wifi.time_sync_mode;
-    snprintf(ctx->settings_ui.cached_wifi_status, sizeof(ctx->settings_ui.cached_wifi_status), "%s",
-             ctx->runtime->wifi_status);
-    snprintf(ctx->settings_ui.cached_wifi_saved_ssid, sizeof(ctx->settings_ui.cached_wifi_saved_ssid), "%s",
-             ctx->settings->wifi.ssid);
-    ctx->settings_ui.cached_wifi_scan_generation = ctx->runtime->wifi_scan_generation;
-    ctx->settings_ui.wifi_cache_valid = true;
+    return p;
 }
 
-void refresh_settings_controls(clock_ui_context_t *ctx)
+void st_page_set_eyebrow_text(clock_ui_context_t *ctx, ui_st_page_t id, const char *text)
 {
-    if (ctx->cached_language != ctx->settings->language) {
-        settings_apply_l10n(ctx);
-    }
-    sync_other_controls(ctx);
-    if (night_controls_need_sync(ctx)) {
-        sync_night_controls(ctx);
+    kit_page_t *p = st_page(ctx, id);
+
+    if (ST(ctx)->built[id] && p->eyebrow != NULL) {
+        kit_label_set_text_if_changed(p->eyebrow, text);
     }
 }
 
-bool wifi_controls_need_sync(const clock_ui_context_t *ctx)
+/* "Settings · 02" eyebrows of the Instrument pages. */
+static void sync_eyebrows(clock_ui_context_t *ctx)
 {
-    if (!ctx->settings_ui.wifi_cache_valid) {
-        return true;
-    }
+    static const ui_st_page_t pages[3] = {UI_ST_WIFI, UI_ST_NIGHT, UI_ST_OTHER};
+    char text[48];
 
-    if (ctx->settings_ui.cached_timezone_id != ctx->settings->wifi.timezone_id) {
-        return true;
+    if (!st_instrument()) {
+        return;
     }
-
-    if (ctx->settings_ui.cached_time_sync_mode != ctx->settings->wifi.time_sync_mode) {
-        return true;
+    for (int i = 0; i < 3; i++) {
+        snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_settings_n), ui_l10n_text(ctx, L10N_SETTINGS), i + 1);
+        st_page_set_eyebrow_text(ctx, pages[i], text);
     }
-
-    if (strcmp(ctx->settings_ui.cached_wifi_status, ctx->runtime->wifi_status) != 0) {
-        return true;
-    }
-
-    if (strcmp(ctx->settings_ui.cached_wifi_saved_ssid, ctx->settings->wifi.ssid) != 0) {
-        return true;
-    }
-
-    if (ctx->settings_ui.cached_wifi_scan_generation != ctx->runtime->wifi_scan_generation) {
-        return true;
-    }
-
-    return false;
 }
 
-bool night_controls_need_sync(const clock_ui_context_t *ctx)
+/* --- Face thumbnails ------------------------------------------------------------------- */
+
+void st_render_face_thumb(clock_ui_context_t *ctx, lv_obj_t *image, lv_draw_buf_t **buf, int32_t size,
+                          clock_face_id_t face)
 {
-    if (!ctx->settings_ui.night_cache_valid) {
-        return true;
-    }
-
-    if (ctx->settings_ui.cached_night_enabled != ctx->settings->night_mode.enabled ||
-        ctx->settings_ui.cached_night_sunrise_brightness_enabled !=
-            ctx->settings->night_mode.sunrise_brightness_enabled ||
-        ctx->settings_ui.cached_in_night_mode != ctx->runtime->in_night_mode ||
-        ctx->settings_ui.cached_night_start_hour != ctx->settings->night_mode.start_hour ||
-        ctx->settings_ui.cached_night_start_minute != ctx->settings->night_mode.start_minute ||
-        ctx->settings_ui.cached_night_end_hour != ctx->settings->night_mode.end_hour ||
-        ctx->settings_ui.cached_night_end_minute != ctx->settings->night_mode.end_minute ||
-        ctx->settings_ui.cached_night_brightness != ctx->settings->night_mode.brightness ||
-        ctx->settings_ui.cached_night_face != sanitize_enabled_face(ctx->settings->night_mode.face)) {
-        return true;
-    }
-
-    return false;
-}
-
-static void settings_render_face_preview(clock_ui_context_t *ctx,
-                                         lv_obj_t *image,
-                                         lv_draw_buf_t **draw_buf,
-                                         uint16_t size,
-                                         clock_face_id_t face)
-{
+    clock_ui_settings_state_t *st = ST(ctx);
     const void *src;
 
-    if (image == NULL || draw_buf == NULL || ctx->settings_ui.night_face_render_canvas == NULL) {
+    if (image == NULL || buf == NULL) {
         return;
     }
-
+    if (st->thumb_shell == NULL) {
+        /* A round clipping shell far off screen: it is only drawn into snapshots, so its
+         * clip_corner layer is paid once per thumbnail, not per frame. */
+        st->thumb_shell = plain(ui_chrome_root(ctx));
+        lv_obj_set_pos(st->thumb_shell, -2000, -2000);
+        lv_obj_set_style_radius(st->thumb_shell, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_clip_corner(st->thumb_shell, true, 0);
+        lv_obj_set_style_bg_opa(st->thumb_shell, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(st->thumb_shell, lv_color_black(), 0);
+        st->thumb_image = lv_image_create(st->thumb_shell);
+        lv_obj_remove_flag(st->thumb_image, LV_OBJ_FLAG_CLICKABLE);
+    }
     src = ui_face_preview_source(ctx, face);
     if (src == NULL) {
         return;
     }
+    lv_obj_set_size(st->thumb_shell, size, size);
+    lv_obj_set_size(st->thumb_image, size, size);
+    lv_image_set_src(st->thumb_image, src);
+    lv_image_set_inner_align(st->thumb_image, LV_IMAGE_ALIGN_COVER);
+    lv_obj_update_layout(st->thumb_shell);
 
-    lv_obj_set_size(ctx->settings_ui.night_face_render_canvas, size, size);
-    lv_image_set_src(ctx->settings_ui.night_face_render_canvas, src);
-    lv_image_set_inner_align(ctx->settings_ui.night_face_render_canvas, LV_IMAGE_ALIGN_COVER);
-    lv_obj_update_layout(ctx->settings_ui.night_face_render_canvas);
-
-    if (*draw_buf == NULL || lv_snapshot_reshape_draw_buf(ctx->settings_ui.night_face_render_canvas, *draw_buf) != LV_RESULT_OK) {
-        if (*draw_buf != NULL) {
-            lv_draw_buf_destroy(*draw_buf);
+    if (*buf == NULL || lv_snapshot_reshape_draw_buf(st->thumb_shell, *buf) != LV_RESULT_OK) {
+        if (*buf != NULL) {
+            lv_draw_buf_destroy(*buf);
         }
-        *draw_buf = lv_snapshot_create_draw_buf(ctx->settings_ui.night_face_render_canvas, LV_COLOR_FORMAT_RGB565);
-        if (*draw_buf == NULL) {
+        *buf = lv_snapshot_create_draw_buf(st->thumb_shell, LV_COLOR_FORMAT_ARGB8888);
+        if (*buf == NULL) {
             return;
         }
     }
-
-    if (lv_snapshot_take_to_draw_buf(ctx->settings_ui.night_face_render_canvas,
-                                     LV_COLOR_FORMAT_RGB565,
-                                     *draw_buf) != LV_RESULT_OK) {
+    if (lv_snapshot_take_to_draw_buf(st->thumb_shell, LV_COLOR_FORMAT_ARGB8888, *buf) != LV_RESULT_OK) {
         return;
     }
-
-    if (lv_image_get_src(image) != *draw_buf) {
-        lv_image_set_src(image, *draw_buf);
+    if (lv_image_get_src(image) != *buf) {
+        lv_image_set_src(image, *buf);
     } else {
         lv_obj_invalidate(image);
     }
 }
 
-static void sync_night_face_preview(clock_ui_context_t *ctx)
+/* --- Home ------------------------------------------------------------------------------ */
+
+static void home_wifi_cb(lv_event_t *e)
 {
-    if (ctx->settings_ui.night_face_preview == NULL) {
-        return;
-    }
-
-    settings_render_face_preview(ctx,
-                                 ctx->settings_ui.night_face_preview,
-                                 &ctx->settings_ui.night_face_preview_buf,
-                                 NIGHT_FACE_PREVIEW_SIZE,
-                                 ctx->settings->night_mode.face);
-    ctx->settings_ui.night_face_preview_minute = time(NULL) / 60;
-
-    if (ctx->settings_ui.night_face_preview_shell != NULL &&
-        ctx->settings_ui.night_face_preview_scroll != NULL) {
-        if (ctx->settings_ui.night_face_preview_scroll_buf == NULL ||
-            lv_snapshot_reshape_draw_buf(ctx->settings_ui.night_face_preview_shell,
-                                         ctx->settings_ui.night_face_preview_scroll_buf) != LV_RESULT_OK) {
-            if (ctx->settings_ui.night_face_preview_scroll_buf != NULL) {
-                lv_draw_buf_destroy(ctx->settings_ui.night_face_preview_scroll_buf);
-            }
-            ctx->settings_ui.night_face_preview_scroll_buf =
-                lv_snapshot_create_draw_buf(ctx->settings_ui.night_face_preview_shell, LV_COLOR_FORMAT_ARGB8888);
-        }
-
-        if (ctx->settings_ui.night_face_preview_scroll_buf != NULL &&
-            lv_snapshot_take_to_draw_buf(ctx->settings_ui.night_face_preview_shell,
-                                         LV_COLOR_FORMAT_ARGB8888,
-                                         ctx->settings_ui.night_face_preview_scroll_buf) == LV_RESULT_OK) {
-            if (lv_image_get_src(ctx->settings_ui.night_face_preview_scroll) != ctx->settings_ui.night_face_preview_scroll_buf) {
-                lv_image_set_src(ctx->settings_ui.night_face_preview_scroll,
-                                 ctx->settings_ui.night_face_preview_scroll_buf);
-            } else {
-                lv_obj_invalidate(ctx->settings_ui.night_face_preview_scroll);
-            }
-        }
-    }
+    st_show_page(lv_event_get_user_data(e), UI_ST_WIFI);
 }
 
-static void sync_night_face_picker_previews(clock_ui_context_t *ctx)
+static void home_night_cb(lv_event_t *e)
 {
-    int visible_count = clock_face_visible_count();
-
-    for (int index = 0; index < visible_count; ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
-        lv_obj_t *preview = ctx->settings_ui.night_face_picker_preview[face];
-
-        if (preview != NULL) {
-            settings_render_face_preview(ctx,
-                                         preview,
-                                         &ctx->settings_ui.night_face_picker_preview_buf[face],
-                                         96,
-                                         face);
-        }
-    }
+    st_show_page(lv_event_get_user_data(e), UI_ST_NIGHT);
 }
 
-static void sync_night_face_picker_selection(clock_ui_context_t *ctx)
+static void home_other_cb(lv_event_t *e)
 {
-    int visible_count = clock_face_visible_count();
+    st_show_page(lv_event_get_user_data(e), UI_ST_OTHER);
+}
 
-    for (int index = 0; index < visible_count; ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
-        lv_obj_t *card = ctx->settings_ui.night_face_picker_card[face];
-        if (card == NULL) {
-            continue;
+static void home_alarms_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+
+    ui_settings_close_all(ctx);
+    ui_alarms_open(ctx);
+}
+
+/* Atelier: the ruby update chip that sits after the Other title. */
+static lv_obj_t *ruby_chip(lv_obj_t *parent, lv_obj_t **label)
+{
+    const ui_skin_t *sk = ui_skin();
+    lv_obj_t *chip = plain(parent);
+
+    lv_obj_set_size(chip, LV_SIZE_CONTENT, 30);
+    lv_obj_set_style_radius(chip, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_border_width(chip, 1, 0);
+    lv_obj_set_style_border_color(chip, sk->danger, 0);
+    lv_obj_set_style_pad_hor(chip, 12, 0);
+    lv_obj_set_flex_flow(chip, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(chip, 8, 0);
+    lv_obj_add_flag(chip, LV_OBJ_FLAG_EVENT_BUBBLE);
+    st_dot(chip, 8, sk->danger);
+    *label = kit_label(chip, KIT_TEXT_LABEL, "");
+    lv_obj_set_style_text_color(*label, sk->value, 0);
+    lv_obj_set_style_text_letter_space(*label, 2, 0);
+    return chip;
+}
+
+static void build_home(clock_ui_context_t *ctx)
+{
+    static const struct {
+        kit_icon_t icon;
+        l10n_text_id_t title;
+        l10n_text_id_t subtitle;
+        lv_event_cb_t cb;
+    } entries[3] = {
+        {KIT_ICON_WIFI, L10N_WIFI, L10N_WIFI_SUBTITLE, home_wifi_cb},
+        {KIT_ICON_MOON, L10N_NIGHT_MODE, L10N_NIGHT_SUBTITLE, home_night_cb},
+        {KIT_ICON_SETTINGS, L10N_OTHER, L10N_OTHER_SUBTITLE, home_other_cb},
+    };
+    const ui_skin_t *sk = ui_skin();
+    const lv_color_t tints[3] = {sk->tint_wifi, sk->tint_night, sk->tint_other};
+    clock_ui_settings_state_t *st = ST(ctx);
+    kit_page_t *p;
+    lv_obj_t *group;
+    lv_obj_t *box;
+    kit_row_t row;
+
+    p = st_page_begin(ctx, UI_ST_HOME, st_atelier() ? ST_NONE : ST_NONE, ST_ID(L10N_SETTINGS),
+                      st_atelier() ? KIT_NAV_BACK : KIT_NAV_CLOSE);
+    if (st_instrument()) {
+        kit_page_set_eyebrow(p, " ");
+    } else if (st_atelier()) {
+        kit_page_set_eyebrow(p, "Touch Clock");
+        kit_page_set_action(p, KIT_ICON_BELL, home_alarms_cb, ctx);
+    }
+
+    if (st_instrument()) {
+        /* Status readout in a recessed window. */
+        box = plain(p->content);
+        lv_obj_set_size(box, 432, 44);
+        lv_obj_set_style_align(box, LV_ALIGN_TOP_MID, 0);
+        lv_obj_set_style_radius(box, 22, 0);
+        lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
+        lv_obj_set_style_bg_color(box, sk->well, 0);
+        lv_obj_set_style_border_width(box, 1, 0);
+        lv_obj_set_style_border_color(box, sk->line, 0);
+        lv_obj_set_style_pad_hor(box, 20, 0);
+        lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_column(box, 12, 0);
+        lv_obj_set_style_margin_bottom(box, 24, 0);
+        lv_obj_set_style_margin_left(box, (sk->content_w - 432) / 2, 0);
+        st->home_led = st_dot(box, 8, sk->accent);
+        st->home_status = kit_label(box, KIT_TEXT_CAPTION, "WI-FI");
+        lv_obj_set_style_text_color(st->home_status, sk->text_3, 0);
+        st->home_status_2 = kit_label(box, KIT_TEXT_CAPTION, "");
+        lv_obj_set_style_text_color(st->home_status_2, sk->text_2, 0);
+        lv_label_set_long_mode(st->home_status_2, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_max_width(st->home_status_2, 300, 0);
+    }
+
+    if (st_orbit()) {
+        /* Three hero platters fitted to the circle: the middle one is the widest. */
+        group = kit_group(p->scroll);
+        lv_obj_set_y(group, 180);
+        lv_obj_set_flex_align(group, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        lv_obj_set_style_pad_row(group, 12, 0);
+    } else {
+        if (st_atelier()) {
+            kit_spacer(p->content, 20);
         }
+        group = kit_group(p->content);
+    }
+    for (int i = 0; i < 3; i++) {
+        kit_row_opts_t o = {0};
 
-        if (face == ctx->settings->night_mode.face) {
-            lv_obj_set_style_border_width(card, 3, 0);
-            lv_obj_set_style_border_color(card, lv_color_hex(UI_ACCENT_COL), 0);
-            lv_obj_set_style_bg_color(card, lv_color_hex(0x1F2428), 0);
+        o.icon = entries[i].icon;
+        o.tint = tints[i];
+        o.trail = KIT_TRAIL_CHEVRON;
+        o.on_click = entries[i].cb;
+        o.user_data = ctx;
+        st_row(ctx, &row, group, &o, ST_ID(entries[i].title), ST_ID(entries[i].subtitle));
+        if (st_orbit()) {
+            lv_obj_set_width(row.row, i == 1 ? 600 : 550);
+            lv_obj_set_style_radius(row.row, sk->radius_m, 0);
+            lv_obj_set_style_pad_ver(row.row, 14, 0);
+            lv_obj_set_style_pad_left(row.row, 22, 0);
+            lv_obj_set_style_pad_column(row.row, 20, 0);
+        }
+        if (st_atelier()) {
+            lv_obj_set_style_pad_ver(row.row, 12, 0);
+        }
+        if (i == 2 && st_instrument()) {
+            st->home_update = st_dot(row.row, 8, sk->accent);
+            lv_obj_move_to_index(st->home_update, (int32_t)lv_obj_get_child_count(row.row) - 2);
+            lv_obj_set_style_margin_right(st->home_update, 4, 0);
+        } else if (i == 2 && st_atelier()) {
+            lv_obj_t *col = lv_obj_get_parent(row.title);
+            lv_obj_t *line = st_hbox(col, 12);
+
+            lv_obj_move_to_index(line, 0);
+            lv_obj_set_width(line, lv_pct(100));
+            lv_obj_set_parent(row.title, line);
+            lv_obj_set_width(row.title, LV_SIZE_CONTENT);
+            st->home_update = ruby_chip(line, &st->home_update_label);
+        }
+    }
+
+    if (st_instrument()) {
+        box = st_hbox(p->content, 0);
+        lv_obj_set_width(box, lv_pct(100));
+        lv_obj_set_style_pad_top(box, 26, 0);
+        lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+        st->home_footer = kit_label(box, KIT_TEXT_LABEL, "");
+        st->home_footer_2 = kit_label(box, KIT_TEXT_LABEL, "");
+        lv_obj_set_style_text_color(st->home_footer_2, sk->accent, 0);
+    } else {
+        lv_obj_t *parent = p->content;
+
+        if (st_orbit()) {
+            parent = plain(p->scroll);
+            lv_obj_set_size(parent, KIT_SCREEN, LV_SIZE_CONTENT);
+            lv_obj_set_y(parent, 578);
+            lv_obj_set_flex_flow(parent, LV_FLEX_FLOW_COLUMN);
+            lv_obj_set_flex_align(parent, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         } else {
-            lv_obj_set_style_border_width(card, 1, 0);
-            lv_obj_set_style_border_color(card, lv_color_hex(0x2C2C2C), 0);
-            lv_obj_set_style_bg_color(card, lv_color_hex(0x171717), 0);
+            kit_spacer(parent, 28);
+            kit_divider(parent);
+        }
+        box = st_hbox(parent, 10);
+        if (st_atelier()) {
+            lv_obj_set_width(box, lv_pct(100));
+            lv_obj_set_style_pad_top(box, 18, 0);
+            lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+            st->home_led = st_signal(box, 22);
+        } else {
+            st->home_led = kit_icon_small(box, KIT_ICON_WIFI, sk->accent);
+        }
+        st->home_status = kit_label(box, st_orbit() ? KIT_TEXT_VALUE : KIT_TEXT_BODY, "");
+        if (st_orbit()) {
+            lv_obj_set_style_text_color(st->home_status, sk->text, 0);
+        }
+        st->home_status_2 = kit_label(box, KIT_TEXT_BODY, "");
+        lv_label_set_long_mode(st->home_status, LV_LABEL_LONG_MODE_DOTS);
+        lv_obj_set_style_max_width(st->home_status, 260, 0);
+    }
+    /* Home does not scroll. */
+    lv_obj_remove_flag(p->scroll, LV_OBJ_FLAG_SCROLLABLE);
+}
+
+static void sync_home(clock_ui_context_t *ctx)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_settings_state_t *st = ST(ctx);
+    const app_runtime_state_t *rt = ctx->runtime;
+    bool connected = rt->wifi_connected && ctx->settings->wifi.ssid[0] != '\0';
+    bool update = rt->ota_update_available && rt->ota_available_version[0] != '\0';
+    char net[64];
+    char sync[64];
+    char text[96];
+
+    if (!st->built[UI_ST_HOME]) {
+        return;
+    }
+    if (connected) {
+        snprintf(net, sizeof(net), "%s", ctx->settings->wifi.ssid);
+        if (rt->time_synced || ctx->settings->last_synced_epoch > 0) {
+            st_format_synced(ctx, sync, sizeof(sync), &s_synced_at);
+        } else {
+            snprintf(sync, sizeof(sync), "%s", ui_l10n_str(ctx, &s_not_synced));
+        }
+    } else if (ctx->settings->wifi.ssid[0] != '\0') {
+        snprintf(net, sizeof(net), "%s", ctx->settings->wifi.ssid);
+        snprintf(sync, sizeof(sync), "%s",
+                 rt->wifi_status[0] != '\0' ? l10n_runtime_status(ctx->settings->language, rt->wifi_status)
+                                            : ui_l10n_str(ctx, &s_not_connected));
+    } else {
+        net[0] = '\0';
+        snprintf(sync, sizeof(sync), "%s", ui_l10n_str(ctx, &s_not_connected));
+    }
+
+    if (st_instrument()) {
+        struct tm tm;
+        time_t now = time(NULL);
+        char month[8] = "";
+        const char *months = ui_l10n_str(ctx, &s_months);
+        int index = 0;
+
+        snprintf(text, sizeof(text), "%s%s%s", net, net[0] != '\0' ? " · " : "", sync);
+        kit_label_set_text_if_changed(st->home_status_2, text);
+        st_bg_color(st->home_led, connected ? sk->accent : sk->line_strong);
+        localtime_r(&now, &tm);
+        for (const char *m = months; *m != '\0' && index <= tm.tm_mon;) {
+            const char *end = strchr(m, ' ');
+            size_t len = end != NULL ? (size_t)(end - m) : strlen(m);
+
+            if (index == tm.tm_mon) {
+                snprintf(month, sizeof(month), "%.*s", (int)len, m);
+                break;
+            }
+            index++;
+            m += len + (end != NULL ? 1 : 0);
+        }
+        snprintf(text, sizeof(text), "%02d:%02d · %s %d %s", tm.tm_hour, tm.tm_min,
+                 l10n_day_short((clock_language_t)ctx->settings->language, tm.tm_wday), tm.tm_mday, month);
+        kit_page_set_eyebrow(&st->pages[UI_ST_HOME], text);
+        snprintf(text, sizeof(text), "v%s%s", TOUCH_CLOCK_FIRMWARE_VERSION, update ? " · " : "");
+        kit_label_set_text_if_changed(st->home_footer, text);
+        if (update) {
+            snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_update_ready), rt->ota_available_version);
+        } else {
+            text[0] = '\0';
+        }
+        kit_label_set_text_if_changed(st->home_footer_2, text);
+        st_show(st->home_update, update);
+        return;
+    }
+
+    if (st_atelier()) {
+        snprintf(text, sizeof(text), "%s%s%s", ui_l10n_text(ctx, L10N_WIFI), net[0] != '\0' ? ": " : "", net);
+        kit_label_set_text_if_changed(st->home_status, text);
+        snprintf(text, sizeof(text), "· %s", sync);
+        kit_label_set_text_if_changed(st->home_status_2, text);
+        st_signal_set(st->home_led, connected ? st_signal_level(rt->wifi_rssi) : 0, false);
+        st_show(st->home_update, update);
+        if (update) {
+            kit_label_set_text_if_changed(st->home_update_label, rt->ota_available_version);
+        }
+        return;
+    }
+
+    kit_label_set_text_if_changed(st->home_status, net);
+    snprintf(text, sizeof(text), "%s%s", net[0] != '\0' ? "· " : "", sync);
+    kit_label_set_text_if_changed(st->home_status_2, text);
+    st_recolor(st->home_led, connected ? sk->accent : sk->text_3);
+}
+
+/* --- Navigation ------------------------------------------------------------------------ */
+
+static void build_page(clock_ui_context_t *ctx, ui_st_page_t id)
+{
+    switch (id) {
+    case UI_ST_HOME:
+        build_home(ctx);
+        break;
+    case UI_ST_WIFI:
+        st_wifi_build(ctx);
+        break;
+    case UI_ST_NIGHT:
+        st_night_build(ctx);
+        break;
+    case UI_ST_OTHER:
+        st_other_build(ctx);
+        break;
+    case UI_ST_TIMEZONE:
+        st_timezone_build(ctx);
+        break;
+    case UI_ST_MANUAL_TIME:
+        st_manual_build(ctx);
+        break;
+    case UI_ST_SCHEDULE:
+        st_schedule_build(ctx);
+        break;
+    case UI_ST_FACE:
+        st_face_build(ctx);
+        break;
+    case UI_ST_NIGHT_BRIGHT:
+        st_night_bright_build(ctx);
+        break;
+    case UI_ST_LANGUAGE:
+        st_language_build(ctx);
+        break;
+    case UI_ST_STYLE:
+        st_style_build(ctx);
+        break;
+    default:
+        break;
+    }
+    if (id == UI_ST_WIFI || id == UI_ST_NIGHT || id == UI_ST_OTHER) {
+        sync_eyebrows(ctx);
+    }
+}
+
+static void sync_page(clock_ui_context_t *ctx, ui_st_page_t id, bool force)
+{
+    switch (id) {
+    case UI_ST_HOME:
+        sync_home(ctx);
+        break;
+    case UI_ST_WIFI:
+        st_wifi_sync(ctx, force);
+        break;
+    case UI_ST_NIGHT:
+        st_night_sync(ctx, force);
+        break;
+    case UI_ST_OTHER:
+        st_other_sync(ctx, force);
+        break;
+    case UI_ST_TIMEZONE:
+        st_timezone_sync(ctx);
+        break;
+    case UI_ST_MANUAL_TIME:
+        st_manual_sync(ctx, force);
+        break;
+    case UI_ST_SCHEDULE:
+        st_schedule_sync(ctx, force);
+        break;
+    case UI_ST_FACE:
+        st_face_sync(ctx, force);
+        break;
+    case UI_ST_NIGHT_BRIGHT:
+        st_night_bright_sync(ctx);
+        break;
+    case UI_ST_LANGUAGE:
+        st_language_sync(ctx);
+        break;
+    case UI_ST_STYLE:
+        st_style_sync(ctx);
+        break;
+    default:
+        break;
+    }
+}
+
+static void present(clock_ui_context_t *ctx, ui_st_page_t id, bool reset_scroll)
+{
+    clock_ui_settings_state_t *st = ST(ctx);
+
+    if (!st->built[id]) {
+        build_page(ctx, id);
+    }
+    if (st->join_open) {
+        st_join_close(ctx);
+    }
+    st->page = (uint8_t)id;
+    st->scrolling = false;
+    set_scrolling(ctx, NULL, false);
+    sync_page(ctx, id, true);
+    for (int i = 0; i < UI_ST_PAGE_COUNT; i++) {
+        if (st->built[i] && i != (int)id) {
+            st_show(st->pages[i].root, false);
         }
     }
+    if (reset_scroll) {
+        lv_obj_scroll_to_y(st->pages[id].scroll, 0, LV_ANIM_OFF);
+        st_show(st->legend[id], false);
+    }
+    st_show(st->pages[id].root, true);
+    lv_obj_move_foreground(st->pages[id].root);
 }
 
-static void wifi_network_btn_event_cb(lv_event_t *event)
+void st_show_page(clock_ui_context_t *ctx, ui_st_page_t id)
 {
-    network_ctx_t *network_ctx = (network_ctx_t *)lv_event_get_user_data(event);
-    const clock_wifi_scan_result_t *results = NULL;
-    clock_ui_context_t *ctx;
-    size_t count;
+    present(ctx, id, true);
+}
 
-    if (network_ctx == NULL || network_ctx->ui == NULL) {
+static void open_surface(clock_ui_context_t *ctx)
+{
+    if (ST(ctx)->open) {
         return;
     }
-
-    ctx = network_ctx->ui;
-    count = settings_get_scan_results(ctx, &results, NULL);
-    if (network_ctx->network_index >= count) {
-        return;
-    }
-
-    snprintf(ctx->settings_ui.pending_ssid,
-             sizeof(ctx->settings_ui.pending_ssid),
-             "%s",
-             results[network_ctx->network_index].ssid);
-    lv_label_set_text_fmt(ctx->settings_ui.wifi_dialog_title,
-                          "%s %s",
-                          settings_text(ctx, L10N_CONNECT),
-                          ctx->settings_ui.pending_ssid);
-    lv_textarea_set_text(ctx->settings_ui.wifi_password_ta, "");
-    lv_keyboard_set_textarea(ctx->settings_ui.wifi_keyboard, ctx->settings_ui.wifi_password_ta);
-    lv_obj_clear_flag(ctx->settings_ui.wifi_dialog_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(ctx->settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->settings_ui.wifi_dialog_overlay);
-}
-
-static void wifi_scan_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->callbacks.on_wifi_scan_requested != NULL) {
-        ctx->callbacks.on_wifi_scan_requested(ctx->user_ctx);
-    }
-}
-
-static void wifi_forget_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->callbacks.on_wifi_forget_requested != NULL) {
-        ctx->callbacks.on_wifi_forget_requested(ctx->user_ctx);
-    }
-}
-
-static void wifi_sync_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->callbacks.on_wifi_sync_requested != NULL) {
-        ctx->callbacks.on_wifi_sync_requested(ctx->user_ctx);
-    }
-}
-
-static void wifi_dialog_close_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (lv_event_get_current_target(event) == ctx->settings_ui.wifi_dialog_overlay &&
-        lv_event_get_target(event) != ctx->settings_ui.wifi_dialog_overlay) {
-        return;
-    }
-
-    close_wifi_dialog(ctx);
-}
-
-static void wifi_dialog_connect_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    const char *password;
-
-    if (ctx->settings_ui.pending_ssid[0] == '\0') {
-        return;
-    }
-
-    password = lv_textarea_get_text(ctx->settings_ui.wifi_password_ta);
-    request_save_wifi_credentials(ctx, ctx->settings_ui.pending_ssid, password ? password : "");
-
-    wifi_dialog_close_event_cb(event);
-}
-
-static void wifi_ta_focus_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (lv_event_get_code(event) == LV_EVENT_FOCUSED) {
-        lv_keyboard_set_textarea(ctx->settings_ui.wifi_keyboard, ctx->settings_ui.wifi_password_ta);
-        lv_obj_clear_flag(ctx->settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void wifi_keyboard_event_cb(lv_event_t *event)
-{
-    lv_event_code_t code = lv_event_get_code(event);
-
-    if (code == LV_EVENT_READY || code == LV_EVENT_CANCEL) {
-        wifi_dialog_close_event_cb(event);
-    }
-}
-
-static void close_wifi_dialog(clock_ui_context_t *ctx)
-{
-    ctx->settings_ui.pending_ssid[0] = '\0';
-    if (ctx->settings_ui.wifi_keyboard != NULL) {
-        lv_keyboard_set_textarea(ctx->settings_ui.wifi_keyboard, NULL);
-        lv_obj_add_flag(ctx->settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.wifi_dialog_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.wifi_dialog_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static lv_obj_t *create_settings_menu_entry(lv_obj_t *parent,
-                                            const char *symbol,
-                                            l10n_text_id_t title_text,
-                                            l10n_text_id_t subtitle_text,
-                                            lv_event_cb_t cb,
-                                            clock_ui_context_t *ctx)
-{
-    lv_obj_t *entry = lv_obj_create(parent);
-    lv_obj_t *row;
-    lv_obj_t *left_cluster;
-    lv_obj_t *icon;
-    lv_obj_t *text_col;
-    lv_obj_t *label;
-
-    lv_obj_set_width(entry, 540);
-    lv_obj_set_height(entry, LV_SIZE_CONTENT);
-    lv_obj_add_flag(entry, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_style_radius(entry, 30, 0);
-    lv_obj_set_style_bg_color(entry, lv_color_hex(0x171717), 0);
-    lv_obj_set_style_bg_color(entry, lv_color_hex(0x232323), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(entry, 0, 0);
-    lv_obj_set_style_pad_all(entry, 22, 0);
-    lv_obj_set_style_pad_row(entry, 8, 0);
-    lv_obj_set_style_shadow_width(entry, 0, 0);
-    lv_obj_set_layout(entry, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(entry, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(entry, LV_OBJ_FLAG_SCROLLABLE);
-    if (cb != NULL) {
-        lv_obj_add_event_cb(entry, cb, LV_EVENT_CLICKED, ctx);
-    }
-    ui_attach_click_feedback(entry, LV_EVENT_CLICKED);
-
-    row = create_row(entry);
-    lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_flex_align(row, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    left_cluster = create_row(row);
-    lv_obj_add_flag(left_cluster, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_width(left_cluster, LV_SIZE_CONTENT);
-    lv_obj_set_style_pad_column(left_cluster, 14, 0);
-
-    icon = lv_obj_create(left_cluster);
-    lv_obj_add_flag(icon, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(icon, 58, 58);
-    lv_obj_set_style_radius(icon, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(icon, lv_color_hex(UI_ACCENT_COL), 0);
-    lv_obj_set_style_border_width(icon, 0, 0);
-    lv_obj_set_style_pad_all(icon, 0, 0);
-    lv_obj_clear_flag(icon, LV_OBJ_FLAG_SCROLLABLE);
-    label = lv_label_create(icon);
-    lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(UI_ACCENT_TEXT_COL), 0);
-    lv_label_set_text(label, symbol);
-    lv_obj_center(label);
-
-    text_col = lv_obj_create(left_cluster);
-    lv_obj_add_flag(text_col, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_width(text_col, LV_SIZE_CONTENT);
-    lv_obj_set_height(text_col, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(text_col, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(text_col, 0, 0);
-    lv_obj_set_style_pad_all(text_col, 0, 0);
-    lv_obj_set_style_pad_row(text_col, 4, 0);
-    lv_obj_set_layout(text_col, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(text_col, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(text_col, LV_OBJ_FLAG_SCROLLABLE);
-
-    label = lv_label_create(text_col);
-    lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    settings_bind_label(ctx, label, title_text);
-
-    label = lv_label_create(text_col);
-    lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_text_color(label, lv_color_hex(0xAFAFAF), 0);
-    settings_bind_label(ctx, label, subtitle_text);
-
-    label = lv_label_create(row);
-    lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_hex(0x8F8F8F), 0);
-    lv_label_set_text(label, LV_SYMBOL_RIGHT);
-
-    return entry;
-}
-
-static void settings_show_root(clock_ui_context_t *ctx)
-{
-    ctx->settings_ui.wifi_open = false;
-    ctx->settings_ui.night_open = false;
-    ctx->settings_ui.other_open = false;
-    ctx->settings_ui.night_face_picker_open = false;
-    ctx->settings_ui.night_schedule_editor_open = false;
-    ctx->settings_ui.close_swipe_consumed = false;
-    ctx->settings_ui.wifi_scrolling = false;
-    ctx->settings_ui.night_scrolling = false;
-    ctx->settings_ui.other_scrolling = false;
-    invalidate_settings_ui_cache(ctx);
-    close_wifi_dialog(ctx);
-    close_night_face_picker(ctx);
-    close_night_schedule_editor(ctx);
-    if (ctx->settings_ui.wifi_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.other_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.other_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.night_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.overlay != NULL) {
-        lv_obj_clear_flag(ctx->settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_move_foreground(ctx->settings_ui.overlay);
-    }
-}
-
-static void settings_open_wifi_detail(clock_ui_context_t *ctx)
-{
-    if (ctx->settings_ui.wifi_overlay == NULL) {
-        return;
-    }
-
-    ctx->settings_ui.wifi_open = true;
-    ctx->settings_ui.night_open = false;
-    ctx->settings_ui.other_open = false;
-    ctx->settings_ui.close_swipe_consumed = false;
-    ctx->settings_ui.wifi_cache_valid = false;
-    lv_obj_add_flag(ctx->settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
-    if (ctx->settings_ui.other_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.other_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.night_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    sync_wifi_controls(ctx);
-    lv_obj_clear_flag(ctx->settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->settings_ui.wifi_overlay);
-}
-
-static void settings_open_night_detail(clock_ui_context_t *ctx)
-{
-    if (ctx->settings_ui.night_overlay == NULL) {
-        return;
-    }
-
-    ctx->settings_ui.night_open = true;
-    ctx->settings_ui.wifi_open = false;
-    ctx->settings_ui.other_open = false;
-    ctx->settings_ui.close_swipe_consumed = false;
-    ctx->settings_ui.night_cache_valid = false;
-    lv_obj_add_flag(ctx->settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
-    if (ctx->settings_ui.other_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.other_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.wifi_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    close_night_face_picker(ctx);
-    close_night_schedule_editor(ctx);
-    sync_night_controls(ctx);
-    lv_obj_clear_flag(ctx->settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->settings_ui.night_overlay);
-}
-
-static void settings_open_other_detail(clock_ui_context_t *ctx)
-{
-    if (ctx->settings_ui.other_overlay == NULL) {
-        return;
-    }
-
-    ctx->settings_ui.other_open = true;
-    ctx->settings_ui.wifi_open = false;
-    ctx->settings_ui.night_open = false;
-    ctx->settings_ui.close_swipe_consumed = false;
-    ctx->settings_ui.wifi_cache_valid = false;
-    lv_obj_add_flag(ctx->settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
-    if (ctx->settings_ui.wifi_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    if (ctx->settings_ui.night_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-    sync_other_controls(ctx);
-    lv_obj_clear_flag(ctx->settings_ui.other_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->settings_ui.other_overlay);
-}
-
-static void settings_wifi_entry_event_cb(lv_event_t *event)
-{
-    settings_open_wifi_detail((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void settings_night_entry_event_cb(lv_event_t *event)
-{
-    settings_open_night_detail((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void settings_other_entry_event_cb(lv_event_t *event)
-{
-    settings_open_other_detail((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void settings_back_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    settings_navigate_back(ctx);
-}
-
-void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx)
-{
     ui_face_chrome_close_all(ctx);
     ui_alarms_close_all(ctx);
-
-    ctx->settings_ui.open = true;
-    ctx->settings_ui.close_dragging = false;
-    ctx->settings_ui.wifi_scrolling = false;
-    ctx->settings_ui.night_scrolling = false;
-    ctx->settings_ui.other_scrolling = false;
+    ST(ctx)->open = true;
     set_root_ui_hidden(ctx, true);
-
-    settings_show_root(ctx);
-    if (tab_idx == SETTINGS_TAB_NIGHT) {
-        settings_open_night_detail(ctx);
-    }
 }
 
-void settings_button_event_cb(lv_event_t *event)
+static void close_surface(clock_ui_context_t *ctx)
 {
-    open_settings_tab((clock_ui_context_t *)lv_event_get_user_data(event), SETTINGS_TAB_WIFI);
-}
+    clock_ui_settings_state_t *st = ST(ctx);
 
-
-static void close_settings_surface(clock_ui_context_t *ctx)
-{
-    ctx->settings_ui.open = false;
-    ctx->settings_ui.wifi_open = false;
-    ctx->settings_ui.night_open = false;
-    ctx->settings_ui.other_open = false;
-    ctx->settings_ui.night_face_picker_open = false;
-    ctx->settings_ui.night_schedule_editor_open = false;
-    ctx->settings_ui.wifi_scrolling = false;
-    ctx->settings_ui.night_scrolling = false;
-    ctx->settings_ui.other_scrolling = false;
-    ctx->settings_ui.close_dragging = false;
-    ctx->settings_ui.close_swipe_consumed = false;
-    invalidate_settings_ui_cache(ctx);
-    close_wifi_dialog(ctx);
-    close_night_face_picker(ctx);
-    close_night_schedule_editor(ctx);
-    if (ctx->settings_ui.wifi_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.wifi_overlay, LV_OBJ_FLAG_HIDDEN);
+    if (!st->open) {
+        return;
     }
-    if (ctx->settings_ui.other_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.other_overlay, LV_OBJ_FLAG_HIDDEN);
+    if (st->join_open) {
+        st_join_close(ctx);
     }
-    if (ctx->settings_ui.night_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.night_overlay, LV_OBJ_FLAG_HIDDEN);
+    st->open = false;
+    st->night_drag = -1;
+    set_scrolling(ctx, NULL, false);
+    for (int i = 0; i < UI_ST_PAGE_COUNT; i++) {
+        if (st->built[i]) {
+            st_show(st->pages[i].root, false);
+        }
     }
-    lv_obj_add_flag(ctx->settings_ui.overlay, LV_OBJ_FLAG_HIDDEN);
     set_root_ui_hidden(ctx, false);
     ui_face_chrome_show_controls(ctx);
 }
 
-static void settings_navigate_back(clock_ui_context_t *ctx)
+void st_back(clock_ui_context_t *ctx)
 {
-    if (ctx->settings_ui.night_face_picker_open) {
-        close_night_face_picker(ctx);
+    clock_ui_settings_state_t *st = ST(ctx);
+
+    if (!st->open) {
         return;
     }
-    if (ctx->settings_ui.night_schedule_editor_open) {
-        close_night_schedule_editor(ctx);
+    if (st->join_open) {
+        st_join_close(ctx);
         return;
     }
-    settings_show_root(ctx);
-}
-
-bool settings_surface_is_open(const clock_ui_context_t *ctx)
-{
-    return ctx->settings_ui.open;
-}
-
-void settings_surface_close(clock_ui_context_t *ctx)
-{
-    close_settings_surface(ctx);
-}
-
-static void settings_close_event_cb(lv_event_t *event)
-{
-    close_settings_surface((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void settings_overlay_event_cb(lv_event_t *event)
-{
-    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
-        settings_close_event_cb(event);
-    }
-}
-
-static void settings_detail_overlay_event_cb(lv_event_t *event)
-{
-    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
-        settings_back_event_cb(event);
-    }
-}
-
-static void settings_content_scroll_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_obj_t *target = lv_event_get_target(event);
-    bool scrolling = (code == LV_EVENT_SCROLL_BEGIN || code == LV_EVENT_SCROLL);
-
-    if (target == ctx->settings_ui.wifi_content) {
-        ctx->settings_ui.wifi_scrolling = scrolling;
-    } else if (target == ctx->settings_ui.other_content) {
-        ctx->settings_ui.other_scrolling = scrolling;
-    } else if (target == ctx->settings_ui.night_content) {
-        ctx->settings_ui.night_scrolling = scrolling;
-        if (code == LV_EVENT_SCROLL_END && time(NULL) / 60 != ctx->settings_ui.night_face_preview_minute) {
-            sync_night_face_preview(ctx);
-        }
-    }
-
-    if (code == LV_EVENT_SCROLL_END) {
-        if (target == ctx->settings_ui.wifi_content) {
-            ctx->settings_ui.wifi_scrolling = false;
-        } else if (target == ctx->settings_ui.other_content) {
-            ctx->settings_ui.other_scrolling = false;
-        } else if (target == ctx->settings_ui.night_content) {
-            ctx->settings_ui.night_scrolling = false;
-        }
-    }
-}
-
-static void settings_close_swipe_event_cb(lv_event_t *event)
-{
-    ui_edge_ctx_t *edge_ctx = (ui_edge_ctx_t *)lv_event_get_user_data(event);
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_indev_t *indev = lv_event_get_indev(event);
-    clock_ui_context_t *ctx;
-    lv_point_t point;
-
-    if (edge_ctx == NULL || edge_ctx->ui == NULL) {
+    if (st->page == UI_ST_HOME) {
+        close_surface(ctx);
         return;
     }
-
-    ctx = edge_ctx->ui;
-    if (!ctx->settings_ui.open || indev == NULL) {
-        return;
-    }
-
-    if (code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) {
-        ctx->settings_ui.close_dragging = false;
-        ctx->settings_ui.close_swipe_consumed = false;
-        return;
-    }
-
-    if (ctx->settings_ui.close_swipe_consumed) {
-        return;
-    }
-
-    lv_indev_get_point(indev, &point);
-
-    if (code == LV_EVENT_PRESSED) {
-        ctx->settings_ui.close_dragging = true;
-        ctx->settings_ui.close_drag_start_point = point;
-        ctx->settings_ui.close_swipe_consumed = false;
-        return;
-    }
-
-    if (!ctx->settings_ui.close_dragging) {
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSING) {
-        if (ui_surface_edge_swipe_trigger(edge_ctx->edge,
-                                          &ctx->settings_ui.close_drag_start_point,
-                                          &point,
-                                          SETTINGS_CLOSE_SWIPE_TRIGGER)) {
-            ctx->settings_ui.close_dragging = false;
-            ctx->settings_ui.close_swipe_consumed = true;
-            if (ctx->settings_ui.wifi_open || ctx->settings_ui.night_open || ctx->settings_ui.other_open) {
-                settings_navigate_back(ctx);
-            } else {
-                close_settings_surface(ctx);
-            }
-        }
-        return;
-    }
+    present(ctx, st_parent((ui_st_page_t)st->page), false);
 }
 
-static void timezone_dropdown_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx->suppress_events) {
-        return;
-    }
-
-    request_set_timezone(ctx, timezone_id_from_picker_index((uint8_t)lv_dropdown_get_selected(lv_event_get_target(event))));
-    sync_wifi_controls(ctx);
-}
-
-static void time_mode_prev_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    time_sync_mode_t mode = ctx->settings->wifi.time_sync_mode == TIME_SYNC_MODE_MANUAL
-                                ? TIME_SYNC_MODE_AUTO
-                                : TIME_SYNC_MODE_MANUAL;
-
-    request_set_time_sync_mode(ctx, mode);
-    sync_wifi_controls(ctx);
-}
-
-static void time_mode_next_event_cb(lv_event_t *event)
-{
-    time_mode_prev_event_cb(event);
-}
-
-static uint8_t days_in_month(uint16_t year, uint8_t month)
-{
-    static const uint8_t s_days[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-
-    if (month == 2 && ((year % 4U == 0U && year % 100U != 0U) || year % 400U == 0U)) {
-        return 29;
-    }
-    if (month < 1 || month > 12) {
-        return 31;
-    }
-    return s_days[month - 1U];
-}
-
-static void manual_time_apply_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    uint16_t year;
-    uint8_t month;
-    uint8_t day;
-    uint8_t hour;
-    uint8_t minute;
-    uint8_t max_day;
-
-    if (ctx->settings_ui.manual_year_dd == NULL) {
-        return;
-    }
-
-    year = (uint16_t)(2024U + lv_dropdown_get_selected(ctx->settings_ui.manual_year_dd));
-    month = (uint8_t)(1U + lv_dropdown_get_selected(ctx->settings_ui.manual_month_dd));
-    day = (uint8_t)(1U + lv_dropdown_get_selected(ctx->settings_ui.manual_day_dd));
-    hour = (uint8_t)lv_dropdown_get_selected(ctx->settings_ui.manual_hour_dd);
-    minute = (uint8_t)lv_dropdown_get_selected(ctx->settings_ui.manual_min_dd);
-    max_day = days_in_month(year, month);
-    if (day > max_day) {
-        day = max_day;
-    }
-
-    request_set_manual_time(ctx, year, month, day, hour, minute);
-    sync_wifi_controls(ctx);
-}
-
-static void night_enabled_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->suppress_events || ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    request_set_night_mode_enabled(ctx, lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
-    sync_night_controls(ctx);
-}
-
-static void night_hour_minute_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_obj_t *target = lv_event_get_target(event);
-
-    if (ctx->suppress_events) {
-        return;
-    }
-
-    request_set_night_schedule(
-        ctx,
-        (target == ctx->settings_ui.night_start_hour_dd) ? (uint8_t)lv_roller_get_selected(target) : ctx->settings->night_mode.start_hour,
-        (target == ctx->settings_ui.night_start_min_dd) ? (uint8_t)lv_roller_get_selected(target) : ctx->settings->night_mode.start_minute,
-        (target == ctx->settings_ui.night_end_hour_dd) ? (uint8_t)lv_roller_get_selected(target) : ctx->settings->night_mode.end_hour,
-        (target == ctx->settings_ui.night_end_min_dd) ? (uint8_t)lv_roller_get_selected(target) : ctx->settings->night_mode.end_minute);
-    sync_night_controls(ctx);
-}
-
-static void open_night_schedule_editor(clock_ui_context_t *ctx)
-{
-    if (ctx->settings_ui.night_schedule_overlay == NULL) {
-        return;
-    }
-
-    ctx->settings_ui.night_schedule_editor_open = true;
-    sync_night_controls(ctx);
-    lv_obj_clear_flag(ctx->settings_ui.night_schedule_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->settings_ui.night_schedule_overlay);
-}
-
-static void close_night_schedule_editor(clock_ui_context_t *ctx)
-{
-    ctx->settings_ui.night_schedule_editor_open = false;
-    if (ctx->settings_ui.night_schedule_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.night_schedule_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void night_schedule_button_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    open_night_schedule_editor(ctx);
-}
-
-static void night_schedule_editor_overlay_event_cb(lv_event_t *event)
-{
-    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
-        close_night_schedule_editor((clock_ui_context_t *)lv_event_get_user_data(event));
-    }
-}
-
-static void night_schedule_editor_close_event_cb(lv_event_t *event)
-{
-    close_night_schedule_editor((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void night_brightness_slider_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    char brightness_label[32];
-    int ui_value;
-
-    if (ctx->suppress_events || ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    ui_value = lv_slider_get_value(lv_event_get_target(event));
-    snprintf(brightness_label, sizeof(brightness_label), "%d%%", ui_value);
-    settings_set_label_text_if_changed(ctx->settings_ui.night_brightness_dd, brightness_label);
-    request_set_night_brightness(ctx, brightness_ui_to_hw(ui_value));
-}
-
-static void night_sunrise_enabled_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx->suppress_events || ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    request_set_night_sunrise_brightness_enabled(ctx,
-                                                 lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
-    sync_night_controls(ctx);
-}
-
-static void other_sound_enabled_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx->suppress_events || ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    request_set_ui_click_sound_enabled(ctx,
-                                       lv_obj_has_state(lv_event_get_target(event), LV_STATE_CHECKED));
-    sync_other_controls(ctx);
-}
-
-static void other_sound_volume_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    char volume_label[32];
-    int volume;
-
-    if (ctx->suppress_events || ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    volume = lv_slider_get_value(lv_event_get_target(event));
-    snprintf(volume_label, sizeof(volume_label), "%d%%", volume);
-    settings_set_label_text_if_changed(ctx->settings_ui.other_sound_volume_label, volume_label);
-    request_set_ui_click_volume(ctx, (uint8_t)volume);
-}
-
-static void language_dropdown_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    clock_language_t language;
-
-    if (ctx->suppress_events) {
-        return;
-    }
-
-    language = (clock_language_t)lv_dropdown_get_selected(lv_event_get_target(event));
-    request_set_language(ctx, language);
-    settings_apply_l10n(ctx);
-    sync_other_controls(ctx);
-    sync_wifi_controls(ctx);
-    sync_night_controls(ctx);
-}
-
-static void ota_check_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL || ctx->runtime->ota_busy) {
-        return;
-    }
-
-    request_ota_check(ctx);
-    sync_other_controls(ctx);
-}
-
-static void ota_install_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL || ctx->runtime->ota_busy) {
-        return;
-    }
-
-    request_ota_install(ctx);
-    sync_other_controls(ctx);
-}
-
-static void open_night_face_picker(clock_ui_context_t *ctx)
-{
-    if (ctx->settings_ui.night_face_picker_overlay == NULL) {
-        return;
-    }
-
-    sync_night_face_preview(ctx);
-    sync_night_face_picker_previews(ctx);
-    sync_night_face_picker_selection(ctx);
-    ctx->settings_ui.night_face_picker_open = true;
-    lv_obj_clear_flag(ctx->settings_ui.night_face_picker_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->settings_ui.night_face_picker_overlay);
-}
-
-static void close_night_face_picker(clock_ui_context_t *ctx)
-{
-    ctx->settings_ui.night_face_picker_open = false;
-    if (ctx->settings_ui.night_face_picker_overlay != NULL) {
-        lv_obj_add_flag(ctx->settings_ui.night_face_picker_overlay, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-static void night_face_button_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    if (ctx->settings_ui.settings_control_interaction_suppressed) {
-        ctx->settings_ui.settings_control_interaction_suppressed = false;
-        return;
-    }
-
-    open_night_face_picker(ctx);
-}
-
-static void night_face_picker_item_event_cb(lv_event_t *event)
-{
-    face_ctx_t *face_ctx = (face_ctx_t *)lv_event_get_user_data(event);
-    clock_ui_context_t *ctx;
-
-    if (face_ctx == NULL || face_ctx->ui == NULL || !clock_face_is_enabled(face_ctx->face)) {
-        return;
-    }
-
-    ctx = face_ctx->ui;
-    request_set_night_face(ctx, face_ctx->face);
-    sync_night_controls(ctx);
-    close_night_face_picker(ctx);
-}
-
-static void night_face_picker_overlay_event_cb(lv_event_t *event)
-{
-    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
-        close_night_face_picker((clock_ui_context_t *)lv_event_get_user_data(event));
-    }
-}
-
-static void night_face_picker_close_event_cb(lv_event_t *event)
-{
-    close_night_face_picker((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void create_wifi_card(clock_ui_context_t *ctx, lv_obj_t *parent)
-{
-    lv_obj_t *row;
-
-    ctx->settings_ui.wifi_card = create_card(parent);
-    center_card_children(ctx->settings_ui.wifi_card);
-
-    ctx->settings_ui.wifi_status_label = lv_label_create(ctx->settings_ui.wifi_card);
-    style_centered_label(ctx->settings_ui.wifi_status_label, &lv_font_montserrat_20, lv_color_white());
-    settings_apply_i18n_font(ctx->settings_ui.wifi_status_label);
-    lv_label_set_text(ctx->settings_ui.wifi_status_label, settings_text(ctx, L10N_WIFI_IDLE));
-
-    ctx->settings_ui.wifi_saved_label = lv_label_create(ctx->settings_ui.wifi_card);
-    style_centered_label(ctx->settings_ui.wifi_saved_label, NULL, lv_color_hex(0xA8A8A8));
-    settings_apply_i18n_font(ctx->settings_ui.wifi_saved_label);
-    lv_label_set_text(ctx->settings_ui.wifi_saved_label, settings_text(ctx, L10N_SAVED_NONE));
-
-    row = create_row(ctx->settings_ui.wifi_card);
-    center_row(row);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_SCAN), wifi_scan_event_cb, ctx),
-                               L10N_SCAN);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_SYNC_TIME), wifi_sync_event_cb, ctx),
-                               L10N_SYNC_TIME);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_FORGET), wifi_forget_event_cb, ctx),
-                               L10N_FORGET);
-}
-
-static void create_timezone_card(clock_ui_context_t *ctx, lv_obj_t *parent)
-{
-    ctx->settings_ui.timezone_card = create_card(parent);
-    center_card_children(ctx->settings_ui.timezone_card);
-    create_localized_centered_card_title(ctx, ctx->settings_ui.timezone_card, L10N_TIME_ZONE);
-
-    ctx->settings_ui.wifi_timezone_dd = create_dropdown(ctx->settings_ui.timezone_card,
-                                                        ctx->timezone_options,
-                                                        420);
-    lv_obj_add_event_cb(ctx->settings_ui.wifi_timezone_dd,
-                        timezone_dropdown_event_cb,
-                        LV_EVENT_VALUE_CHANGED,
-                        ctx);
-}
-
-static void create_time_mode_card(clock_ui_context_t *ctx, lv_obj_t *parent)
-{
-    lv_obj_t *row;
-
-    ctx->settings_ui.time_mode_card = create_card(parent);
-    center_card_children(ctx->settings_ui.time_mode_card);
-    create_localized_centered_card_title(ctx, ctx->settings_ui.time_mode_card, L10N_CLOCK);
-
-    row = create_step_selector(ctx->settings_ui.time_mode_card,
-                               260,
-                               78,
-                               &ctx->settings_ui.time_mode_label,
-                               time_mode_prev_event_cb,
-                               ctx,
-                               time_mode_next_event_cb,
-                               ctx);
-    settings_apply_i18n_font(ctx->settings_ui.time_mode_label);
-    center_row(row);
-}
-
-static void create_manual_time_card(clock_ui_context_t *ctx, lv_obj_t *parent)
-{
-    static const char *s_month_options =
-        "Jan\nFeb\nMar\nApr\nMay\nJun\nJul\nAug\nSep\nOct\nNov\nDec";
-    lv_obj_t *card;
-    lv_obj_t *row;
-    lv_obj_t *label;
-
-    card = create_card(parent);
-    ctx->settings_ui.manual_time_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 16, 0);
-    center_card_children(card);
-    create_localized_centered_card_title(ctx, card, L10N_SET_MANUALLY);
-
-    row = create_row(card);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 12, 0);
-    ctx->settings_ui.manual_year_dd = create_dropdown(row, ctx->year_options, 132);
-    ctx->settings_ui.manual_month_dd = create_dropdown(row, s_month_options, 132);
-    ctx->settings_ui.manual_day_dd = create_dropdown(row, ctx->day_options, 100);
-
-    row = create_row(card);
-    center_row(row);
-    lv_obj_set_style_pad_column(row, 10, 0);
-    ctx->settings_ui.manual_hour_dd = create_dropdown(row, ctx->hour_options, 120);
-    label = lv_label_create(row);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, ":");
-    ctx->settings_ui.manual_min_dd = create_dropdown(row, ctx->minute_options, 120);
-
-    row = create_row(card);
-    center_row(row);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_SET_TIME), manual_time_apply_event_cb, ctx),
-                               L10N_SET_TIME);
-}
-
-static void create_networks_card(clock_ui_context_t *ctx, lv_obj_t *parent)
-{
-    ctx->settings_ui.networks_card = create_card(parent);
-    create_localized_centered_card_title(ctx, ctx->settings_ui.networks_card, L10N_NETWORKS);
-
-    ctx->settings_ui.wifi_network_list = lv_obj_create(ctx->settings_ui.networks_card);
-    lv_obj_set_width(ctx->settings_ui.wifi_network_list, lv_pct(100));
-    lv_obj_set_height(ctx->settings_ui.wifi_network_list, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(ctx->settings_ui.wifi_network_list, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->settings_ui.wifi_network_list, 0, 0);
-    lv_obj_set_style_radius(ctx->settings_ui.wifi_network_list, 0, 0);
-    lv_obj_set_style_pad_all(ctx->settings_ui.wifi_network_list, 0, 0);
-    lv_obj_set_style_pad_row(ctx->settings_ui.wifi_network_list, 14, 0);
-    lv_obj_set_layout(ctx->settings_ui.wifi_network_list, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(ctx->settings_ui.wifi_network_list, LV_FLEX_FLOW_COLUMN);
-    lv_obj_clear_flag(ctx->settings_ui.wifi_network_list, LV_OBJ_FLAG_SCROLLABLE);
-}
-
-static void create_night_card(clock_ui_context_t *ctx, lv_obj_t *parent)
-{
-    lv_obj_t *row;
-    lv_obj_t *label;
-    lv_obj_t *card;
-    lv_obj_t *preview_wrap;
-
-    ctx->settings_ui.night_card = create_card(parent);
-    lv_obj_set_width(ctx->settings_ui.night_card, 540);
-    lv_obj_set_style_pad_all(ctx->settings_ui.night_card, 24, 0);
-    lv_obj_set_style_pad_row(ctx->settings_ui.night_card, 14, 0);
-
-    row = create_row(ctx->settings_ui.night_card);
-    center_row(row);
-    label = lv_label_create(row);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    settings_bind_label(ctx, label, L10N_ENABLED);
-    ctx->settings_ui.night_enabled_sw = lv_switch_create(row);
-    style_settings_switch(ctx->settings_ui.night_enabled_sw);
-    bind_night_control(ctx->settings_ui.night_enabled_sw,
-                       ctx,
-                       LV_EVENT_VALUE_CHANGED,
-                       night_enabled_event_cb,
-                       LV_EVENT_VALUE_CHANGED);
-
-    ctx->settings_ui.night_status_label = lv_label_create(ctx->settings_ui.night_card);
-    lv_obj_set_width(ctx->settings_ui.night_status_label, lv_pct(100));
-    lv_obj_set_style_text_font(ctx->settings_ui.night_status_label, &lv_font_montserrat_20, 0);
-    settings_apply_i18n_font(ctx->settings_ui.night_status_label);
-    lv_obj_set_style_text_color(ctx->settings_ui.night_status_label, lv_color_hex(0xA8A8A8), 0);
-    lv_obj_set_style_text_align(ctx->settings_ui.night_status_label, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_long_mode(ctx->settings_ui.night_status_label, LV_LABEL_LONG_WRAP);
-    lv_label_set_text(ctx->settings_ui.night_status_label, "");
-    lv_obj_add_flag(ctx->settings_ui.night_status_label, LV_OBJ_FLAG_HIDDEN);
-
-    card = create_card(parent);
-    ctx->settings_ui.night_schedule_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 10, 0);
-    style_night_detail_card(card);
-    create_localized_section_title(ctx, card, L10N_SCHEDULE, L10N_TAP_TO_EDIT);
-    ctx->settings_ui.night_schedule_button = lv_button_create(card);
-    lv_obj_set_width(ctx->settings_ui.night_schedule_button, lv_pct(100));
-    lv_obj_set_height(ctx->settings_ui.night_schedule_button, LV_SIZE_CONTENT);
-    lv_obj_set_style_radius(ctx->settings_ui.night_schedule_button, 28, 0);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_schedule_button, lv_color_hex(0x232323), 0);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_schedule_button, lv_color_hex(0x2D2D2D), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(ctx->settings_ui.night_schedule_button, 0, 0);
-    lv_obj_set_style_pad_all(ctx->settings_ui.night_schedule_button, 20, 0);
-    lv_obj_set_style_shadow_width(ctx->settings_ui.night_schedule_button, 0, 0);
-    style_night_detail_button(ctx->settings_ui.night_schedule_button);
-    bind_night_control(ctx->settings_ui.night_schedule_button,
-                       ctx,
-                       LV_EVENT_CLICKED,
-                       night_schedule_button_event_cb,
-                       LV_EVENT_CLICKED);
-
-    ctx->settings_ui.night_schedule_summary = lv_label_create(ctx->settings_ui.night_schedule_button);
-    lv_obj_set_width(ctx->settings_ui.night_schedule_summary, lv_pct(100));
-    lv_obj_set_style_text_font(ctx->settings_ui.night_schedule_summary, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(ctx->settings_ui.night_schedule_summary, lv_color_white(), 0);
-    lv_obj_set_style_text_align(ctx->settings_ui.night_schedule_summary, LV_TEXT_ALIGN_CENTER, 0);
-    lv_label_set_text(ctx->settings_ui.night_schedule_summary, "");
-    lv_obj_center(ctx->settings_ui.night_schedule_summary);
-
-    card = create_card(parent);
-    ctx->settings_ui.night_face_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 16, 0);
-    style_night_detail_card(card);
-    create_localized_section_title(ctx, card, L10N_NIGHT_FACE, L10N_TAP_TO_CHOOSE_PREVIEWS);
-    ctx->settings_ui.night_face_button = lv_button_create(card);
-    lv_obj_set_width(ctx->settings_ui.night_face_button, lv_pct(100));
-    lv_obj_set_height(ctx->settings_ui.night_face_button, LV_SIZE_CONTENT);
-    lv_obj_set_style_radius(ctx->settings_ui.night_face_button, 28, 0);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_face_button, lv_color_hex(0x232323), 0);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_face_button, lv_color_hex(0x2D2D2D), LV_STATE_PRESSED);
-    lv_obj_set_style_border_width(ctx->settings_ui.night_face_button, 0, 0);
-    lv_obj_set_style_pad_all(ctx->settings_ui.night_face_button, 18, 0);
-    lv_obj_set_style_shadow_width(ctx->settings_ui.night_face_button, 0, 0);
-    style_night_detail_button(ctx->settings_ui.night_face_button);
-    bind_night_control(ctx->settings_ui.night_face_button,
-                       ctx,
-                       LV_EVENT_CLICKED,
-                       night_face_button_event_cb,
-                       LV_EVENT_CLICKED);
-
-    preview_wrap = lv_obj_create(ctx->settings_ui.night_face_button);
-    lv_obj_add_flag(preview_wrap, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_width(preview_wrap, lv_pct(100));
-    lv_obj_set_height(preview_wrap, LV_SIZE_CONTENT);
-    lv_obj_set_style_bg_opa(preview_wrap, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(preview_wrap, 0, 0);
-    lv_obj_set_style_pad_all(preview_wrap, 0, 0);
-    lv_obj_set_style_pad_row(preview_wrap, 12, 0);
-    lv_obj_set_layout(preview_wrap, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(preview_wrap, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_flex_align(preview_wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(preview_wrap, LV_OBJ_FLAG_SCROLLABLE);
-
-    row = lv_obj_create(preview_wrap);
-    ctx->settings_ui.night_face_preview_shell = row;
-    lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(row, NIGHT_FACE_PREVIEW_SIZE, NIGHT_FACE_PREVIEW_SIZE);
-    lv_obj_set_style_radius(row, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(row, lv_color_hex(0x0F0F0F), 0);
-    lv_obj_set_style_bg_opa(row, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(row, 1, 0);
-    lv_obj_set_style_border_color(row, lv_color_hex(0x323232), 0);
-    lv_obj_set_style_pad_all(row, 0, 0);
-    lv_obj_set_style_clip_corner(row, true, 0);
-    lv_obj_set_style_shadow_width(row, 0, 0);
-    /* The clip_corner shell is only rendered into the snapshot shown by night_face_preview_scroll;
-     * drawing it live costs full-screen corner layers on every frame of this page. */
-    lv_obj_set_style_opa_layered(row, LV_OPA_TRANSP, 0);
-    lv_obj_clear_flag(row, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(row, LV_ALIGN_CENTER, 0, 0);
-
-    ctx->settings_ui.night_face_preview = lv_image_create(row);
-    lv_obj_add_flag(ctx->settings_ui.night_face_preview, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_size(ctx->settings_ui.night_face_preview, NIGHT_FACE_PREVIEW_SIZE, NIGHT_FACE_PREVIEW_SIZE);
-    lv_obj_set_style_bg_opa(ctx->settings_ui.night_face_preview, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->settings_ui.night_face_preview, 0, 0);
-    lv_obj_set_style_pad_all(ctx->settings_ui.night_face_preview, 0, 0);
-    lv_obj_clear_flag(ctx->settings_ui.night_face_preview, LV_OBJ_FLAG_SCROLLABLE);
-    lv_image_set_inner_align(ctx->settings_ui.night_face_preview, LV_IMAGE_ALIGN_CENTER);
-    lv_obj_center(ctx->settings_ui.night_face_preview);
-
-    ctx->settings_ui.night_face_preview_scroll = lv_image_create(ctx->settings_ui.night_face_button);
-    lv_obj_add_flag(ctx->settings_ui.night_face_preview_scroll, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_add_flag(ctx->settings_ui.night_face_preview_scroll, LV_OBJ_FLAG_IGNORE_LAYOUT);
-    lv_obj_set_size(ctx->settings_ui.night_face_preview_scroll,
-                    NIGHT_FACE_PREVIEW_SIZE,
-                    NIGHT_FACE_PREVIEW_SIZE);
-    lv_obj_set_style_bg_opa(ctx->settings_ui.night_face_preview_scroll, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->settings_ui.night_face_preview_scroll, 0, 0);
-    lv_obj_set_style_pad_all(ctx->settings_ui.night_face_preview_scroll, 0, 0);
-    lv_obj_clear_flag(ctx->settings_ui.night_face_preview_scroll, LV_OBJ_FLAG_SCROLLABLE);
-    lv_image_set_inner_align(ctx->settings_ui.night_face_preview_scroll, LV_IMAGE_ALIGN_CENTER);
-    lv_obj_align_to(ctx->settings_ui.night_face_preview_scroll, row, LV_ALIGN_CENTER, 0, 0);
-
-    ctx->settings_ui.night_face_dd = NULL;
-
-    card = create_card(parent);
-    ctx->settings_ui.night_brightness_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 14, 0);
-    style_night_detail_card(card);
-    create_localized_section_title(ctx, card, L10N_BRIGHTNESS, L10N_MAIN_SLIDER_MATCH);
-
-    row = create_row(card);
-    center_row(row);
-    ctx->settings_ui.night_brightness_dd = lv_label_create(row);
-    lv_obj_set_style_text_font(ctx->settings_ui.night_brightness_dd, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(ctx->settings_ui.night_brightness_dd, lv_color_white(), 0);
-    lv_label_set_text(ctx->settings_ui.night_brightness_dd, "0%");
-
-    ctx->settings_ui.night_brightness_slider = lv_slider_create(card);
-    lv_slider_set_range(ctx->settings_ui.night_brightness_slider, 0, 100);
-    lv_obj_set_width(ctx->settings_ui.night_brightness_slider, lv_pct(100));
-    style_slider(ctx->settings_ui.night_brightness_slider);
-    lv_obj_set_height(ctx->settings_ui.night_brightness_slider, 24);
-    attach_settings_control_passthrough(ctx->settings_ui.night_brightness_slider, ctx);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider, lv_color_hex(0x2D2D2D), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider, lv_color_hex(UI_ACCENT_COL), LV_PART_INDICATOR);
-    lv_obj_set_style_shadow_width(ctx->settings_ui.night_brightness_slider, 0, LV_PART_KNOB);
-    lv_obj_set_style_shadow_opa(ctx->settings_ui.night_brightness_slider, LV_OPA_TRANSP, LV_PART_KNOB);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider,
-                              lv_color_hex(0x222222),
-                              LV_PART_MAIN | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider,
-                              lv_color_hex(0x5A5A5A),
-                              LV_PART_INDICATOR | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(ctx->settings_ui.night_brightness_slider,
-                              lv_color_hex(0xA8A8A8),
-                              LV_PART_KNOB | LV_STATE_DISABLED);
-    lv_obj_add_event_cb(ctx->settings_ui.night_brightness_slider, night_brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
-    ui_attach_click_feedback(ctx->settings_ui.night_brightness_slider, LV_EVENT_VALUE_CHANGED);
-
-    card = create_card(parent);
-    ctx->settings_ui.night_sunrise_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 14, 0);
-    style_night_detail_card(card);
-    row = create_labeled_trailing_control_row(card,
-                                              settings_text(ctx, L10N_SUNRISE_RAMP),
-                                              settings_text(ctx, L10N_SUNRISE_RAMP_SUBTITLE),
-                                              360,
-                                              NULL);
-    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 0), L10N_SUNRISE_RAMP);
-    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 1), L10N_SUNRISE_RAMP_SUBTITLE);
-
-    ctx->settings_ui.night_sunrise_sw = lv_switch_create(row);
-    style_settings_switch(ctx->settings_ui.night_sunrise_sw);
-    bind_night_control(ctx->settings_ui.night_sunrise_sw,
-                       ctx,
-                       LV_EVENT_VALUE_CHANGED,
-                       night_sunrise_enabled_event_cb,
-                       LV_EVENT_VALUE_CHANGED);
-}
-
-static void create_night_face_picker_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-    lv_obj_t *bottom_sensor;
-    lv_obj_t *title;
-    int visible_count = clock_face_visible_count();
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_70,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 settings_text(ctx, L10N_CHOOSE_NIGHT_FACE),
-                                 night_face_picker_overlay_event_cb,
-                                 night_face_picker_close_event_cb,
-                                 ctx);
-    ctx->settings_ui.night_face_picker_overlay = surface.overlay;
-    ctx->settings_ui.night_face_picker_content = surface.content;
-    title = surface.title;
-    settings_bind_label(ctx, title, L10N_CHOOSE_NIGHT_FACE);
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-
-    lv_obj_set_style_pad_top(surface.content, 8, 0);
-    lv_obj_set_style_pad_bottom(surface.content, 24, 0);
-    lv_obj_set_style_pad_row(surface.content, 16, 0);
-    lv_obj_set_style_pad_column(surface.content, 12, 0);
-    lv_obj_set_layout(surface.content, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(surface.content, LV_FLEX_FLOW_ROW_WRAP);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
-
-    for (int index = 0; index < visible_count; ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
-        lv_obj_t *card = lv_button_create(surface.content);
-        lv_obj_t *preview;
-        lv_obj_t *preview_shell;
-        lv_obj_t *label;
-
-        ctx->settings_ui.face_ctx[face].ui = ctx;
-        ctx->settings_ui.face_ctx[face].face = face;
-        ctx->settings_ui.night_face_picker_card[face] = card;
-
-        lv_obj_set_size(card, 156, 172);
-        lv_obj_set_style_radius(card, 26, 0);
-        lv_obj_set_style_bg_color(card, lv_color_hex(0x171717), 0);
-        lv_obj_set_style_bg_color(card, lv_color_hex(0x22272B), LV_STATE_PRESSED);
-        lv_obj_set_style_border_width(card, 1, 0);
-        lv_obj_set_style_border_color(card, lv_color_hex(0x2C2C2C), 0);
-        lv_obj_set_style_pad_all(card, 14, 0);
-        lv_obj_set_style_pad_row(card, 10, 0);
-        lv_obj_set_style_shadow_width(card, 0, 0);
-        lv_obj_set_layout(card, LV_LAYOUT_FLEX);
-        lv_obj_set_flex_flow(card, LV_FLEX_FLOW_COLUMN);
-        lv_obj_set_flex_align(card, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-        lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_event_cb(card, night_face_picker_item_event_cb, LV_EVENT_CLICKED, &ctx->settings_ui.face_ctx[face]);
-        ui_attach_click_feedback(card, LV_EVENT_CLICKED);
-
-        preview_shell = lv_obj_create(card);
-        lv_obj_add_flag(preview_shell, LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_obj_set_size(preview_shell, 96, 96);
-        lv_obj_set_style_radius(preview_shell, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_bg_color(preview_shell, lv_color_hex(0x0F0F0F), 0);
-        lv_obj_set_style_bg_opa(preview_shell, LV_OPA_COVER, 0);
-        lv_obj_set_style_border_width(preview_shell, 1, 0);
-        lv_obj_set_style_border_color(preview_shell, lv_color_hex(0x323232), 0);
-        lv_obj_set_style_pad_all(preview_shell, 0, 0);
-        lv_obj_set_style_clip_corner(preview_shell, true, 0);
-        lv_obj_set_style_shadow_width(preview_shell, 0, 0);
-        lv_obj_clear_flag(preview_shell, LV_OBJ_FLAG_SCROLLABLE);
-
-        preview = lv_image_create(preview_shell);
-        ctx->settings_ui.night_face_picker_preview[face] = preview;
-        lv_obj_add_flag(preview, LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_obj_set_size(preview, 96, 96);
-        lv_obj_set_style_bg_opa(preview, LV_OPA_TRANSP, 0);
-        lv_obj_set_style_border_width(preview, 0, 0);
-        lv_obj_set_style_pad_all(preview, 0, 0);
-        lv_obj_clear_flag(preview, LV_OBJ_FLAG_SCROLLABLE);
-        lv_image_set_inner_align(preview, LV_IMAGE_ALIGN_CENTER);
-        lv_obj_center(preview);
-
-        label = lv_label_create(card);
-        ctx->settings_ui.night_face_picker_label[face] = label;
-        lv_obj_add_flag(label, LV_OBJ_FLAG_EVENT_BUBBLE);
-        lv_obj_set_width(label, lv_pct(100));
-        lv_obj_set_style_text_font(label, &lv_font_montserrat_20, 0);
-        lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_CENTER, 0);
-        lv_obj_set_style_text_color(label, lv_color_white(), 0);
-        lv_label_set_text(label, clock_face_name(face));
-    }
-
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_face_picker_overlay,
-                                  &bottom_sensor,
-                                  UI_SURFACE_EDGE_BOTTOM,
-                                  ALARM_CLOSE_BOTTOM_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
-
-    ctx->settings_ui.night_face_render_canvas = lv_image_create(ui_chrome_root(ctx));
-    lv_obj_set_pos(ctx->settings_ui.night_face_render_canvas, -2000, -2000);
-    lv_obj_clear_flag(ctx->settings_ui.night_face_render_canvas, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(ctx->settings_ui.night_face_render_canvas, LV_OBJ_FLAG_CLICKABLE);
-}
-
-static void create_night_schedule_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-    lv_obj_t *sensor;
-    lv_obj_t *title;
-    lv_obj_t *card;
-    lv_obj_t *row;
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_70,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 settings_text(ctx, L10N_NIGHT_SCHEDULE),
-                                 night_schedule_editor_overlay_event_cb,
-                                 night_schedule_editor_close_event_cb,
-                                 ctx);
-    ctx->settings_ui.night_schedule_overlay = surface.overlay;
-    ctx->settings_ui.night_schedule_content = surface.content;
-    title = surface.title;
-    settings_bind_label(ctx, title, L10N_NIGHT_SCHEDULE);
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
-
-    card = create_card(surface.content);
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 16, 0);
-
-    create_time_picker_section(card,
-                               settings_text(ctx, L10N_START),
-                               ctx->hour_options,
-                               ctx->minute_options,
-                               164,
-                               14,
-                               0,
-                               night_hour_minute_event_cb,
-                               ctx,
-                               &ctx->settings_ui.night_start_hour_dd,
-                               &ctx->settings_ui.night_start_min_dd);
-    settings_bind_label(ctx, lv_obj_get_child(card, 0), L10N_START);
-
-    create_time_picker_section(card,
-                               settings_text(ctx, L10N_END),
-                               ctx->hour_options,
-                               ctx->minute_options,
-                               164,
-                               14,
-                               0,
-                               night_hour_minute_event_cb,
-                               ctx,
-                               &ctx->settings_ui.night_end_hour_dd,
-                               &ctx->settings_ui.night_end_min_dd);
-    settings_bind_label(ctx, lv_obj_get_child(card, 2), L10N_END);
-
-    row = create_row(card);
-    center_row(row);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_DONE), night_schedule_editor_close_event_cb, ctx),
-                               L10N_DONE);
-
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_schedule_overlay,
-                                  &sensor,
-                                  UI_SURFACE_EDGE_TOP,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_TOP));
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_schedule_overlay,
-                                  &sensor,
-                                  UI_SURFACE_EDGE_BOTTOM,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_schedule_overlay,
-                                  &sensor,
-                                  UI_SURFACE_EDGE_LEFT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_LEFT));
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_schedule_overlay,
-                                  &sensor,
-                                  UI_SURFACE_EDGE_RIGHT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
-}
-
-static void create_wifi_dialog(clock_ui_context_t *ctx)
-{
-    lv_obj_t *panel;
-    lv_obj_t *row;
-
-    ctx->settings_ui.wifi_dialog_overlay = lv_obj_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->settings_ui.wifi_dialog_overlay, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_set_style_bg_color(ctx->settings_ui.wifi_dialog_overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(ctx->settings_ui.wifi_dialog_overlay, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(ctx->settings_ui.wifi_dialog_overlay, 0, 0);
-    lv_obj_set_style_radius(ctx->settings_ui.wifi_dialog_overlay, 0, 0);
-    lv_obj_set_style_pad_all(ctx->settings_ui.wifi_dialog_overlay, 0, 0);
-    lv_obj_add_flag(ctx->settings_ui.wifi_dialog_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(ctx->settings_ui.wifi_dialog_overlay, wifi_dialog_close_event_cb, LV_EVENT_CLICKED, ctx);
-
-    panel = lv_obj_create(ctx->settings_ui.wifi_dialog_overlay);
-    ctx->settings_ui.wifi_dialog = panel;
-    lv_obj_set_size(panel, WIFI_DIALOG_WIDTH, WIFI_DIALOG_HEIGHT);
-    lv_obj_align(panel, LV_ALIGN_TOP_MID, 0, 72);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x151515), 0);
-    lv_obj_set_style_radius(panel, 28, 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_text_color(panel, lv_color_white(), 0);
-    lv_obj_set_style_pad_all(panel, 24, 0);
-    lv_obj_set_layout(panel, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(panel, 18, 0);
-    lv_obj_add_flag(panel, LV_OBJ_FLAG_CLICKABLE);
-
-    ctx->settings_ui.wifi_dialog_title = lv_label_create(panel);
-    style_centered_label(ctx->settings_ui.wifi_dialog_title, &lv_font_montserrat_24, lv_color_white());
-    lv_label_set_text(ctx->settings_ui.wifi_dialog_title, settings_text(ctx, L10N_JOIN_NETWORK));
-
-    ctx->settings_ui.wifi_password_ta = lv_textarea_create(panel);
-    lv_obj_set_width(ctx->settings_ui.wifi_password_ta, lv_pct(100));
-    lv_obj_set_style_bg_color(ctx->settings_ui.wifi_password_ta, lv_color_hex(0x232323), 0);
-    lv_obj_set_style_bg_opa(ctx->settings_ui.wifi_password_ta, LV_OPA_COVER, 0);
-    lv_obj_set_style_text_color(ctx->settings_ui.wifi_password_ta, lv_color_white(), 0);
-    lv_obj_set_style_text_color(ctx->settings_ui.wifi_password_ta, lv_color_hex(0x8E8E8E), LV_PART_TEXTAREA_PLACEHOLDER);
-    lv_obj_set_style_border_width(ctx->settings_ui.wifi_password_ta, 0, 0);
-    lv_obj_set_style_radius(ctx->settings_ui.wifi_password_ta, 16, 0);
-    lv_textarea_set_placeholder_text(ctx->settings_ui.wifi_password_ta, settings_text(ctx, L10N_PASSWORD));
-    lv_textarea_set_password_mode(ctx->settings_ui.wifi_password_ta, true);
-    lv_textarea_set_one_line(ctx->settings_ui.wifi_password_ta, true);
-    lv_obj_add_event_cb(ctx->settings_ui.wifi_password_ta, wifi_ta_focus_event_cb, LV_EVENT_FOCUSED, ctx);
-
-    row = create_row(panel);
-    center_row(row);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_CANCEL), wifi_dialog_close_event_cb, ctx),
-                               L10N_CANCEL);
-    settings_bind_button_label(ctx,
-                               create_action_button(row, settings_text(ctx, L10N_CONNECT), wifi_dialog_connect_event_cb, ctx),
-                               L10N_CONNECT);
-
-    ctx->settings_ui.wifi_keyboard = lv_keyboard_create(ctx->settings_ui.wifi_dialog_overlay);
-    lv_obj_set_size(ctx->settings_ui.wifi_keyboard, KEYBOARD_WIDTH, KEYBOARD_HEIGHT);
-    lv_obj_align(ctx->settings_ui.wifi_keyboard, LV_ALIGN_BOTTOM_MID, 0, -KEYBOARD_BOTTOM_INSET);
-    lv_obj_set_style_radius(ctx->settings_ui.wifi_keyboard, 28, 0);
-    lv_obj_set_style_bg_color(ctx->settings_ui.wifi_keyboard, lv_color_hex(0x151515), 0);
-    lv_obj_set_style_bg_opa(ctx->settings_ui.wifi_keyboard, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(ctx->settings_ui.wifi_keyboard, 0, 0);
-    lv_obj_add_flag(ctx->settings_ui.wifi_keyboard, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(ctx->settings_ui.wifi_keyboard, wifi_keyboard_event_cb, LV_EVENT_READY, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.wifi_keyboard, wifi_keyboard_event_cb, LV_EVENT_CANCEL, ctx);
-}
-
-static void create_wifi_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-    lv_obj_t *title;
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_COVER,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 settings_text(ctx, L10N_WIFI),
-                                 settings_detail_overlay_event_cb,
-                                 settings_back_event_cb,
-                                 ctx);
-    ctx->settings_ui.wifi_overlay = surface.overlay;
-    ctx->settings_ui.wifi_content = surface.content;
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, ctx);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL, ctx);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
-    title = surface.title;
-    settings_bind_label(ctx, title, L10N_WIFI);
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-
-    create_wifi_card(ctx, surface.content);
-    create_time_mode_card(ctx, surface.content);
-    create_manual_time_card(ctx, surface.content);
-    create_networks_card(ctx, surface.content);
-
-    ui_surface_create_edge_sensor(ctx->settings_ui.wifi_overlay,
-                                  &ctx->settings_ui.wifi_top_sensor,
-                                  UI_SURFACE_EDGE_TOP,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_TOP));
-    ui_surface_create_edge_sensor(ctx->settings_ui.wifi_overlay,
-                                  &ctx->settings_ui.wifi_bottom_sensor,
-                                  UI_SURFACE_EDGE_BOTTOM,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
-    ui_surface_create_edge_sensor(ctx->settings_ui.wifi_overlay,
-                                  &ctx->settings_ui.wifi_left_sensor,
-                                  UI_SURFACE_EDGE_LEFT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_LEFT));
-    ui_surface_create_edge_sensor(ctx->settings_ui.wifi_overlay,
-                                  &ctx->settings_ui.wifi_right_sensor,
-                                  UI_SURFACE_EDGE_RIGHT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
-}
-
-static void create_other_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-    lv_obj_t *card;
-    lv_obj_t *row;
-    lv_obj_t *title;
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_COVER,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 settings_text(ctx, L10N_OTHER),
-                                 settings_detail_overlay_event_cb,
-                                 settings_back_event_cb,
-                                 ctx);
-    ctx->settings_ui.other_overlay = surface.overlay;
-    ctx->settings_ui.other_content = surface.content;
-    title = surface.title;
-    settings_bind_label(ctx, title, L10N_OTHER);
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_bottom(surface.content, 72, 0);
-    lv_obj_add_flag(surface.content, LV_OBJ_FLAG_SCROLL_MOMENTUM);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, ctx);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL, ctx);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
-
-    create_timezone_card(ctx, surface.content);
-
-    card = create_card(surface.content);
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 14, 0);
-    create_localized_section_title(ctx, card, L10N_LANGUAGE, L10N_LANGUAGE_SUBTITLE);
-    ctx->settings_ui.other_language_dropdown = create_dropdown(card, l10n_language_options(), 492);
-    lv_obj_set_style_text_align(ctx->settings_ui.other_language_dropdown, LV_TEXT_ALIGN_CENTER, LV_PART_MAIN);
-    lv_dropdown_set_selected(ctx->settings_ui.other_language_dropdown,
-                             (uint16_t)l10n_sanitize_language(ctx->settings->language));
-    lv_obj_add_event_cb(ctx->settings_ui.other_language_dropdown,
-                        language_dropdown_event_cb,
-                        LV_EVENT_VALUE_CHANGED,
-                        ctx);
-
-    card = create_card(surface.content);
-    ctx->settings_ui.other_sound_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 14, 0);
-    row = create_labeled_trailing_control_row(card,
-                                              settings_text(ctx, L10N_TOUCH_SOUND),
-                                              settings_text(ctx, L10N_TOUCH_SOUND_SUBTITLE),
-                                              360,
-                                              NULL);
-    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 0), L10N_TOUCH_SOUND);
-    settings_bind_label(ctx, lv_obj_get_child(lv_obj_get_child(row, 0), 1), L10N_TOUCH_SOUND_SUBTITLE);
-
-    ctx->settings_ui.other_sound_sw = lv_switch_create(row);
-    style_settings_switch(ctx->settings_ui.other_sound_sw);
-    attach_settings_control_passthrough(ctx->settings_ui.other_sound_sw, ctx);
-    lv_obj_add_event_cb(ctx->settings_ui.other_sound_sw,
-                        other_sound_enabled_event_cb,
-                        LV_EVENT_VALUE_CHANGED,
-                        ctx);
-    ui_attach_click_feedback(ctx->settings_ui.other_sound_sw, LV_EVENT_VALUE_CHANGED);
-
-    card = create_card(surface.content);
-    ctx->settings_ui.other_sound_volume_card = card;
-    lv_obj_set_width(card, 540);
-    lv_obj_set_style_pad_all(card, 24, 0);
-    lv_obj_set_style_pad_row(card, 14, 0);
-    create_localized_section_title(ctx, card, L10N_TOUCH_SOUND_VOLUME, L10N_TOUCH_SOUND_VOLUME_SUBTITLE);
-
-    row = create_row(card);
-    center_row(row);
-    ctx->settings_ui.other_sound_volume_label = lv_label_create(row);
-    lv_obj_set_style_text_font(ctx->settings_ui.other_sound_volume_label, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(ctx->settings_ui.other_sound_volume_label, lv_color_white(), 0);
-    lv_label_set_text(ctx->settings_ui.other_sound_volume_label, "70%");
-
-    ctx->settings_ui.other_sound_volume_slider = lv_slider_create(card);
-    lv_slider_set_range(ctx->settings_ui.other_sound_volume_slider, 0, 100);
-    lv_obj_set_width(ctx->settings_ui.other_sound_volume_slider, lv_pct(100));
-    style_slider(ctx->settings_ui.other_sound_volume_slider);
-    lv_obj_set_height(ctx->settings_ui.other_sound_volume_slider, 24);
-    attach_settings_control_passthrough(ctx->settings_ui.other_sound_volume_slider, ctx);
-    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider, lv_color_hex(0x2D2D2D), LV_PART_MAIN);
-    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
-                              lv_color_hex(UI_ACCENT_COL),
-                              LV_PART_INDICATOR);
-    lv_obj_set_style_shadow_width(ctx->settings_ui.other_sound_volume_slider, 0, LV_PART_KNOB);
-    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
-                              lv_color_hex(0x222222),
-                              LV_PART_MAIN | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
-                              lv_color_hex(0x5A5A5A),
-                              LV_PART_INDICATOR | LV_STATE_DISABLED);
-    lv_obj_set_style_bg_color(ctx->settings_ui.other_sound_volume_slider,
-                              lv_color_hex(0xA8A8A8),
-                              LV_PART_KNOB | LV_STATE_DISABLED);
-    lv_obj_add_event_cb(ctx->settings_ui.other_sound_volume_slider,
-                        other_sound_volume_event_cb,
-                        LV_EVENT_VALUE_CHANGED,
-                        ctx);
-    ui_attach_click_feedback(ctx->settings_ui.other_sound_volume_slider, LV_EVENT_VALUE_CHANGED);
-
-    create_update_card(ctx, surface.content);
-    create_about_device_card(ctx, surface.content);
-
-    ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
-                                  &ctx->settings_ui.other_top_sensor,
-                                  UI_SURFACE_EDGE_TOP,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_TOP));
-    ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
-                                  &ctx->settings_ui.other_bottom_sensor,
-                                  UI_SURFACE_EDGE_BOTTOM,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
-    ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
-                                  &ctx->settings_ui.other_left_sensor,
-                                  UI_SURFACE_EDGE_LEFT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_LEFT));
-    ui_surface_create_edge_sensor(ctx->settings_ui.other_overlay,
-                                  &ctx->settings_ui.other_right_sensor,
-                                  UI_SURFACE_EDGE_RIGHT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
-}
-
-static void create_night_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-    lv_obj_t *title;
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_COVER,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 settings_text(ctx, L10N_NIGHT_MODE),
-                                 settings_detail_overlay_event_cb,
-                                 settings_back_event_cb,
-                                 ctx);
-    ctx->settings_ui.night_overlay = surface.overlay;
-    ctx->settings_ui.night_content = surface.content;
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_bottom(surface.content, 72, 0);
-    lv_obj_add_flag(surface.content, LV_OBJ_FLAG_SCROLL_MOMENTUM);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, ctx);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL, ctx);
-    lv_obj_add_event_cb(surface.content, settings_content_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
-    title = surface.title;
-    settings_bind_label(ctx, title, L10N_NIGHT_MODE);
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-
-    create_night_card(ctx, surface.content);
-
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_overlay,
-                                  &ctx->settings_ui.night_top_sensor,
-                                  UI_SURFACE_EDGE_TOP,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_TOP));
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_overlay,
-                                  &ctx->settings_ui.night_bottom_sensor,
-                                  UI_SURFACE_EDGE_BOTTOM,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_overlay,
-                                  &ctx->settings_ui.night_left_sensor,
-                                  UI_SURFACE_EDGE_LEFT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_LEFT));
-    ui_surface_create_edge_sensor(ctx->settings_ui.night_overlay,
-                                  &ctx->settings_ui.night_right_sensor,
-                                  UI_SURFACE_EDGE_RIGHT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
-}
-
-void create_settings_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-    lv_obj_t *title;
-    static const ui_surface_edge_t s_edges[] = {
-        UI_SURFACE_EDGE_TOP,
-        UI_SURFACE_EDGE_BOTTOM,
-        UI_SURFACE_EDGE_LEFT,
-        UI_SURFACE_EDGE_RIGHT,
-    };
-
-    for (size_t i = 0; i < (sizeof(s_edges) / sizeof(s_edges[0])); ++i) {
-        ctx->settings_ui.close_edge_ctx[s_edges[i]].ui = ctx;
-        ctx->settings_ui.close_edge_ctx[s_edges[i]].edge = s_edges[i];
-    }
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_COVER,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 settings_text(ctx, L10N_SETTINGS),
-                                 settings_overlay_event_cb,
-                                 settings_close_event_cb,
-                                 ctx);
-    ctx->settings_ui.overlay = surface.overlay;
-    ctx->settings_ui.panel = surface.panel;
-    ctx->settings_ui.content = surface.content;
-    title = surface.title;
-    settings_bind_label(ctx, title, L10N_SETTINGS);
-    lv_obj_set_width(title, lv_pct(100));
-    lv_obj_align(title, LV_ALIGN_TOP_MID, 0, 6);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
-
-    create_settings_menu_entry(surface.content,
-                               LV_SYMBOL_WIFI,
-                               L10N_WIFI,
-                               L10N_WIFI_SUBTITLE,
-                               settings_wifi_entry_event_cb,
-                               ctx);
-    create_settings_menu_entry(surface.content,
-                               LV_SYMBOL_SETTINGS,
-                               L10N_NIGHT_MODE,
-                               L10N_NIGHT_SUBTITLE,
-                               settings_night_entry_event_cb,
-                               ctx);
-    create_settings_menu_entry(surface.content,
-                               LV_SYMBOL_SETTINGS,
-                               L10N_OTHER,
-                               L10N_OTHER_SUBTITLE,
-                               settings_other_entry_event_cb,
-                               ctx);
-
-    ui_surface_create_edge_sensor(ctx->settings_ui.overlay,
-                                  &ctx->settings_ui.top_sensor,
-                                  UI_SURFACE_EDGE_TOP,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_TOP));
-    ui_surface_create_edge_sensor(ctx->settings_ui.overlay,
-                                  &ctx->settings_ui.bottom_sensor,
-                                  UI_SURFACE_EDGE_BOTTOM,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_BOTTOM));
-    ui_surface_create_edge_sensor(ctx->settings_ui.overlay,
-                                  &ctx->settings_ui.left_sensor,
-                                  UI_SURFACE_EDGE_LEFT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_LEFT));
-    ui_surface_create_edge_sensor(ctx->settings_ui.overlay,
-                                  &ctx->settings_ui.right_sensor,
-                                  UI_SURFACE_EDGE_RIGHT,
-                                  SETTINGS_CLOSE_EDGE_ZONE,
-                                  settings_close_swipe_event_cb,
-                                  settings_edge_ctx(ctx, UI_SURFACE_EDGE_RIGHT));
-
-    create_wifi_overlay(ctx);
-    create_other_overlay(ctx);
-    create_night_overlay(ctx);
-    create_night_schedule_overlay(ctx);
-    create_night_face_picker_overlay(ctx);
-    create_wifi_dialog(ctx);
-}
+/* --- Hooks ----------------------------------------------------------------------------- */
 
 static void debug_open_settings(clock_ui_context_t *ctx)
 {
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_HOME);
 }
 
 static void debug_open_wifi(clock_ui_context_t *ctx)
 {
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
-    settings_open_wifi_detail(ctx);
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_WIFI);
 }
 
 static void debug_open_night(clock_ui_context_t *ctx)
 {
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
-    settings_open_night_detail(ctx);
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_NIGHT);
 }
 
 static void debug_open_other(clock_ui_context_t *ctx)
 {
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
-    settings_open_other_detail(ctx);
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_OTHER);
+}
+
+static void debug_sub(clock_ui_context_t *ctx, ui_settings_page_t top, ui_st_page_t sub)
+{
+    ui_settings_open_page(ctx, top);
+    st_show_page(ctx, sub);
+}
+
+static void debug_timezone(clock_ui_context_t *ctx)
+{
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_WIFI);
+    st_timezone_open(ctx);
+}
+
+static void debug_manual_time(clock_ui_context_t *ctx)
+{
+    debug_sub(ctx, UI_SETTINGS_PAGE_WIFI, UI_ST_MANUAL_TIME);
+}
+
+static void debug_schedule(clock_ui_context_t *ctx)
+{
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_NIGHT);
+    st_schedule_open(ctx, 0);
+}
+
+static void debug_face_picker(clock_ui_context_t *ctx)
+{
+    debug_sub(ctx, UI_SETTINGS_PAGE_NIGHT, UI_ST_FACE);
+}
+
+static void debug_night_brightness(clock_ui_context_t *ctx)
+{
+    debug_sub(ctx, UI_SETTINGS_PAGE_NIGHT, UI_ST_NIGHT_BRIGHT);
+}
+
+static void debug_language(clock_ui_context_t *ctx)
+{
+    debug_sub(ctx, UI_SETTINGS_PAGE_OTHER, UI_ST_LANGUAGE);
+}
+
+static void debug_style(clock_ui_context_t *ctx)
+{
+    debug_sub(ctx, UI_SETTINGS_PAGE_OTHER, UI_ST_STYLE);
+}
+
+static void debug_join(clock_ui_context_t *ctx)
+{
+    const app_runtime_state_t *rt = ctx->runtime;
+    size_t count = LV_MIN(rt->wifi_scan_count, (size_t)CLOCK_WIFI_SCAN_RESULT_MAX);
+    size_t pick = 0;
+
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_WIFI);
+    /* Prefer a network that is not the saved one ("Café Lumière" in the simulator). */
+    for (size_t i = 0; i < count; i++) {
+        if (strcmp(rt->wifi_scan_results[i].ssid, ctx->settings->wifi.ssid) != 0) {
+            pick = i;
+            if (i >= 3) {
+                break;
+            }
+        }
+    }
+    if (count > 0) {
+        st_join_open(ctx, rt->wifi_scan_results[pick].ssid, rt->wifi_scan_results[pick].rssi,
+                     rt->wifi_scan_results[pick].authmode);
+    } else {
+        st_join_open(ctx, "Café Lumière", -71, 3);
+    }
+}
+
+static void debug_join_type(clock_ui_context_t *ctx)
+{
+    if (ST(ctx)->join_open && ST(ctx)->join_field != NULL) {
+        lv_textarea_set_text(ST(ctx)->join_field, "lumiere2026");
+    }
+}
+
+static void debug_about(clock_ui_context_t *ctx)
+{
+    lv_obj_t *anchor;
+    kit_page_t *p;
+
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_OTHER);
+    anchor = st_other_about_anchor(ctx);
+    p = st_page(ctx, UI_ST_OTHER);
+    if (anchor != NULL) {
+        lv_area_t a;
+        lv_area_t s;
+
+        lv_obj_update_layout(p->scroll);
+        lv_obj_get_coords(anchor, &a);
+        lv_obj_get_coords(p->scroll, &s);
+        lv_obj_scroll_by_bounded(p->scroll, 0, -(a.y1 - s.y1 - 120), LV_ANIM_OFF);
+    }
+}
+
+static void debug_scroll(clock_ui_context_t *ctx)
+{
+    if (ST(ctx)->open) {
+        lv_obj_scroll_by_bounded(ST(ctx)->pages[ST(ctx)->page].scroll, 0, -300, LV_ANIM_OFF);
+    }
+}
+
+static void debug_scroll_end(clock_ui_context_t *ctx)
+{
+    if (ST(ctx)->open) {
+        lv_obj_t *scroll = ST(ctx)->pages[ST(ctx)->page].scroll;
+
+        lv_obj_update_layout(scroll);
+        lv_obj_scroll_by_bounded(scroll, 0, -lv_obj_get_scroll_bottom(scroll), LV_ANIM_OFF);
+    }
 }
 
 void ui_settings_create(clock_ui_context_t *ctx)
 {
-    create_settings_overlay(ctx);
+    clock_ui_settings_state_t *st = ST(ctx);
+
+    st->night_drag = -1;
+    st->last_minute = -1;
+    st->applied_language = (clock_language_t)ctx->settings->language;
     ui_debug_register("open_settings", debug_open_settings);
     ui_debug_register("open_wifi", debug_open_wifi);
     ui_debug_register("open_night", debug_open_night);
     ui_debug_register("open_other", debug_open_other);
     ui_debug_register("close_settings", ui_settings_close_all);
+    ui_debug_register("settings_back", st_back);
+    ui_debug_register("settings_scroll", debug_scroll);
+    ui_debug_register("settings_scroll_end", debug_scroll_end);
+    ui_debug_register("join_dialog", debug_join);
+    ui_debug_register("join_type", debug_join_type);
+    ui_debug_register("timezone_picker", debug_timezone);
+    ui_debug_register("manual_time", debug_manual_time);
+    ui_debug_register("night_schedule", debug_schedule);
+    ui_debug_register("night_face_picker", debug_face_picker);
+    ui_debug_register("night_brightness", debug_night_brightness);
+    ui_debug_register("language_picker", debug_language);
+    ui_debug_register("style_picker", debug_style);
+    ui_debug_register("about", debug_about);
 }
 
 void ui_settings_destroy(clock_ui_context_t *ctx)
 {
-    lv_draw_buf_t **bufs[] = {
-        &ctx->settings_ui.night_face_preview_buf,
-        &ctx->settings_ui.night_face_preview_scroll_buf,
-    };
+    st_night_destroy(ctx);
+}
 
-    for (size_t i = 0; i < sizeof(bufs) / sizeof(bufs[0]); i++) {
-        if (*bufs[i] != NULL) {
-            lv_draw_buf_destroy(*bufs[i]);
-            *bufs[i] = NULL;
-        }
+static void apply_language(clock_ui_context_t *ctx)
+{
+    clock_ui_settings_state_t *st = ST(ctx);
+
+    if (ctx->cached_language != (clock_language_t)ctx->settings->language) {
+        /* Relabels every bound label of every area, as before the redesign. */
+        ui_l10n_apply(ctx);
+        ctx->cached_language = (clock_language_t)ctx->settings->language;
     }
-    for (int face = 0; face < CLOCK_FACE_COUNT; face++) {
-        if (ctx->settings_ui.night_face_picker_preview_buf[face] != NULL) {
-            lv_draw_buf_destroy(ctx->settings_ui.night_face_picker_preview_buf[face]);
-            ctx->settings_ui.night_face_picker_preview_buf[face] = NULL;
+    if (st->applied_language != (clock_language_t)ctx->settings->language) {
+        st->applied_language = (clock_language_t)ctx->settings->language;
+        sync_eyebrows(ctx);
+        /* Composed texts of every built page follow on the next sync of that page. */
+        for (int i = 0; i < UI_ST_PAGE_COUNT; i++) {
+            if (st->built[i]) {
+                sync_page(ctx, (ui_st_page_t)i, true);
+            }
         }
     }
 }
 
 void ui_settings_tick(clock_ui_context_t *ctx, time_t now)
 {
-    LV_UNUSED(now);
-    if (ctx->settings_ui.wifi_open && !ctx->settings_ui.wifi_scrolling && wifi_controls_need_sync(ctx)) {
-        sync_wifi_controls(ctx);
+    clock_ui_settings_state_t *st = ST(ctx);
+    int32_t minute = (int32_t)(now / 60);
+
+    if (!st->open || st->scrolling || st->night_drag >= 0) {
+        return;
     }
-    if (ctx->settings_ui.other_open && !ctx->settings_ui.other_scrolling) {
-        sync_other_controls(ctx);
+    if (minute != st->last_minute) {
+        st->last_minute = minute;
+        if (st->page == UI_ST_HOME) {
+            sync_home(ctx);
+        }
     }
-    if (ctx->settings_ui.night_open && !ctx->settings_ui.night_scrolling && night_controls_need_sync(ctx)) {
-        sync_night_controls(ctx);
-    }
+    sync_page(ctx, (ui_st_page_t)st->page, false);
 }
 
 void ui_settings_refresh(clock_ui_context_t *ctx)
 {
-    refresh_settings_controls(ctx);
+    apply_language(ctx);
+    if (ST(ctx)->open) {
+        sync_page(ctx, (ui_st_page_t)ST(ctx)->page, false);
+    }
 }
 
 void ui_settings_open(clock_ui_context_t *ctx)
 {
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_HOME);
 }
 
 void ui_settings_open_page(clock_ui_context_t *ctx, ui_settings_page_t page)
 {
-    open_settings_tab(ctx, SETTINGS_TAB_WIFI);
-    if (page == UI_SETTINGS_PAGE_WIFI) {
-        settings_open_wifi_detail(ctx);
-    } else if (page == UI_SETTINGS_PAGE_NIGHT) {
-        settings_open_night_detail(ctx);
-    } else if (page == UI_SETTINGS_PAGE_OTHER) {
-        settings_open_other_detail(ctx);
+    static const ui_st_page_t map[] = {
+        [UI_SETTINGS_PAGE_NONE] = UI_ST_HOME,
+        [UI_SETTINGS_PAGE_HOME] = UI_ST_HOME,
+        [UI_SETTINGS_PAGE_WIFI] = UI_ST_WIFI,
+        [UI_SETTINGS_PAGE_NIGHT] = UI_ST_NIGHT,
+        [UI_SETTINGS_PAGE_OTHER] = UI_ST_OTHER,
+    };
+
+    if ((unsigned)page > UI_SETTINGS_PAGE_OTHER) {
+        page = UI_SETTINGS_PAGE_HOME;
     }
+    open_surface(ctx);
+    if (!ST(ctx)->built[UI_ST_HOME]) {
+        build_page(ctx, UI_ST_HOME);
+    }
+    present(ctx, map[page], true);
 }
 
 ui_settings_page_t ui_settings_current_page(const clock_ui_context_t *ctx)
 {
-    if (!settings_surface_is_open(ctx)) {
+    const clock_ui_settings_state_t *st = &ctx->settings_ui;
+    ui_st_page_t page;
+
+    if (!st->open) {
         return UI_SETTINGS_PAGE_NONE;
     }
-    if (ctx->settings_ui.wifi_open) {
+    page = (ui_st_page_t)st->page;
+    if (page >= UI_ST_TIMEZONE) {
+        page = st_parent(page);
+    }
+    switch (page) {
+    case UI_ST_WIFI:
         return UI_SETTINGS_PAGE_WIFI;
-    }
-    if (ctx->settings_ui.night_open) {
+    case UI_ST_NIGHT:
         return UI_SETTINGS_PAGE_NIGHT;
-    }
-    if (ctx->settings_ui.other_open) {
+    case UI_ST_OTHER:
         return UI_SETTINGS_PAGE_OTHER;
+    default:
+        return UI_SETTINGS_PAGE_HOME;
     }
-    return UI_SETTINGS_PAGE_HOME;
 }
 
 bool ui_settings_is_open(const clock_ui_context_t *ctx)
 {
-    return settings_surface_is_open(ctx);
+    return ctx->settings_ui.open;
 }
 
 void ui_settings_close_all(clock_ui_context_t *ctx)
 {
-    if (settings_surface_is_open(ctx)) {
-        settings_surface_close(ctx);
-    }
+    close_surface(ctx);
+}
+
+/* --- Older entry points (clock_ui_private.h) ------------------------------------------- */
+
+bool settings_surface_is_open(const clock_ui_context_t *ctx)
+{
+    return ui_settings_is_open(ctx);
+}
+
+void settings_surface_close(clock_ui_context_t *ctx)
+{
+    close_surface(ctx);
+}
+
+void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx)
+{
+    ui_settings_open_page(ctx, tab_idx == SETTINGS_TAB_NIGHT ? UI_SETTINGS_PAGE_NIGHT : UI_SETTINGS_PAGE_HOME);
+}
+
+void settings_button_event_cb(lv_event_t *event)
+{
+    ui_settings_open((clock_ui_context_t *)lv_event_get_user_data(event));
+}
+
+void refresh_settings_controls(clock_ui_context_t *ctx)
+{
+    ui_settings_refresh(ctx);
 }

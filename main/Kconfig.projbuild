@@ -63,7 +63,18 @@ menu "Touch Clock"
         depends on TOUCH_CLOCK_PERF_TOUR
         default n
 
-    config TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
+    config TOUCH_CLOCK_PERF_TOUR_STYLES
+        bool "Run each tour loop in the next UI style (Instrument, Orbit, Atelier)"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default n
+
+config TOUCH_CLOCK_PERF_TOUR_THUMB_STEP
+        int "Thumbnail downscale step (1 = full resolution)"
+        depends on TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
+        range 1 8
+        default 4
+
+config TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
         bool "Capture full-resolution screenshots of every face instead of the tour"
         depends on TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
         default n

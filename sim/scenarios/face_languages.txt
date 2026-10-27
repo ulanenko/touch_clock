@@ -1,0 +1,230 @@
+# Face chrome in Russian, Ukrainian and Polish (overflow check), every style.
+clock 14:13:00
+set language 3
+set style 0
+set face 5
+wait 600
+call show_controls
+wait 100
+shot instrument_l3_01
+call hide_controls
+call open_theme
+wait 100
+shot instrument_l3_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot instrument_l3_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot instrument_l3_12
+set night_active 0
+clock 14:13:00
+wait 300
+set style 1
+set face 5
+wait 600
+call show_controls
+wait 100
+shot orbit_l3_01
+call hide_controls
+call open_theme
+wait 100
+shot orbit_l3_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot orbit_l3_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot orbit_l3_12
+set night_active 0
+clock 14:13:00
+wait 300
+set style 2
+set face 5
+wait 600
+call show_controls
+wait 100
+shot atelier_l3_01
+call hide_controls
+call open_theme
+wait 100
+shot atelier_l3_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot atelier_l3_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot atelier_l3_12
+set night_active 0
+clock 14:13:00
+wait 300
+set language 2
+set style 0
+set face 5
+wait 600
+call show_controls
+wait 100
+shot instrument_l2_01
+call hide_controls
+call open_theme
+wait 100
+shot instrument_l2_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot instrument_l2_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot instrument_l2_12
+set night_active 0
+clock 14:13:00
+wait 300
+set style 1
+set face 5
+wait 600
+call show_controls
+wait 100
+shot orbit_l2_01
+call hide_controls
+call open_theme
+wait 100
+shot orbit_l2_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot orbit_l2_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot orbit_l2_12
+set night_active 0
+clock 14:13:00
+wait 300
+set style 2
+set face 5
+wait 600
+call show_controls
+wait 100
+shot atelier_l2_01
+call hide_controls
+call open_theme
+wait 100
+shot atelier_l2_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot atelier_l2_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot atelier_l2_12
+set night_active 0
+clock 14:13:00
+wait 300
+set language 1
+set style 0
+set face 5
+wait 600
+call show_controls
+wait 100
+shot instrument_l1_01
+call hide_controls
+call open_theme
+wait 100
+shot instrument_l1_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot instrument_l1_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot instrument_l1_12
+set night_active 0
+clock 14:13:00
+wait 300
+set style 1
+set face 5
+wait 600
+call show_controls
+wait 100
+shot orbit_l1_01
+call hide_controls
+call open_theme
+wait 100
+shot orbit_l1_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot orbit_l1_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot orbit_l1_12
+set night_active 0
+clock 14:13:00
+wait 300
+set style 2
+set face 5
+wait 600
+call show_controls
+wait 100
+shot atelier_l1_01
+call hide_controls
+call open_theme
+wait 100
+shot atelier_l1_02
+call close_theme
+wait 400
+call open_quick
+wait 100
+shot atelier_l1_03
+call close_quick
+wait 200
+set face 1
+set night_active 1
+clock 22:18:00
+wait 1200
+shot atelier_l1_12
+set night_active 0
+clock 14:13:00
+wait 300

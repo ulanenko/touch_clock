@@ -48,6 +48,7 @@ void ui_face_chrome_set_hidden(clock_ui_context_t *ctx, bool hidden);
 void ui_face_chrome_close_all(clock_ui_context_t *ctx);
 bool ui_face_chrome_covers_face(const clock_ui_context_t *ctx); /* an opaque surface is open */
 bool ui_face_chrome_dims_face(const clock_ui_context_t *ctx);   /* a sheet over the face is open */
+bool ui_face_chrome_controls_visible(const clock_ui_context_t *ctx); /* tap controls are showing */
 
 /* --- Settings ---------------------------------------------------------------------------- */
 

@@ -1,0 +1,94 @@
+# Face chrome: every screen in the three styles (01 controls, 02 themes, 03 quick, 12 night).
+# Run: sim/build_face/sim sim/scenarios/face_screens.txt sim/out/face
+clock 14:13:00
+wait 300
+set style 0
+wait 500
+call show_controls
+wait 200
+shot instrument_01
+call hide_controls
+call open_theme
+wait 200
+shot instrument_02
+call close_theme
+wait 500
+call open_quick
+wait 200
+shot instrument_03
+call close_quick
+wait 300
+set face 0
+wait 600
+call show_controls
+wait 200
+shot instrument_01b_digital
+call hide_controls
+set face 5
+wait 300
+clock 22:18:00
+set night_active 1
+wait 1200
+shot instrument_12
+set night_active 0
+clock 14:13:00
+wait 600
+set style 1
+wait 500
+call show_controls
+wait 200
+shot orbit_01
+call hide_controls
+call open_theme
+wait 200
+shot orbit_02
+call close_theme
+wait 500
+call open_quick
+wait 200
+shot orbit_03
+call close_quick
+wait 300
+set face 0
+wait 600
+call show_controls
+wait 200
+shot orbit_01b_digital
+call hide_controls
+set face 5
+wait 300
+clock 22:18:00
+set night_active 1
+wait 1200
+shot orbit_12
+set night_active 0
+clock 14:13:00
+wait 600
+set style 2
+wait 500
+call show_controls
+wait 200
+shot atelier_01
+call hide_controls
+call open_theme
+wait 200
+shot atelier_02
+call close_theme
+wait 500
+call open_quick
+wait 200
+shot atelier_03
+call close_quick
+wait 300
+set face 0
+wait 600
+call show_controls
+wait 200
+shot atelier_01b_digital
+call hide_controls
+set face 5
+wait 300
+clock 22:18:00
+set night_active 1
+wait 1200
+shot atelier_12

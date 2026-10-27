@@ -1,834 +1,735 @@
-#include "ui/clock_ui_private.h"
+/*
+ * Quick actions (screen 03), pulled up from the bottom over the dimmed face: four keys
+ * (Alarms, Night, Sound, Settings) and the brightness control on the lower rim.
+ *
+ * The rim control is an lv_arc used for its input only (angle to value, drag rate, hit band
+ * on the ring); its look is drawn per style in one draw callback: Instrument scale ring with
+ * ticks and a signal fill, Orbit capsule track, Atelier bezel scale with the jewel. Dragging
+ * it sets the brightness live (the night override while night mode is active), as the old
+ * brightness panel did; the panel is gone.
+ *
+ * The sheet mechanics (pull from the bottom edge, drag, snapshot while moving, dim, auto
+ * close) are in ui_face_sheet.c.
+ */
+#include <math.h>
+
+#include "assets/ui_assets/kit_assets.h"
 #include "ui/ui_areas.h"
+#include "ui/ui_face_chrome.h"
 
-static void brightness_overlay_hide(clock_ui_context_t *ctx);
+#define QUICK_AUTO_CLOSE_MS 5000
+#define ARC_START 30 /* LVGL degrees: lower right, 100 % */
+#define ARC_END 150  /* lower left, 0 % */
+#define EDGE_TRIGGER 12
 
-static void brightness_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
+static const ui_l10n_str_t s_night = UI_L10N_STR("Night", "Noc", "Ніч", "Ночь", "Nacht");
+static const ui_l10n_str_t s_sound = UI_L10N_STR("Sound", "Dźwięk", "Звук", "Звук", "Geluid");
+static const ui_l10n_str_t s_quiet = UI_L10N_STR("Quiet", "Cisza", "Тиша", "Тишина", "Stil");
+static const ui_l10n_str_t s_night_on = UI_L10N_STR("Night on", "Noc wł.", "Ніч увімк.", "Ночь вкл.", "Nacht aan");
+static const ui_l10n_str_t s_night_off = UI_L10N_STR("Night off", "Noc wył.", "Ніч вимк.", "Ночь выкл.", "Nacht uit");
+static const ui_l10n_str_t s_sound_on = UI_L10N_STR("Sound on", "Dźwięk wł.", "Звук увімк.", "Звук вкл.", "Geluid aan");
+static const ui_l10n_str_t s_sound_off = UI_L10N_STR("Sound off", "Dźwięk wył.", "Звук вимк.", "Звук выкл.",
+                                                     "Geluid uit");
+
+typedef struct {
+    int32_t open_y;
+    int32_t x;
+    int32_t radius;   /* rim control: centre line radius */
+    int32_t key;      /* key size */
+    int32_t key_y;    /* key top (screen) */
+    int32_t key_pitch;
+    int32_t label_y;  /* key label top (screen) */
+} quick_layout_t;
+
+static quick_layout_t quick_layout(void)
 {
-    ui_l10n_bind_label_with_font(ctx, label, text_id, &ui_i18n_24);
-}
-
-static void affordance_opa_anim_cb(void *obj, int32_t value)
-{
-    lv_obj_set_style_opa((lv_obj_t *)obj, (lv_opa_t)value, 0);
-}
-
-static void affordance_hide_anim_ready_cb(lv_anim_t *anim)
-{
-    lv_obj_add_flag((lv_obj_t *)anim->var, LV_OBJ_FLAG_HIDDEN);
-}
-
-static void animate_affordance(lv_obj_t *obj, bool visible)
-{
-    lv_anim_t anim;
-    lv_opa_t start_opa;
-    lv_opa_t end_opa = visible ? LV_OPA_COVER : LV_OPA_TRANSP;
-
-    if (obj == NULL) {
-        return;
-    }
-
-    if (!visible && lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
-        return;
-    }
-
-    start_opa = lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) ? LV_OPA_TRANSP : lv_obj_get_style_opa(obj, 0);
-    lv_anim_delete(obj, affordance_opa_anim_cb);
-
-    if (visible) {
-        lv_obj_clear_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    if (start_opa == end_opa) {
-        lv_obj_set_style_opa(obj, end_opa, 0);
-        if (!visible) {
-            lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
-        }
-        return;
-    }
-
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, obj);
-    lv_anim_set_exec_cb(&anim, affordance_opa_anim_cb);
-    lv_anim_set_values(&anim, start_opa, end_opa);
-    lv_anim_set_time(&anim, visible ? AFFORDANCE_FADE_IN_MS : AFFORDANCE_FADE_OUT_MS);
-    lv_anim_set_path_cb(&anim, visible ? lv_anim_path_ease_out : lv_anim_path_ease_in);
-    if (!visible) {
-        lv_anim_set_ready_cb(&anim, affordance_hide_anim_ready_cb);
-    }
-    lv_anim_start(&anim);
-}
-
-static void set_affordances_visible(clock_ui_context_t *ctx, bool visible)
-{
-    ctx->affordances_visible = visible;
-
-    for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
-        if (ctx->page_dots[i] == NULL) {
-            continue;
-        }
-
-        animate_affordance(ctx->page_dots[i], visible);
-    }
-
-    if (ctx->brightness.pull_hint == NULL) {
-        return;
-    }
-
-    animate_affordance(ctx->brightness.pull_hint, visible);
-    animate_affordance(ctx->face_theme.pull_hint, visible);
-}
-
-void affordance_hide_timer_cb(lv_timer_t *timer)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
-
-    set_affordances_visible(ctx, false);
-    if (ctx->affordance_hide_timer != NULL) {
-        lv_timer_pause(ctx->affordance_hide_timer);
+    switch (ui_skin_style()) {
+    case CLOCK_UI_STYLE_INSTRUMENT:
+        return (quick_layout_t) {216, 0, 318, 88, 264, 112, 368};
+    case CLOCK_UI_STYLE_ATELIER:
+        return (quick_layout_t) {196, 0, 300, 84, 258, 116, 349};
+    case CLOCK_UI_STYLE_ORBIT:
+    default:
+        return (quick_layout_t) {212, 60, 286, 92, 258, 120, 362};
     }
 }
 
-void show_affordances_temporarily(clock_ui_context_t *ctx)
-{
-    if (ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || brightness_panel_is_open(ctx)) {
-        return;
-    }
+/* --- Brightness ------------------------------------------------------------------------- */
 
-    set_affordances_visible(ctx, true);
-    if (ctx->affordance_hide_timer == NULL) {
-        return;
-    }
-
-    lv_timer_set_period(ctx->affordance_hide_timer, AFFORDANCE_VISIBLE_MS);
-    lv_timer_resume(ctx->affordance_hide_timer);
-        lv_timer_reset(ctx->affordance_hide_timer);
-}
-
-static void sync_active_face_visual_state(clock_ui_context_t *ctx)
-{
-    if (ctx->tileview == NULL) {
-        return;
-    }
-
-    sync_face_animation_state(ctx, tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)));
-}
-
-#define QUICK_ACTIONS_AUTO_CLOSE_MS 3000
-#define BRIGHTNESS_PANEL_AUTO_CLOSE_MS 5000
-
-static void quick_actions_auto_close_pause(clock_ui_context_t *ctx)
-{
-    if (ctx->brightness.overlay_auto_close_timer == NULL) {
-        return;
-    }
-
-    lv_timer_pause(ctx->brightness.overlay_auto_close_timer);
-}
-
-static void quick_actions_auto_close_reset(clock_ui_context_t *ctx)
-{
-    if (ctx->brightness.overlay_auto_close_timer == NULL ||
-        ctx->brightness.overlay == NULL ||
-        lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN) ||
-        brightness_panel_is_open(ctx)) {
-        return;
-    }
-
-    lv_timer_set_period(ctx->brightness.overlay_auto_close_timer, QUICK_ACTIONS_AUTO_CLOSE_MS);
-    lv_timer_resume(ctx->brightness.overlay_auto_close_timer);
-    lv_timer_reset(ctx->brightness.overlay_auto_close_timer);
-}
-
-static void quick_actions_auto_close_timer_cb(lv_timer_t *timer)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
-
-    if (ctx == NULL ||
-        ctx->brightness.overlay == NULL ||
-        lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN) ||
-        brightness_panel_is_open(ctx)) {
-        lv_timer_pause(timer);
-        return;
-    }
-
-    if (ctx->brightness.dragging || ctx->brightness.animating) {
-        quick_actions_auto_close_reset(ctx);
-        return;
-    }
-
-    brightness_overlay_hide(ctx);
-}
-
-static void brightness_panel_auto_close_pause(clock_ui_context_t *ctx)
-{
-    if (ctx->brightness.auto_close_timer == NULL) {
-        return;
-    }
-
-    lv_timer_pause(ctx->brightness.auto_close_timer);
-}
-
-static void brightness_panel_auto_close_reset(clock_ui_context_t *ctx)
-{
-    if (ctx->brightness.auto_close_timer == NULL) {
-        return;
-    }
-
-    lv_timer_set_period(ctx->brightness.auto_close_timer, BRIGHTNESS_PANEL_AUTO_CLOSE_MS);
-    lv_timer_resume(ctx->brightness.auto_close_timer);
-    lv_timer_reset(ctx->brightness.auto_close_timer);
-}
-
-static void brightness_panel_auto_close_timer_cb(lv_timer_t *timer)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
-
-    if (ctx == NULL || !brightness_panel_is_open(ctx)) {
-        lv_timer_pause(timer);
-        return;
-    }
-
-    if (ctx->brightness.dragging || ctx->brightness.animating) {
-        brightness_panel_auto_close_reset(ctx);
-        return;
-    }
-
-    brightness_panel_hide(ctx);
-}
-
-static uint8_t brightness_ui_get_target_hw(const clock_ui_context_t *ctx)
+static uint8_t target_hw(const clock_ui_context_t *ctx)
 {
     if (ctx->runtime != NULL && ctx->runtime->in_night_mode) {
         if (ctx->runtime->night_brightness_override_active) {
             return ctx->runtime->night_brightness_override;
         }
-
         return ctx->settings->night_mode.brightness;
     }
-
     return ctx->settings->base_brightness;
+}
+
+static void set_value_text(clock_ui_context_t *ctx, int32_t percent)
+{
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    char buf[8];
+
+    if (ui_skin_style() == CLOCK_UI_STYLE_ORBIT) {
+        snprintf(buf, sizeof(buf), "%d%%", (int)percent);
+    } else {
+        snprintf(buf, sizeof(buf), "%d", (int)percent);
+    }
+    kit_label_set_text_if_changed(q->value, buf);
+}
+
+static float arc_angle(int32_t percent)
+{
+    return (float)ARC_END - (float)(percent * (ARC_END - ARC_START)) / 100.0f;
+}
+
+static lv_point_t arc_point(lv_point_t c, int32_t r, float deg)
+{
+    float a = deg * 3.14159265f / 180.0f;
+
+    return (lv_point_t) {(int32_t)lroundf(c.x + r * cosf(a)), (int32_t)lroundf(c.y + r * sinf(a))};
+}
+
+static void draw_jewel(lv_layer_t *layer, lv_point_t p)
+{
+    const lv_image_dsc_t *src = &ui_kit_atelier_jewel_40;
+    lv_draw_image_dsc_t d;
+    lv_area_t a;
+
+    lv_draw_image_dsc_init(&d);
+    d.src = src;
+    a.x1 = p.x - (int32_t)src->header.w / 2;
+    a.y1 = p.y - (int32_t)src->header.h / 2;
+    a.x2 = a.x1 + (int32_t)src->header.w - 1;
+    a.y2 = a.y1 + (int32_t)src->header.h - 1;
+    lv_draw_image(layer, &d, &a);
+}
+
+static void arc_draw_cb(lv_event_t *e)
+{
+    const ui_skin_t *sk = ui_skin();
+    lv_obj_t *arc = lv_event_get_current_target(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    int32_t v = lv_arc_get_value(arc);
+    float av = arc_angle(v);
+    int32_t r = lv_obj_get_width(arc) / 2;
+    lv_area_t coords;
+    lv_point_t c;
+    lv_point_t k;
+
+    lv_obj_get_coords(arc, &coords);
+    c.x = coords.x1 + r;
+    c.y = coords.y1 + r;
+    k = arc_point(c, r, av);
+
+    switch (ui_skin_style()) {
+    case CLOCK_UI_STYLE_INSTRUMENT:
+        /* Scale ring: 21 ticks (majors every 25 %), a hairline track and the signal fill. */
+        for (int i = 0; i <= 20; i++) {
+            bool major = (i % 5) == 0;
+
+            face_draw_tick(layer, c, major ? r - 28 : r - 20, r - 12, (float)(ARC_END - i * 6), 2,
+                           i * 5 <= v ? sk->text_2 : sk->line_strong);
+        }
+        face_draw_rim_arc(layer, c, r + 1, 2, ARC_START, ARC_END, sk->line_strong, LV_OPA_COVER, false);
+        if (v > 0) {
+            face_draw_rim_arc(layer, c, r + 3, 6, (int32_t)lroundf(av), ARC_END, sk->accent, LV_OPA_COVER, true);
+        }
+        face_draw_dot(layer, k.x, k.y, 17, sk->sheet, LV_OPA_COVER);
+        face_draw_dot(layer, k.x, k.y, 13, sk->text, LV_OPA_COVER);
+        face_draw_dot(layer, k.x, k.y, 3, sk->accent, LV_OPA_COVER);
+        break;
+    case CLOCK_UI_STYLE_ATELIER:
+        /* Bezel scale: ticks lit in gilt up to the value, a fine track and the jewel. */
+        for (int i = 0; i <= 20; i++) {
+            bool major = (i % 2) == 0;
+            float a = (float)(ARC_END - i * 6);
+            bool lit = a >= av - 0.01f;
+
+            face_draw_tick(layer, c, r + (major ? 27 : 32), r + 40, a, major ? 2 : 1,
+                           lit ? (major ? sk->accent : sk->label) : (major ? sk->accent_deep : sk->line_strong));
+        }
+        face_draw_rim_arc(layer, c, r + 2, 4, ARC_START, ARC_END, sk->line_strong, LV_OPA_COVER, true);
+        if (v > 0) {
+            face_draw_rim_arc(layer, c, r + 2, 4, (int32_t)lroundf(av), ARC_END, sk->accent, LV_OPA_COVER, true);
+        }
+        draw_jewel(layer, k);
+        break;
+    case CLOCK_UI_STYLE_ORBIT:
+    default:
+        /* Capsule track around the lower rim in the brightness tint, white knob. */
+        face_draw_rim_arc(layer, c, r + 18, 36, ARC_START, ARC_END, sk->well, LV_OPA_COVER, true);
+        if (v > 0) {
+            face_draw_rim_arc(layer, c, r + 18, 36, (int32_t)lroundf(av), ARC_END, sk->tint_brightness,
+                              LV_OPA_COVER, true);
+        }
+        face_draw_dot(layer, k.x, k.y + 3, 25, lv_color_black(), LV_OPA_40);
+        face_draw_dot(layer, k.x, k.y, 22, lv_color_white(), LV_OPA_COVER);
+        break;
+    }
+}
+
+/* The scale, the capsule and the knob reach past the arc object's square. */
+static void arc_ext_draw_cb(lv_event_t *e)
+{
+    lv_event_set_ext_draw_size(e, 48);
+}
+
+static void arc_event_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(e);
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    lv_event_code_t code = lv_event_get_code(e);
+    int32_t percent;
+    uint8_t hw;
+
+    face_sheet_activity(&q->sheet);
+    if (code != LV_EVENT_VALUE_CHANGED || ctx->suppress_events) {
+        return;
+    }
+    percent = lv_arc_get_value(q->arc);
+    hw = brightness_ui_to_hw((int)percent);
+    if (ctx->runtime != NULL && ctx->runtime->in_night_mode) {
+        request_set_runtime_night_brightness(ctx, hw);
+    } else {
+        request_set_base_brightness(ctx, hw);
+    }
+    q->last_ui_percent = (uint8_t)percent;
+    q->ui_synced = true;
+    set_value_text(ctx, percent);
+    lv_obj_invalidate(q->arc);
+    face_sheet_mark_dirty(&q->sheet);
 }
 
 void update_brightness_ui(clock_ui_context_t *ctx)
 {
-    char buffer[32];
-    uint8_t target_brightness;
-    uint8_t ui_percent;
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    uint8_t percent;
 
-    if (ctx->brightness.value == NULL || ctx->brightness.slider == NULL) {
+    if (q->arc == NULL || lv_obj_has_state(q->arc, LV_STATE_PRESSED)) {
         return;
     }
+    percent = brightness_hw_to_ui(target_hw(ctx));
+    if (q->ui_synced && q->last_ui_percent == percent) {
+        return;
+    }
+    q->last_ui_percent = percent;
+    q->ui_synced = true;
+    ctx->suppress_events = true;
+    lv_arc_set_value(q->arc, percent);
+    ctx->suppress_events = false;
+    set_value_text(ctx, percent);
+    lv_obj_invalidate(q->arc);
+    face_sheet_mark_dirty(&q->sheet);
+}
 
-    target_brightness = brightness_ui_get_target_hw(ctx);
-    ui_percent = brightness_hw_to_ui(target_brightness);
-    if (!ctx->brightness.ui_synced || ctx->brightness.last_ui_percent != ui_percent) {
-        snprintf(buffer, sizeof(buffer), "%u%%", ui_percent);
-        lv_label_set_text(ctx->brightness.value, buffer);
+/* --- Keys ------------------------------------------------------------------------------- */
 
-        ctx->suppress_events = true;
-        lv_slider_set_value(ctx->brightness.slider, ui_percent, LV_ANIM_OFF);
-        ctx->suppress_events = false;
+static void set_led(lv_obj_t *led, bool on)
+{
+    const ui_skin_t *sk = ui_skin();
 
-        ctx->brightness.last_ui_percent = ui_percent;
-        ctx->brightness.ui_synced = true;
+    if (led == NULL) {
+        return;
+    }
+    lv_obj_set_style_bg_color(led, on ? sk->accent : sk->well, 0);
+    lv_obj_set_style_border_width(led, on ? 0 : 1, 0);
+}
+
+static void style_key(clock_ui_context_t *ctx, quick_key_t key, bool on)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    lv_obj_t *btn = q->keys[key];
+    lv_obj_t *icon = q->key_icons[key];
+    lv_obj_t *label = q->key_labels[key];
+
+    switch (ui_skin_style()) {
+    case CLOCK_UI_STYLE_INSTRUMENT:
+        set_led(q->key_leds[key], on);
+        lv_obj_set_style_text_color(label, on ? sk->text_2 : sk->label, 0);
+        break;
+    case CLOCK_UI_STYLE_ATELIER:
+        lv_obj_set_style_bg_color(btn, on ? sk->accent : sk->surface, 0);
+        lv_obj_set_style_border_color(btn, on ? sk->value : sk->accent_deep, 0);
+        lv_obj_set_style_image_recolor(icon, on ? sk->accent_text : sk->value, 0);
+        lv_obj_set_style_text_color(label, on ? sk->accent : sk->text_2, 0);
+        break;
+    case CLOCK_UI_STYLE_ORBIT:
+    default: {
+        lv_color_t tint = key == QUICK_KEY_NIGHT ? sk->tint_night : sk->tint_sound;
+
+        lv_obj_set_style_bg_color(btn, on ? tint : sk->raised, 0);
+        lv_obj_set_style_image_recolor(icon, on ? lv_color_white() : tint, 0);
+        lv_obj_set_style_text_color(label, on ? sk->text : sk->text_2, 0);
+        break;
+    }
     }
 }
 
-bool brightness_panel_is_open(const clock_ui_context_t *ctx)
+/* Sets the key labels for the language and toggle states (the bindings set the same texts on
+ * a language change; doing it here as well keeps the order of the refreshes irrelevant), and
+ * fits long words into the key pitch. */
+static void set_key_texts(clock_ui_context_t *ctx)
 {
-    return ctx->brightness.panel_overlay != NULL &&
-           !lv_obj_has_flag(ctx->brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
-}
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    clock_ui_style_t style = ui_skin_style();
+    quick_layout_t l = quick_layout();
+    bool night = ctx->settings->night_mode.enabled;
+    bool sound = ctx->settings->ui_click_sound_enabled;
+    int32_t letter_space = style == CLOCK_UI_STYLE_ORBIT ? 0 : (style == CLOCK_UI_STYLE_ATELIER ? 2 : ui_skin()->label_letter_space);
 
-static void brightness_update_visual_state(clock_ui_context_t *ctx, int32_t sheet_y)
-{
-    int32_t clamped_y = LV_CLAMP(BRIGHTNESS_SHEET_OPEN_Y, sheet_y, BRIGHTNESS_SHEET_CLOSED_Y);
-    int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
-    int32_t progress = BRIGHTNESS_SHEET_CLOSED_Y - clamped_y;
-    lv_opa_t opa = (lv_opa_t)((progress * BRIGHTNESS_SCRIM_OPA) / travel);
-
-    lv_obj_set_y(ctx->brightness.sheet, clamped_y);
-    ui_backdrop_set(ctx, ctx->brightness.overlay, ctx->brightness.backdrop_img,
-                    ctx->brightness.dragging || ctx->brightness.animating, opa);
-}
-
-static void brightness_sheet_anim_cb(void *obj, int32_t value)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_obj_get_user_data((lv_obj_t *)obj);
-    brightness_update_visual_state(ctx, value);
-}
-
-static void brightness_sheet_anim_ready_cb(lv_anim_t *anim)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
-
-    ctx->brightness.animating = false;
-
-    if (!ctx->brightness.target_open) {
-        lv_obj_add_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-        brightness_update_visual_state(ctx, BRIGHTNESS_SHEET_CLOSED_Y);
-        quick_actions_auto_close_pause(ctx);
+    kit_label_set_text_if_changed(q->key_labels[QUICK_KEY_ALARMS], ui_l10n_text(ctx, L10N_ALARMS));
+    kit_label_set_text_if_changed(q->key_labels[QUICK_KEY_SETTINGS], ui_l10n_text(ctx, L10N_SETTINGS));
+    if (style == CLOCK_UI_STYLE_ORBIT) {
+        kit_label_set_text_if_changed(q->key_labels[QUICK_KEY_NIGHT], ui_l10n_str(ctx, night ? &s_night_on : &s_night_off));
+        kit_label_set_text_if_changed(q->key_labels[QUICK_KEY_SOUND], ui_l10n_str(ctx, sound ? &s_sound_on : &s_sound_off));
     } else {
-        brightness_update_visual_state(ctx, BRIGHTNESS_SHEET_OPEN_Y);
-        quick_actions_auto_close_reset(ctx);
+        kit_label_set_text_if_changed(q->key_labels[QUICK_KEY_NIGHT], ui_l10n_str(ctx, &s_night));
+        kit_label_set_text_if_changed(q->key_labels[QUICK_KEY_SOUND],
+                                      ui_l10n_str(ctx, style == CLOCK_UI_STYLE_ATELIER ? &s_quiet : &s_sound));
     }
-
-    sync_active_face_visual_state(ctx);
+    for (int k = 0; k < QUICK_KEY_COUNT; k++) {
+        face_fit_label(q->key_labels[k], l.key_pitch - 10, letter_space);
+    }
 }
 
-static uint32_t brightness_sheet_anim_duration(int32_t from_y, int32_t to_y)
+static void sync_keys(clock_ui_context_t *ctx, bool force)
 {
-    int32_t distance = LV_ABS(to_y - from_y);
-    int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    bool night = ctx->settings->night_mode.enabled;
+    bool sound = ctx->settings->ui_click_sound_enabled;
 
-    if (travel <= 0) {
-        return BRIGHTNESS_SHEET_SHOW_MS;
+    if (q->keys[QUICK_KEY_NIGHT] == NULL) {
+        return;
     }
-
-    return (uint32_t)LV_CLAMP(110, 110 + ((distance * 150) / travel), 260);
+    if (!force && q->keys_synced && night == q->night_on && sound == q->sound_on &&
+        q->last_language == ctx->settings->language) {
+        return;
+    }
+    q->keys_synced = true;
+    q->night_on = night;
+    q->sound_on = sound;
+    q->last_language = ctx->settings->language;
+    set_key_texts(ctx);
+    style_key(ctx, QUICK_KEY_NIGHT, night);
+    /* Atelier shows the toggle as "Quiet": lit when the touch sound is off. */
+    style_key(ctx, QUICK_KEY_SOUND, ui_skin_style() == CLOCK_UI_STYLE_ATELIER ? !sound : sound);
+    face_sheet_mark_dirty(&q->sheet);
 }
 
-static void brightness_prepare_overlay_for_drag(clock_ui_context_t *ctx)
+static void key_click_cb(lv_event_t *e)
 {
-    if (ctx->brightness.overlay == NULL) {
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(e);
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    lv_obj_t *btn = lv_event_get_current_target(e);
+
+    if (!face_click_is_tap(ctx, e)) {
+        return;
+    }
+    if (btn == q->keys[QUICK_KEY_ALARMS]) {
+        ui_alarms_open(ctx);
+    } else if (btn == q->keys[QUICK_KEY_SETTINGS]) {
+        ui_settings_open(ctx);
+    } else if (btn == q->keys[QUICK_KEY_NIGHT]) {
+        request_set_night_mode_enabled(ctx, !ctx->settings->night_mode.enabled);
+        face_sheet_activity(&q->sheet);
+    } else if (btn == q->keys[QUICK_KEY_SOUND]) {
+        request_set_ui_click_sound_enabled(ctx, !ctx->settings->ui_click_sound_enabled);
+        face_sheet_activity(&q->sheet);
+    }
+}
+
+static void key_press_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(e);
+
+    face_sheet_activity(&ctx->brightness.sheet);
+}
+
+static void build_key(clock_ui_context_t *ctx, quick_key_t key, kit_icon_t icon, const quick_layout_t *l)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    clock_ui_style_t style = ui_skin_style();
+    int32_t cx = KIT_CENTER + ((int32_t)key * 2 - 3) * l->key_pitch / 2 - l->x;
+    lv_obj_t *btn = kit_round_button(q->panel, KIT_BUTTON_SECONDARY, icon, l->key);
+    lv_obj_t *label;
+
+    lv_obj_set_pos(btn, cx - l->key / 2, l->key_y - l->open_y);
+    lv_obj_add_event_cb(btn, key_click_cb, LV_EVENT_CLICKED, ctx);
+    lv_obj_add_event_cb(btn, key_press_cb, LV_EVENT_PRESSED, ctx);
+    face_track_press(ctx, btn);
+    q->keys[key] = btn;
+    q->key_icons[key] = lv_obj_get_child(btn, 0);
+
+    if (style == CLOCK_UI_STYLE_INSTRUMENT) {
+        /* Square keycaps; the toggles carry an LED. */
+        lv_obj_set_style_radius(btn, sk->radius_s, 0);
+        if (key == QUICK_KEY_NIGHT || key == QUICK_KEY_SOUND) {
+            lv_obj_t *led = face_plain(btn);
+
+            lv_obj_set_size(led, 8, 8);
+            lv_obj_set_pos(led, l->key - 10 - 8 - 1, 10 - 1);
+            lv_obj_set_style_radius(led, LV_RADIUS_CIRCLE, 0);
+            lv_obj_set_style_bg_opa(led, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_color(led, sk->line_strong, 0);
+            q->key_leds[key] = led;
+        }
+    } else if (style == CLOCK_UI_STYLE_ORBIT && key == QUICK_KEY_ALARMS) {
+        kit_button_set_tint(btn, sk->tint_alarms);
+    }
+
+    /* One line, centred under the key; long words tighten their tracking (see fit_labels). */
+    label = kit_label(q->panel, KIT_TEXT_LABEL, "");
+    lv_obj_align(label, LV_ALIGN_TOP_MID, cx - (SCREEN_SIZE - 2 * l->x) / 2, l->label_y - l->open_y);
+    if (style == CLOCK_UI_STYLE_ATELIER) {
+        lv_obj_set_style_text_letter_space(label, 2, 0);
+        lv_obj_set_style_text_color(label, sk->text_2, 0);
+    } else if (style == CLOCK_UI_STYLE_ORBIT) {
+        lv_obj_set_style_text_color(label, sk->text_2, 0);
+    }
+    q->key_labels[key] = label;
+    switch (key) {
+    case QUICK_KEY_ALARMS:
+        ui_l10n_bind_kit(ctx, label, L10N_ALARMS);
+        break;
+    case QUICK_KEY_SETTINGS:
+        ui_l10n_bind_kit(ctx, label, L10N_SETTINGS);
+        break;
+    case QUICK_KEY_NIGHT:
+        if (style != CLOCK_UI_STYLE_ORBIT) {
+            ui_l10n_bind_kit_str(ctx, label, &s_night);
+        }
+        break;
+    case QUICK_KEY_SOUND:
+        if (style != CLOCK_UI_STYLE_ORBIT) {
+            ui_l10n_bind_kit_str(ctx, label, style == CLOCK_UI_STYLE_ATELIER ? &s_quiet : &s_sound);
+        }
+        break;
+    default:
+        break;
+    }
+}
+
+/* --- Sheet ------------------------------------------------------------------------------ */
+
+static void quick_on_state(clock_ui_context_t *ctx)
+{
+    if (face_sheet_is_visible(&ctx->brightness.sheet)) {
+        face_controls_hide(ctx);
+        face_themes_close(ctx, false);
+    }
+    face_shell_sync_face_visuals(ctx);
+}
+
+static lv_obj_t *end_icon(lv_obj_t *panel, kit_icon_t icon, bool small, lv_color_t color, int32_t cx, int32_t cy)
+{
+    lv_obj_t *img = small ? kit_icon_small(panel, icon, color) : kit_icon(panel, icon, color);
+    const lv_image_dsc_t *src = lv_image_get_src(img);
+    int32_t w = src != NULL ? (int32_t)src->header.w : 24;
+
+    lv_obj_set_pos(img, cx - w / 2, cy - w / 2);
+    return img;
+}
+
+static void build_brightness(clock_ui_context_t *ctx, const quick_layout_t *l)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    clock_ui_style_t style = ui_skin_style();
+    int32_t ox = l->x;
+    int32_t oy = l->open_y;
+    lv_obj_t *label;
+    lv_obj_t *row;
+
+    /* The arc is created first so the keys above it take their own presses. */
+    q->arc = lv_arc_create(q->panel);
+    lv_obj_remove_style_all(q->arc);
+    lv_obj_set_size(q->arc, l->radius * 2, l->radius * 2);
+    lv_obj_set_pos(q->arc, KIT_CENTER - l->radius - ox, KIT_CENTER - l->radius - oy);
+    lv_arc_set_bg_angles(q->arc, ARC_START, ARC_END);
+    lv_arc_set_mode(q->arc, LV_ARC_MODE_REVERSE);
+    lv_arc_set_range(q->arc, 0, 100);
+    lv_arc_set_change_rate(q->arc, 1080);
+    /* Input only: a 36 px ring plus 40 px on each side takes touches, nothing is drawn. */
+    lv_obj_set_style_arc_width(q->arc, 36, LV_PART_MAIN);
+    lv_obj_set_style_arc_opa(q->arc, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_arc_width(q->arc, 40, LV_PART_INDICATOR);
+    lv_obj_set_style_arc_opa(q->arc, LV_OPA_TRANSP, LV_PART_INDICATOR);
+    lv_obj_set_style_bg_opa(q->arc, LV_OPA_TRANSP, LV_PART_KNOB);
+    lv_obj_add_flag(q->arc, LV_OBJ_FLAG_ADV_HITTEST);
+    lv_obj_set_ext_click_area(q->arc, 40);
+    lv_obj_add_event_cb(q->arc, arc_ext_draw_cb, LV_EVENT_REFR_EXT_DRAW_SIZE, NULL);
+    lv_obj_add_event_cb(q->arc, arc_draw_cb, LV_EVENT_DRAW_MAIN_END, ctx);
+    lv_obj_refresh_ext_draw_size(q->arc);
+    lv_obj_add_event_cb(q->arc, arc_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
+    lv_obj_add_event_cb(q->arc, arc_event_cb, LV_EVENT_PRESSED, ctx);
+    lv_obj_add_event_cb(q->arc, arc_event_cb, LV_EVENT_RELEASED, ctx);
+    ui_attach_click_feedback(q->arc, LV_EVENT_VALUE_CHANGED);
+
+    switch (style) {
+    case CLOCK_UI_STYLE_INSTRUMENT: {
+        lv_point_t lo = arc_point(FACE_CENTER, 266, ARC_END);
+        lv_point_t hi = arc_point(FACE_CENTER, 266, ARC_START);
+
+        end_icon(q->panel, KIT_ICON_BRIGHTNESS, true, sk->text_3, lo.x - ox, lo.y - oy);
+        end_icon(q->panel, KIT_ICON_SUN, true, sk->text_3, hi.x - ox, hi.y - oy);
+        label = kit_label(q->panel, KIT_TEXT_LABEL, "");
+        lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 470 - oy);
+        ui_l10n_bind_kit(ctx, label, L10N_BRIGHTNESS);
+        row = face_plain(q->panel);
+        lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+        lv_obj_set_style_pad_column(row, 4, 0);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 500 - oy);
+        q->value = face_text(row, sk->font_time_m, sk->text, "");
+        q->percent = face_text(row, sk->font_heading, sk->text_2, "%");
+        lv_obj_set_style_translate_y(q->percent, -8, 0);
+        break;
+    }
+    case CLOCK_UI_STYLE_ATELIER: {
+        lv_point_t lo = arc_point(FACE_CENTER, 300, 158);
+        lv_point_t hi = arc_point(FACE_CENTER, 300, 22);
+
+        face_engraved_rule(q->panel, 410 - oy, 200);
+        end_icon(q->panel, KIT_ICON_BRIGHTNESS, false, sk->text_2, lo.x - ox, lo.y - oy);
+        end_icon(q->panel, KIT_ICON_SUN, false, sk->value, hi.x - ox, hi.y - oy);
+        label = kit_label(q->panel, KIT_TEXT_LABEL, "");
+        lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 459 - oy);
+        ui_l10n_bind_kit(ctx, label, L10N_BRIGHTNESS);
+        row = face_plain(q->panel);
+        lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
+        lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
+        lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
+        lv_obj_set_style_pad_column(row, 4, 0);
+        lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 500 - oy);
+        q->value = face_text(row, sk->font_time_m, sk->text, "");
+        q->percent = face_text(row, sk->font_value, sk->text, "%");
+        lv_obj_set_style_translate_y(q->percent, -7, 0);
+        break;
+    }
+    case CLOCK_UI_STYLE_ORBIT:
+    default:
+        end_icon(q->panel, KIT_ICON_BRIGHTNESS, true, sk->text_2, 112 - ox, 455 - oy);
+        end_icon(q->panel, KIT_ICON_SUN, false, sk->text_2, 608 - ox, 455 - oy);
+        q->value = face_text(q->panel, sk->font_time_m, sk->text, "");
+        lv_obj_align(q->value, LV_ALIGN_TOP_MID, 0, 456 - oy);
+        label = kit_label(q->panel, KIT_TEXT_BODY, "");
+        lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 522 - oy);
+        ui_l10n_bind_kit(ctx, label, L10N_BRIGHTNESS);
+        break;
+    }
+}
+
+void face_quick_create(clock_ui_context_t *ctx)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    clock_ui_style_t style = ui_skin_style();
+    quick_layout_t l = quick_layout();
+    face_sheet_opts_t o = {
+        .from_top = false,
+        .x = l.x,
+        .width = SCREEN_SIZE - 2 * l.x,
+        .height = SCREEN_SIZE - l.open_y,
+        .open_y = l.open_y,
+        .radius = 0,
+        .color = sk->sheet,
+        .border = sk->line_strong,
+        .border_side = LV_BORDER_SIDE_TOP,
+        .auto_close_ms = QUICK_AUTO_CLOSE_MS,
+        .on_state = quick_on_state,
+    };
+    static const kit_icon_t icons[3][QUICK_KEY_COUNT] = {
+        [CLOCK_UI_STYLE_INSTRUMENT] = {KIT_ICON_ALARM, KIT_ICON_MOON, KIT_ICON_SOUND, KIT_ICON_SETTINGS},
+        [CLOCK_UI_STYLE_ORBIT] = {KIT_ICON_ALARM, KIT_ICON_MOON, KIT_ICON_SOUND, KIT_ICON_GEAR},
+        [CLOCK_UI_STYLE_ATELIER] = {KIT_ICON_BELL, KIT_ICON_MOON, KIT_ICON_SOUND_OFF, KIT_ICON_GEAR},
+    };
+    unsigned si = (unsigned)style < 3 ? (unsigned)style : (unsigned)CLOCK_UI_STYLE_ORBIT;
+    lv_obj_t *grab;
+
+    if (style == CLOCK_UI_STYLE_ORBIT) {
+        o.radius = 64;
+        o.height += 64; /* the card's lower corners stay below the screen */
+        o.color = sk->surface;
+        o.border_side = LV_BORDER_SIDE_NONE;
+    }
+    face_sheet_create(&q->sheet, ctx, &o);
+
+    grab = face_plain(q->panel);
+    lv_obj_set_style_bg_opa(grab, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(grab, 3, 0);
+    switch (style) {
+    case CLOCK_UI_STYLE_INSTRUMENT:
+        lv_obj_set_size(grab, 56, 4);
+        lv_obj_set_pos(grab, 332, 232 - l.open_y);
+        lv_obj_set_style_bg_color(grab, lv_color_mix(sk->text_3, sk->line_strong, 80), 0);
+        break;
+    case CLOCK_UI_STYLE_ATELIER:
+        lv_obj_set_size(grab, 56, 4);
+        lv_obj_set_pos(grab, 332, 214 - l.open_y);
+        lv_obj_set_style_bg_color(grab, sk->accent_deep, 0);
+        break;
+    default:
+        lv_obj_set_size(grab, 44, 5);
+        lv_obj_set_pos(grab, 338 - l.x, 226 - l.open_y);
+        lv_obj_set_style_bg_color(grab, lv_color_mix(sk->text_3, sk->line_strong, 128), 0);
+        break;
+    }
+
+    build_brightness(ctx, &l);
+    for (int k = 0; k < QUICK_KEY_COUNT; k++) {
+        build_key(ctx, (quick_key_t)k, icons[si][k], &l);
+    }
+    update_brightness_ui(ctx);
+    sync_keys(ctx, true);
+}
+
+void face_quick_destroy(clock_ui_context_t *ctx)
+{
+    face_sheet_destroy(&ctx->brightness.sheet);
+}
+
+void face_quick_sync(clock_ui_context_t *ctx)
+{
+    update_brightness_ui(ctx);
+    sync_keys(ctx, false);
+}
+
+void face_quick_open(clock_ui_context_t *ctx)
+{
+    if (ctx->brightness.panel == NULL) {
+        return;
+    }
+    face_quick_sync(ctx);
+    face_sheet_open(&ctx->brightness.sheet, true);
+}
+
+void face_quick_close(clock_ui_context_t *ctx, bool animate)
+{
+    face_sheet_close(&ctx->brightness.sheet, animate);
+}
+
+bool face_quick_visible(const clock_ui_context_t *ctx)
+{
+    return face_sheet_is_visible(&ctx->brightness.sheet);
+}
+
+/* --- Bottom edge ------------------------------------------------------------------------- */
+
+static void edge_event_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(e);
+    clock_ui_brightness_state_t *q = &ctx->brightness;
+    lv_event_code_t code = lv_event_get_code(e);
+    lv_indev_t *indev = lv_event_get_indev(e);
+    lv_point_t p;
+    int32_t dx;
+    int32_t dy;
+
+    if (indev == NULL || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx)) {
+        q->edge_tracking = false;
+        return;
+    }
+    lv_indev_get_point(indev, &p);
+    if (code == LV_EVENT_PRESSED) {
+        q->edge_start_point = p;
+        q->edge_tracking = true;
+        q->edge_pulling = false;
+        return;
+    }
+    if (!q->edge_tracking) {
+        return;
+    }
+    dx = p.x - q->edge_start_point.x;
+    dy = p.y - q->edge_start_point.y;
+
+    if (code == LV_EVENT_PRESSING) {
+        if (!q->edge_pulling) {
+            if (dy > -EDGE_TRIGGER || LV_ABS(dy) < LV_ABS(dx) + 8 || ctx->faces.face_reveal_animating) {
+                return;
+            }
+            q->edge_pulling = true;
+            face_quick_sync(ctx);
+            face_sheet_drag_begin(&q->sheet, q->edge_start_point, true);
+        }
+        face_sheet_drag_to(&q->sheet, dy);
         return;
     }
 
-    lv_obj_clear_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->brightness.overlay);
-    sync_active_face_visual_state(ctx);
-}
-
-static void brightness_animate_sheet_to(clock_ui_context_t *ctx, int32_t target_y)
-{
-    lv_anim_t anim;
-    int32_t current_y;
-
-    if (ctx->brightness.overlay == NULL || ctx->brightness.sheet == NULL) {
+    q->edge_tracking = false;
+    if (q->edge_pulling) {
+        q->edge_pulling = false;
+        face_sheet_drag_end(&q->sheet, code == LV_EVENT_PRESS_LOST);
         return;
     }
-
-    target_y = LV_CLAMP(BRIGHTNESS_SHEET_OPEN_Y, target_y, BRIGHTNESS_SHEET_CLOSED_Y);
-    current_y = lv_obj_get_y(ctx->brightness.sheet);
-
-    lv_anim_delete(ctx->brightness.sheet, brightness_sheet_anim_cb);
-    ctx->brightness.animating = false;
-
-    if (current_y == target_y) {
-        brightness_update_visual_state(ctx, target_y);
-        ctx->brightness.target_open = (target_y <= BRIGHTNESS_SHEET_OPEN_Y);
-        if (!ctx->brightness.target_open) {
-            lv_obj_add_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
+    if (code != LV_EVENT_RELEASED) {
+        return;
+    }
+    if (LV_ABS(dx) < 24 && LV_ABS(dy) < 24) {
+        /* A tap on the pull hint at 6 opens the sheet; elsewhere it toggles the controls. */
+        if (face_controls_visible(ctx) && p.y >= 636 && LV_ABS(p.x - KIT_CENTER) <= 110) {
+            face_quick_open(ctx);
         } else {
-            brightness_prepare_overlay_for_drag(ctx);
+            face_controls_toggle(ctx);
         }
         return;
     }
-
-    brightness_prepare_overlay_for_drag(ctx);
-    ctx->brightness.target_open = (target_y <= BRIGHTNESS_SHEET_OPEN_Y);
-
-    ctx->brightness.animating = true;
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, ctx->brightness.sheet);
-    lv_anim_set_user_data(&anim, ctx);
-    lv_anim_set_exec_cb(&anim, brightness_sheet_anim_cb);
-    lv_anim_set_values(&anim, current_y, target_y);
-    lv_anim_set_time(&anim, brightness_sheet_anim_duration(current_y, target_y));
-    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
-    lv_anim_set_ready_cb(&anim, brightness_sheet_anim_ready_cb);
-    lv_anim_start(&anim);
+    if (LV_ABS(dx) >= 56 && LV_ABS(dx) > LV_ABS(dy) + 20) {
+        face_shell_swipe_face(ctx, dx);
+    }
 }
 
-static void brightness_overlay_set_visible(clock_ui_context_t *ctx, bool show)
+void face_quick_create_edge_sensor(clock_ui_context_t *ctx)
 {
-    if (ctx->brightness.overlay == NULL) {
+    lv_obj_t *sensor = face_plain(ui_chrome_root(ctx));
+
+    lv_obj_set_size(sensor, SCREEN_SIZE, BOTTOM_EDGE_ZONE);
+    lv_obj_align(sensor, LV_ALIGN_BOTTOM_MID, 0, 0);
+    lv_obj_add_flag(sensor, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(sensor, edge_event_cb, LV_EVENT_PRESSED, ctx);
+    lv_obj_add_event_cb(sensor, edge_event_cb, LV_EVENT_PRESSING, ctx);
+    lv_obj_add_event_cb(sensor, edge_event_cb, LV_EVENT_RELEASED, ctx);
+    lv_obj_add_event_cb(sensor, edge_event_cb, LV_EVENT_PRESS_LOST, ctx);
+    ctx->brightness.edge_sensor = sensor;
+}
+
+void face_quick_set_hidden(clock_ui_context_t *ctx, bool hidden)
+{
+    lv_obj_t *sensor = ctx->brightness.edge_sensor;
+
+    if (sensor == NULL) {
         return;
     }
-
-    lv_anim_delete(ctx->brightness.sheet, brightness_sheet_anim_cb);
-    ctx->brightness.animating = false;
-    ctx->brightness.dragging = false;
-    ctx->brightness.drag_from_edge = false;
-    ctx->brightness.edge_swipe_triggered = false;
-
-    if (show) {
-        update_brightness_ui(ctx);
-        brightness_prepare_overlay_for_drag(ctx);
-        brightness_update_visual_state(ctx, BRIGHTNESS_SHEET_OPEN_Y);
-        quick_actions_auto_close_reset(ctx);
+    if (hidden) {
+        lv_obj_add_flag(sensor, LV_OBJ_FLAG_HIDDEN);
     } else {
-        quick_actions_auto_close_pause(ctx);
-        brightness_update_visual_state(ctx, BRIGHTNESS_SHEET_CLOSED_Y);
-        lv_obj_add_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-        sync_active_face_visual_state(ctx);
+        lv_obj_remove_flag(sensor, LV_OBJ_FLAG_HIDDEN);
     }
+}
+
+/* --- Old entry points (clock_ui_private.h) ----------------------------------------------- */
+
+bool brightness_panel_is_open(const clock_ui_context_t *ctx)
+{
+    return face_quick_visible(ctx);
 }
 
 void brightness_overlay_hide_immediately(clock_ui_context_t *ctx)
 {
-    brightness_overlay_set_visible(ctx, false);
-}
-
-static void brightness_overlay_hide(clock_ui_context_t *ctx)
-{
-    if (ctx->brightness.dragging || ctx->brightness.animating || lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
-        return;
-    }
-
-    brightness_animate_sheet_to(ctx, BRIGHTNESS_SHEET_CLOSED_Y);
+    face_quick_close(ctx, false);
 }
 
 void brightness_panel_hide(clock_ui_context_t *ctx)
 {
-    if (ctx->brightness.panel_overlay == NULL) {
-        return;
-    }
-
-    brightness_panel_auto_close_pause(ctx);
-    lv_obj_add_flag(ctx->brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
-    sync_active_face_visual_state(ctx);
+    face_quick_close(ctx, false);
 }
 
-static void brightness_slider_event_cb(lv_event_t *event)
+void show_affordances_temporarily(clock_ui_context_t *ctx)
 {
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    int ui_percent;
-    uint8_t target_brightness;
-
-    if (ctx->suppress_events) {
-        return;
-    }
-
-    brightness_panel_auto_close_reset(ctx);
-    ui_percent = lv_slider_get_value(lv_event_get_target(event));
-    target_brightness = brightness_ui_to_hw(ui_percent);
-    if (ctx->runtime != NULL && ctx->runtime->in_night_mode) {
-        request_set_runtime_night_brightness(ctx, target_brightness);
-    } else {
-        request_set_base_brightness(ctx, target_brightness);
-    }
-
-    update_brightness_ui(ctx);
-}
-
-static void brightness_panel_show(clock_ui_context_t *ctx)
-{
-    if (ctx->brightness.panel_overlay == NULL || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx)) {
-        return;
-    }
-
-    if (ctx->brightness.title != NULL) {
-        lv_label_set_text(ctx->brightness.title, ui_l10n_text(ctx, L10N_BRIGHTNESS_PANEL));
-    }
-    update_brightness_ui(ctx);
-    quick_actions_auto_close_pause(ctx);
-    lv_obj_clear_flag(ctx->brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->brightness.panel_overlay);
-    brightness_panel_auto_close_reset(ctx);
-    sync_active_face_visual_state(ctx);
-}
-
-static void brightness_panel_activity_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL || ctx->suppress_events || !brightness_panel_is_open(ctx)) {
-        return;
-    }
-
-    brightness_panel_auto_close_reset(ctx);
-}
-
-static void quick_actions_activity_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL || ctx->suppress_events) {
-        return;
-    }
-
-    quick_actions_auto_close_reset(ctx);
-}
-
-static void brightness_action_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    brightness_overlay_hide_immediately(ctx);
-    brightness_panel_show(ctx);
-}
-
-static void alarms_action_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    ui_alarms_open(ctx);
-}
-
-static void settings_action_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    ui_settings_open(ctx);
-}
-
-static void brightness_overlay_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
-        brightness_overlay_hide(ctx);
-    }
-}
-
-static void brightness_panel_overlay_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (lv_event_get_target(event) == lv_event_get_current_target(event)) {
-        brightness_panel_hide(ctx);
-    }
-}
-
-static void brightness_stop_event_bubble_cb(lv_event_t *event)
-{
-    lv_event_stop_bubbling(event);
-}
-
-static void brightness_drag_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_indev_t *indev = lv_event_get_indev(event);
-    lv_point_t point;
-    lv_obj_t *target = lv_event_get_target(event);
-    bool from_edge = (target == ctx->brightness.edge_sensor);
-    bool from_handle = (target == ctx->brightness.drag_handle);
-    bool from_sheet = (target == ctx->brightness.sheet);
-    int32_t dx;
-    int32_t dy;
-    int32_t target_y;
-    int32_t travel = BRIGHTNESS_SHEET_CLOSED_Y - BRIGHTNESS_SHEET_OPEN_Y;
-    int32_t open_threshold_y = BRIGHTNESS_SHEET_CLOSED_Y - ((travel * 45) / 100);
-
-    if (indev == NULL || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || brightness_panel_is_open(ctx)) {
-        return;
-    }
-
-    lv_indev_get_point(indev, &point);
-
-    if (!from_edge && !from_handle && !from_sheet) {
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSED) {
-        if (ctx->brightness.animating) {
-            lv_anim_delete(ctx->brightness.sheet, brightness_sheet_anim_cb);
-            ctx->brightness.animating = false;
-        }
-        if (from_edge && !lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
-            return;
-        }
-        if ((from_handle || from_sheet) && lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN)) {
-            return;
-        }
-
-        if (from_edge) {
-            ctx->brightness.drag_start_y = BRIGHTNESS_SHEET_CLOSED_Y;
-        } else {
-            ctx->brightness.drag_start_y = lv_obj_get_y(ctx->brightness.sheet);
-        }
-
-        ctx->brightness.dragging = true;
-        ctx->brightness.drag_from_edge = from_edge;
-        ctx->brightness.edge_swipe_triggered = false;
-        ctx->brightness.drag_start_point = point;
-        quick_actions_auto_close_reset(ctx);
-        return;
-    }
-
-    if (!ctx->brightness.dragging) {
-        return;
-    }
-
-    if (code == LV_EVENT_PRESS_LOST) {
-        ctx->brightness.dragging = false;
-        ctx->brightness.drag_from_edge = false;
-        ctx->brightness.edge_swipe_triggered = false;
-        return;
-    }
-
-    dx = point.x - ctx->brightness.drag_start_point.x;
-    dy = point.y - ctx->brightness.drag_start_point.y;
-
-    if (code == LV_EVENT_PRESSING) {
-        if (ctx->brightness.drag_from_edge) {
-            if (dy >= 0 || LV_ABS(dy) < LV_ABS(dx) + 12) {
-                return;
-            }
-
-            update_brightness_ui(ctx);
-            brightness_prepare_overlay_for_drag(ctx);
-            target_y = ctx->brightness.drag_start_y + dy;
-            brightness_update_visual_state(ctx, target_y);
-            quick_actions_auto_close_reset(ctx);
-            return;
-        }
-
-        target_y = ctx->brightness.drag_start_y + dy;
-        brightness_update_visual_state(ctx, target_y);
-        quick_actions_auto_close_reset(ctx);
-        return;
-    }
-
-    if (code == LV_EVENT_RELEASED) {
-        if (ctx->brightness.drag_from_edge) {
-            ctx->brightness.dragging = false;
-            ctx->brightness.drag_from_edge = false;
-            ctx->brightness.edge_swipe_triggered = false;
-
-            if (dy >= 0 || LV_ABS(dy) < LV_ABS(dx) + 12) {
-                brightness_animate_sheet_to(ctx, BRIGHTNESS_SHEET_CLOSED_Y);
-                return;
-            }
-
-            target_y = lv_obj_get_y(ctx->brightness.sheet);
-            if (target_y <= open_threshold_y) {
-                brightness_animate_sheet_to(ctx, BRIGHTNESS_SHEET_OPEN_Y);
-            } else {
-                brightness_animate_sheet_to(ctx, BRIGHTNESS_SHEET_CLOSED_Y);
-            }
-            return;
-        }
-
-        ctx->brightness.dragging = false;
-        ctx->brightness.drag_from_edge = false;
-        ctx->brightness.edge_swipe_triggered = false;
-
-        target_y = lv_obj_get_y(ctx->brightness.sheet);
-        if (target_y <= open_threshold_y) {
-            brightness_animate_sheet_to(ctx, BRIGHTNESS_SHEET_OPEN_Y);
-        } else {
-            brightness_animate_sheet_to(ctx, BRIGHTNESS_SHEET_CLOSED_Y);
-        }
-    }
-}
-
-void create_brightness_pull_hint(clock_ui_context_t *ctx)
-{
-    ctx->brightness.pull_hint = lv_obj_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->brightness.pull_hint, 88, 6);
-    lv_obj_set_style_radius(ctx->brightness.pull_hint, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(ctx->brightness.pull_hint, 0, 0);
-    lv_obj_set_style_bg_color(ctx->brightness.pull_hint, lv_color_hex(0x808080), 0);
-    lv_obj_set_style_bg_opa(ctx->brightness.pull_hint, LV_OPA_50, 0);
-    lv_obj_set_style_opa(ctx->brightness.pull_hint, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_width(ctx->brightness.pull_hint, 0, 0);
-    lv_obj_remove_flag(ctx->brightness.pull_hint, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->brightness.pull_hint, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_align(ctx->brightness.pull_hint, LV_ALIGN_BOTTOM_MID, 0, -16);
-}
-
-void create_brightness_edge_sensor(clock_ui_context_t *ctx)
-{
-    ctx->brightness.edge_sensor = lv_obj_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->brightness.edge_sensor, SCREEN_SIZE, BOTTOM_EDGE_ZONE);
-    lv_obj_align(ctx->brightness.edge_sensor, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_opa(ctx->brightness.edge_sensor, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->brightness.edge_sensor, 0, 0);
-    lv_obj_set_style_radius(ctx->brightness.edge_sensor, 0, 0);
-    lv_obj_set_style_pad_all(ctx->brightness.edge_sensor, 0, 0);
-    lv_obj_set_scrollbar_mode(ctx->brightness.edge_sensor, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(ctx->brightness.edge_sensor, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(ctx->brightness.edge_sensor, brightness_drag_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.edge_sensor, brightness_drag_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->brightness.edge_sensor, brightness_drag_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.edge_sensor, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, ctx);
-}
-
-static lv_obj_t *create_quick_action_button(lv_obj_t *parent,
-                                            const char *symbol,
-                                            lv_event_cb_t cb,
-                                            clock_ui_context_t *ctx)
-{
-    lv_obj_t *button = create_icon_circle_button(parent, symbol, 128, NULL, NULL);
-
-    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
-    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
-    lv_obj_add_event_cb(button, brightness_stop_event_bubble_cb, LV_EVENT_CLICKED, NULL);
-
-    if (cb != NULL) {
-        lv_obj_add_event_cb(button, cb, LV_EVENT_PRESSED, ctx);
-    }
-
-    lv_obj_add_event_cb(button, quick_actions_activity_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(button, quick_actions_activity_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(button, quick_actions_activity_event_cb, LV_EVENT_RELEASED, ctx);
-
-    return button;
-}
-
-void create_brightness_overlay(clock_ui_context_t *ctx)
-{
-    lv_obj_t *sheet_grabber;
-    lv_obj_t *actions;
-
-    ctx->brightness.overlay = lv_obj_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->brightness.overlay, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_set_style_bg_color(ctx->brightness.overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(ctx->brightness.overlay, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->brightness.overlay, 0, 0);
-    lv_obj_set_style_radius(ctx->brightness.overlay, 0, 0);
-    lv_obj_set_style_pad_all(ctx->brightness.overlay, 0, 0);
-    lv_obj_remove_flag(ctx->brightness.overlay, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(ctx->brightness.overlay, LV_ALIGN_CENTER, 0, 0);
-    lv_obj_add_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_user_data(ctx->brightness.overlay, ctx);
-    lv_obj_add_event_cb(ctx->brightness.overlay, brightness_overlay_event_cb, LV_EVENT_CLICKED, ctx);
-
-    ctx->brightness.backdrop_img = ui_backdrop_create(ctx->brightness.overlay);
-    ctx->brightness.sheet = lv_obj_create(ctx->brightness.overlay);
-    lv_obj_set_size(ctx->brightness.sheet, BRIGHTNESS_SHEET_WIDTH, BRIGHTNESS_SHEET_HEIGHT);
-    lv_obj_set_pos(ctx->brightness.sheet, BRIGHTNESS_SHEET_X, BRIGHTNESS_SHEET_CLOSED_Y);
-    lv_obj_set_style_bg_color(ctx->brightness.sheet, lv_color_hex(0x161616), 0);
-    lv_obj_set_style_bg_opa(ctx->brightness.sheet, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(ctx->brightness.sheet, 0, 0);
-    lv_obj_set_style_radius(ctx->brightness.sheet, 0, 0);
-    lv_obj_set_style_pad_top(ctx->brightness.sheet, 28, 0);
-    lv_obj_set_style_pad_bottom(ctx->brightness.sheet, 32, 0);
-    lv_obj_set_style_pad_left(ctx->brightness.sheet, 24, 0);
-    lv_obj_set_style_pad_right(ctx->brightness.sheet, 24, 0);
-    lv_obj_set_style_shadow_width(ctx->brightness.sheet, 0, 0);
-    lv_obj_remove_flag(ctx->brightness.sheet, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_user_data(ctx->brightness.sheet, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, brightness_drag_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, brightness_drag_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, brightness_drag_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, quick_actions_activity_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, quick_actions_activity_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->brightness.sheet, quick_actions_activity_event_cb, LV_EVENT_RELEASED, ctx);
-    sheet_grabber = lv_obj_create(ctx->brightness.sheet);
-    lv_obj_set_size(sheet_grabber, 72, 6);
-    lv_obj_set_style_radius(sheet_grabber, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(sheet_grabber, 0, 0);
-    lv_obj_set_style_bg_color(sheet_grabber, lv_color_hex(0x9C9C9C), 0);
-    lv_obj_set_style_bg_opa(sheet_grabber, LV_OPA_70, 0);
-    lv_obj_set_style_shadow_width(sheet_grabber, 0, 0);
-    lv_obj_remove_flag(sheet_grabber, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_align(sheet_grabber, LV_ALIGN_TOP_MID, 0, -10);
-
-    ctx->brightness.drag_handle = lv_obj_create(ctx->brightness.sheet);
-    lv_obj_set_size(ctx->brightness.drag_handle, lv_pct(100), 60);
-    lv_obj_align(ctx->brightness.drag_handle, LV_ALIGN_TOP_MID, 0, 0);
-    lv_obj_set_style_bg_opa(ctx->brightness.drag_handle, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->brightness.drag_handle, 0, 0);
-    lv_obj_set_style_radius(ctx->brightness.drag_handle, 0, 0);
-    lv_obj_set_style_pad_all(ctx->brightness.drag_handle, 0, 0);
-    lv_obj_set_scrollbar_mode(ctx->brightness.drag_handle, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(ctx->brightness.drag_handle, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->brightness.drag_handle, LV_OBJ_FLAG_FLOATING);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, brightness_drag_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, quick_actions_activity_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, quick_actions_activity_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->brightness.drag_handle, quick_actions_activity_event_cb, LV_EVENT_RELEASED, ctx);
-
-    actions = lv_obj_create(ctx->brightness.sheet);
-    lv_obj_set_size(actions, lv_pct(100), 144);
-    lv_obj_align(actions, LV_ALIGN_TOP_MID, 0, 24);
-    lv_obj_set_style_bg_opa(actions, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(actions, 0, 0);
-    lv_obj_set_style_radius(actions, 0, 0);
-    lv_obj_set_style_pad_all(actions, 0, 0);
-    lv_obj_set_style_pad_column(actions, 28, 0);
-    lv_obj_remove_flag(actions, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(actions, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(actions, LV_FLEX_FLOW_ROW);
-    lv_obj_set_flex_align(actions, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_PRESSED, NULL);
-    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_PRESSING, NULL);
-    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_RELEASED, NULL);
-    lv_obj_add_event_cb(actions, brightness_stop_event_bubble_cb, LV_EVENT_PRESS_LOST, NULL);
-    lv_obj_add_event_cb(actions, quick_actions_activity_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(actions, quick_actions_activity_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(actions, quick_actions_activity_event_cb, LV_EVENT_RELEASED, ctx);
-
-    create_quick_action_button(actions, QUICK_ACTION_SYMBOL_BRIGHTNESS, brightness_action_event_cb, ctx);
-    create_quick_action_button(actions, LV_SYMBOL_BELL, alarms_action_event_cb, ctx);
-    create_quick_action_button(actions, LV_SYMBOL_SETTINGS, settings_action_event_cb, ctx);
-}
-
-void create_brightness_panel(clock_ui_context_t *ctx)
-{
-    lv_obj_t *panel;
-    lv_obj_t *title;
-
-    ctx->brightness.panel_overlay = lv_obj_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->brightness.panel_overlay, SCREEN_SIZE, SCREEN_SIZE);
-    lv_obj_set_style_bg_color(ctx->brightness.panel_overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(ctx->brightness.panel_overlay, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(ctx->brightness.panel_overlay, 0, 0);
-    lv_obj_set_style_radius(ctx->brightness.panel_overlay, 0, 0);
-    lv_obj_set_style_pad_all(ctx->brightness.panel_overlay, 0, 0);
-    lv_obj_add_flag(ctx->brightness.panel_overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(ctx->brightness.panel_overlay, brightness_panel_overlay_event_cb, LV_EVENT_CLICKED, ctx);
-
-    panel = lv_obj_create(ctx->brightness.panel_overlay);
-    ctx->brightness.panel = panel;
-    lv_obj_set_width(panel, 560);
-    lv_obj_set_height(panel, LV_SIZE_CONTENT);
-    lv_obj_center(panel);
-    lv_obj_set_style_bg_color(panel, lv_color_hex(0x151515), 0);
-    lv_obj_set_style_bg_opa(panel, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(panel, 0, 0);
-    lv_obj_set_style_radius(panel, 28, 0);
-    lv_obj_set_style_pad_top(panel, 28, 0);
-    lv_obj_set_style_pad_bottom(panel, 26, 0);
-    lv_obj_set_style_pad_left(panel, 28, 0);
-    lv_obj_set_style_pad_right(panel, 28, 0);
-    lv_obj_remove_flag(panel, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_layout(panel, LV_LAYOUT_FLEX);
-    lv_obj_set_flex_flow(panel, LV_FLEX_FLOW_COLUMN);
-    lv_obj_set_style_pad_row(panel, 18, 0);
-    lv_obj_add_event_cb(panel, brightness_panel_activity_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(panel, brightness_panel_activity_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(panel, brightness_panel_activity_event_cb, LV_EVENT_RELEASED, ctx);
-
-    title = lv_label_create(panel);
-    ctx->brightness.title = title;
-    lv_obj_set_style_text_font(title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(title, lv_color_white(), 0);
-    brightness_bind_label(ctx, title, L10N_BRIGHTNESS_PANEL);
-
-    ctx->brightness.slider = lv_slider_create(panel);
-    lv_obj_set_width(ctx->brightness.slider, lv_pct(100));
-    lv_slider_set_range(ctx->brightness.slider, 0, 100);
-    style_slider(ctx->brightness.slider);
-    lv_obj_add_event_cb(ctx->brightness.slider, brightness_panel_activity_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.slider, brightness_panel_activity_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->brightness.slider, brightness_panel_activity_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->brightness.slider, brightness_slider_event_cb, LV_EVENT_VALUE_CHANGED, ctx);
-    ui_attach_click_feedback(ctx->brightness.slider, LV_EVENT_VALUE_CHANGED);
-
-    ctx->brightness.value = lv_label_create(panel);
-    lv_obj_set_style_text_font(ctx->brightness.value, &lv_font_montserrat_36, 0);
-    lv_obj_set_style_text_color(ctx->brightness.value, lv_color_white(), 0);
-    lv_label_set_text(ctx->brightness.value, "50%");
-
-    ctx->brightness.overlay_auto_close_timer = ui_chrome_timer_create(ctx, quick_actions_auto_close_timer_cb,
-                                                               QUICK_ACTIONS_AUTO_CLOSE_MS,
-                                                               ctx);
-    lv_timer_pause(ctx->brightness.overlay_auto_close_timer);
-    ctx->brightness.auto_close_timer = ui_chrome_timer_create(ctx, brightness_panel_auto_close_timer_cb,
-                                                       BRIGHTNESS_PANEL_AUTO_CLOSE_MS,
-                                                       ctx);
-    lv_timer_pause(ctx->brightness.auto_close_timer);
-    update_brightness_ui(ctx);
+    face_controls_show(ctx);
 }

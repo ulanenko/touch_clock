@@ -1,0 +1,95 @@
+# Runtime states: scanning, OTA progress, no update, not configured, Wi-Fi forgotten.
+wait 300
+set style 0
+wait 300
+set wifi_scanning 1
+call open_wifi
+wait 200
+call settings_scroll_end
+wait 200
+shot st_instrument_scanning
+set wifi_scanning 0
+call open_other
+set ota_progress 42
+wait 1100
+shot st_instrument_ota_progress
+set ota_progress 0
+set ota_available 0
+wait 1100
+shot st_instrument_ota_none
+set ota_configured 0
+wait 1100
+shot st_instrument_ota_unconfigured
+set ota_configured 1
+set ota_available 1
+set wifi_ssid_empty 1
+call open_wifi
+wait 1100
+shot st_instrument_no_wifi
+call open_settings
+wait 200
+shot st_instrument_home_no_wifi
+call close_settings
+wait 100
+set style 1
+wait 300
+set wifi_scanning 1
+call open_wifi
+wait 200
+call settings_scroll_end
+wait 200
+shot st_orbit_scanning
+set wifi_scanning 0
+call open_other
+set ota_progress 42
+wait 1100
+shot st_orbit_ota_progress
+set ota_progress 0
+set ota_available 0
+wait 1100
+shot st_orbit_ota_none
+set ota_configured 0
+wait 1100
+shot st_orbit_ota_unconfigured
+set ota_configured 1
+set ota_available 1
+set wifi_ssid_empty 1
+call open_wifi
+wait 1100
+shot st_orbit_no_wifi
+call open_settings
+wait 200
+shot st_orbit_home_no_wifi
+call close_settings
+wait 100
+set style 2
+wait 300
+set wifi_scanning 1
+call open_wifi
+wait 200
+call settings_scroll_end
+wait 200
+shot st_atelier_scanning
+set wifi_scanning 0
+call open_other
+set ota_progress 42
+wait 1100
+shot st_atelier_ota_progress
+set ota_progress 0
+set ota_available 0
+wait 1100
+shot st_atelier_ota_none
+set ota_configured 0
+wait 1100
+shot st_atelier_ota_unconfigured
+set ota_configured 1
+set ota_available 1
+set wifi_ssid_empty 1
+call open_wifi
+wait 1100
+shot st_atelier_no_wifi
+call open_settings
+wait 200
+shot st_atelier_home_no_wifi
+call close_settings
+wait 100

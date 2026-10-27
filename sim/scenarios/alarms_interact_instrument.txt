@@ -1,0 +1,84 @@
+# Alarms interactions in the instrument style: switches, editing, save, delete, add, stop, snooze, math.
+set style 0
+wait 300
+call open_alarms
+wait 300
+tap 572 370
+wait 300
+shot instrument_i01_toggle_off
+tap 572 370
+wait 300
+tap 300 278
+wait 400
+shot instrument_i02_editor_open
+drag 280 168 280 98 300
+wait 600
+tap 440 242
+wait 600
+shot instrument_i03_time_changed
+tap 172 313
+wait 200
+tap 510 396
+wait 200
+tap 563 552
+wait 200
+shot instrument_i04_options
+tap 360 700
+wait 100
+drag 360 600 360 450 300
+wait 600
+shot instrument_i05_scrolled
+tap 360 630
+wait 500
+shot instrument_i06_saved
+drag 420 462 250 462 200
+wait 400
+shot instrument_i07_swipe
+tap 584 462
+wait 400
+shot instrument_i08_deleted
+tap 360 652
+wait 400
+shot instrument_i09_new
+tap 360 640
+wait 500
+shot instrument_i10_added
+call close_alarms
+wait 300
+set alarm_ringing 1
+wait 500
+press 360 580
+wait 700
+shot instrument_i11_holding
+wait 1000
+release
+wait 400
+shot instrument_i12_math
+tap 236 284
+wait 150
+tap 236 536
+wait 150
+tap 236 284
+tap 484 284
+wait 300
+shot instrument_i13_wrong
+tap 236 284
+tap 360 284
+wait 400
+shot instrument_i14_solved
+set alarm_ringing 1
+wait 400
+tap 360 420
+wait 1500
+shot instrument_i15_snoozed
+set snooze_minutes_left 0
+set alarm_ringing 1
+wait 400
+press 360 580
+wait 1700
+release
+wait 400
+wait 300
+tap 360 624
+wait 1500
+shot instrument_i16_math_snoozed

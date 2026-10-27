@@ -1,0 +1,63 @@
+# Alarms: style changes while the editor, settings or ringing screen is open (rebuild safety).
+set style 0
+wait 300
+call open_alarm_editor
+wait 300
+set style 1
+wait 400
+shot cycle_1_after_editor
+call alarm_editor_details
+wait 300
+set style 2
+wait 400
+call open_alarm_editor
+wait 300
+drag 604 360 541 532 300
+wait 200
+set style 0
+wait 400
+call alarm_settings
+set alarm_test 1
+wait 200
+set style 1
+wait 400
+set alarm_test 0
+set alarm_ringing 1
+wait 400
+set style 2
+wait 600
+shot cycle_2_ringing_atelier
+press 144 568
+move 300 650
+set style 0
+wait 400
+release
+wait 200
+call ringing_math
+tap 236 284
+set style 1
+wait 400
+set alarm_ringing 0
+call ringing_math
+wait 200
+set style 2
+wait 400
+call ringing_off
+set next_alarm_minutes 20
+wait 1100
+set style 0
+wait 600
+call banner_feedback
+set style 1
+wait 600
+call alarm_swipe_delete
+set style 2
+wait 600
+set language 3
+call new_alarm_details
+wait 300
+set style 0
+wait 600
+call open_alarms
+wait 300
+shot cycle_3_end

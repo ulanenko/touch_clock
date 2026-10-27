@@ -1,7 +1,7 @@
 /*******************************************************************************
  * Size: 40 px
  * Bpp: 4
- * Opts: --font CormorantGaramond[wght].ttf ({'wght': 600}, ['lnum']) -r 0x20-0x7E,0xA0-0xB4,0xB6-0x17F,0x400-0x45F,0x490-0x491,0x2009,0x2013-0x2014,0x2018-0x2019,0x201C-0x201D,0x2022,0x2026,0x202F,0x2190-0x2193,0x2212 --size 40 --bpp 4 --format lvgl --no-compress --lv-include lvgl.h --lv-font-name at_serif_40 -o main/assets/skin_fonts/at_serif_40.c
+ * Opts: --font CormorantGaramond[wght].ttf ({'wght': 600}, ['lnum']) -r 0x20-0x7E,0xA0-0xB4,0xB6-0x17F,0x400-0x45F,0x490-0x491,0x2009,0x2013-0x2014,0x2018-0x2019,0x201C-0x201D,0x2022,0x2026,0x202F,0x2190-0x2193,0x2212 --size 40 --bpp 4 --format lvgl --no-compress --lv-include lvgl.h --lv-font-name at_serif_40 -o main/assets/skin_fonts/at_serif_40.c --lv-fallback at_serif_40_fb
  ******************************************************************************/
 
 #ifdef LV_LVGL_H_INCLUDE_SIMPLE
@@ -15920,6 +15920,7 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
 #endif
 };
 
+extern const lv_font_t at_serif_40_fb;
 
 
 /*-----------------
@@ -15945,7 +15946,7 @@ lv_font_t at_serif_40 = {
 #endif
     .dsc = &font_dsc,          /*The custom font data. Will be accessed by `get_glyph_bitmap/dsc` */
 #if LV_VERSION_CHECK(8, 2, 0) || LVGL_VERSION_MAJOR >= 9
-    .fallback = NULL,
+    .fallback = &at_serif_40_fb,
 #endif
     .user_data = NULL,
 };

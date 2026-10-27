@@ -1,5 +1,16 @@
+/*
+ * The faces and the face chrome hooks.
+ *
+ * Faces: the tileview of faces, the face swipe (left/right changes face with a circular
+ * reveal, down pulls the theme sheet, a tap shows the controls) and the snapshot backdrop the
+ * pull sheets draw while they move. build_root_ui builds the faces and then the chrome.
+ *
+ * Face chrome: the ui_face_chrome_* hooks of ui_areas.h dispatch to the face chrome files
+ * (see ui_face_chrome.h).
+ */
 #include "ui/clock_ui_private.h"
 #include "ui/ui_areas.h"
+#include "ui/ui_face_chrome.h"
 
 #include <string.h>
 
@@ -8,31 +19,12 @@
 #define FACE_REVEAL_START_SIZE 48
 #define FACE_REVEAL_END_SIZE 1040
 #define FACE_REVEAL_MS 220
+#define FACE_PULL_START 18 /* px down before a press on the face becomes a theme sheet pull */
 
-static uint8_t face_theme_value(const clock_ui_context_t *ctx, clock_face_id_t face)
-{
-    if (ctx == NULL || ctx->settings == NULL || !clock_face_is_valid(face)) {
-        return 0;
-    }
-
-    return (ctx->settings->face_themes[face] < CLOCK_FACE_THEME_COUNT) ? ctx->settings->face_themes[face] : 0;
-}
-
-static int32_t face_theme_current_y(const clock_ui_context_t *ctx);
 static void face_reveal_anim_cb(void *var, int32_t value);
 static void face_reveal_anim_ready_cb(lv_anim_t *anim);
 static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face);
 static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face);
-
-static void shell_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id)
-{
-    ui_l10n_bind_label_with_font(ctx, label, text_id, &ui_i18n_24);
-}
-
-static l10n_text_id_t face_theme_text_id(uint8_t theme)
-{
-    return theme == 2U ? L10N_THEME_3 : (theme == 1U ? L10N_THEME_2 : L10N_THEME_1);
-}
 
 static void face_reveal_anim_cb(void *var, int32_t value)
 {
@@ -101,6 +93,9 @@ static void face_reveal_anim_ready_cb(lv_anim_t *anim)
     ctx->faces.face_reveal_animating = false;
     lv_obj_add_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN);
     set_active_face(ctx, ctx->faces.face_reveal_target, LV_ANIM_OFF);
+    /* The page dots show which face this is; the controls stay hidden while the circle
+     * grows so the reveal frames draw nothing else. */
+    face_controls_show(ctx);
 }
 
 static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face)
@@ -176,44 +171,18 @@ static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face)
     return true;
 }
 
-static void sync_active_face_visual_state(clock_ui_context_t *ctx)
+clock_face_id_t face_shell_active_face(clock_ui_context_t *ctx)
+{
+    return tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
+}
+
+void face_shell_sync_face_visuals(clock_ui_context_t *ctx)
 {
     if (ctx == NULL || ctx->tileview == NULL) {
         return;
     }
 
-    sync_face_animation_state(ctx, tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)));
-}
-
-static void snapshot_obj_to_image(lv_obj_t *source, lv_obj_t *image, lv_draw_buf_t **draw_buf)
-{
-    lv_coord_t ext_draw;
-
-    if (source == NULL || image == NULL || draw_buf == NULL) {
-        return;
-    }
-
-    if (*draw_buf == NULL || lv_snapshot_reshape_draw_buf(source, *draw_buf) != LV_RESULT_OK) {
-        if (*draw_buf != NULL) {
-            lv_draw_buf_destroy(*draw_buf);
-        }
-        *draw_buf = lv_snapshot_create_draw_buf(source, LV_COLOR_FORMAT_RGB565);
-        if (*draw_buf == NULL) {
-            return;
-        }
-    }
-
-    if (lv_snapshot_take_to_draw_buf(source, LV_COLOR_FORMAT_RGB565, *draw_buf) != LV_RESULT_OK) {
-        return;
-    }
-
-    ext_draw = (lv_coord_t)((int32_t)(*draw_buf)->header.w - SCREEN_SIZE) / 2;
-    if (ext_draw < 0) {
-        ext_draw = 0;
-    }
-
-    lv_image_set_src(image, *draw_buf);
-    lv_obj_set_pos(image, -ext_draw, -ext_draw);
+    sync_face_animation_state(ctx, face_shell_active_face(ctx));
 }
 
 /*
@@ -293,232 +262,7 @@ void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backd
     }
 }
 
-static void face_theme_set_snapshot_visible(clock_ui_context_t *ctx, bool visible)
-{
-    if (ctx == NULL || ctx->face_theme.panel == NULL || ctx->face_theme.snapshot_img == NULL) {
-        return;
-    }
-
-    if (ctx->face_theme.snapshot_visible == visible) {
-        return;
-    }
-
-    if (visible) {
-        if (ctx->face_theme.snapshot_dirty || ctx->face_theme.snapshot_buf == NULL) {
-            snapshot_obj_to_image(ctx->face_theme.panel, ctx->face_theme.snapshot_img, &ctx->face_theme.snapshot_buf);
-            ctx->face_theme.snapshot_dirty = false;
-        }
-        lv_obj_clear_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_add_flag(ctx->face_theme.panel, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_set_y(ctx->face_theme.panel, face_theme_current_y(ctx));
-        lv_obj_add_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_clear_flag(ctx->face_theme.panel, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    ctx->face_theme.snapshot_visible = visible;
-}
-
-#define FACE_THEME_AUTO_CLOSE_MS 10000
-
-static void face_theme_auto_close_pause(clock_ui_context_t *ctx)
-{
-    if (ctx == NULL || ctx->face_theme.auto_close_timer == NULL) {
-        return;
-    }
-
-    lv_timer_pause(ctx->face_theme.auto_close_timer);
-}
-
-static void face_theme_auto_close_reset(clock_ui_context_t *ctx)
-{
-    if (ctx == NULL ||
-        ctx->face_theme.auto_close_timer == NULL ||
-        ctx->face_theme.overlay == NULL ||
-        lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN)) {
-        return;
-    }
-
-    lv_timer_set_period(ctx->face_theme.auto_close_timer, FACE_THEME_AUTO_CLOSE_MS);
-    lv_timer_resume(ctx->face_theme.auto_close_timer);
-    lv_timer_reset(ctx->face_theme.auto_close_timer);
-}
-
-static void face_theme_auto_close_timer_cb(lv_timer_t *timer)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
-
-    if (ctx == NULL ||
-        ctx->face_theme.overlay == NULL ||
-        lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN)) {
-        lv_timer_pause(timer);
-        return;
-    }
-
-    if (ctx->face_theme.dragging || ctx->face_theme.animating) {
-        face_theme_auto_close_reset(ctx);
-        return;
-    }
-
-    face_theme_overlay_close(ctx);
-}
-
-static void face_theme_update_visual_state(clock_ui_context_t *ctx, int32_t panel_y)
-{
-    if (ctx == NULL || ctx->face_theme.overlay == NULL || ctx->face_theme.panel == NULL) {
-        return;
-    }
-
-    int32_t clamped_y = LV_CLAMP(FACE_THEME_SHEET_CLOSED_Y, panel_y, FACE_THEME_SHEET_OPEN_Y);
-    int32_t travel = FACE_THEME_SHEET_OPEN_Y - FACE_THEME_SHEET_CLOSED_Y;
-    int32_t progress = clamped_y - FACE_THEME_SHEET_CLOSED_Y;
-    lv_opa_t opa = (lv_opa_t)((progress * FACE_THEME_SCRIM_OPA) / travel);
-
-    ui_backdrop_set(ctx, ctx->face_theme.overlay, ctx->face_theme.backdrop_img,
-                    ctx->face_theme.snapshot_visible, opa);
-
-    if (ctx->face_theme.snapshot_visible && ctx->face_theme.snapshot_img != NULL) {
-        lv_coord_t ext_draw = 0;
-
-        if (ctx->face_theme.snapshot_buf != NULL &&
-            ctx->face_theme.snapshot_buf->header.w > SCREEN_SIZE) {
-            ext_draw = (lv_coord_t)((int32_t)ctx->face_theme.snapshot_buf->header.w - SCREEN_SIZE) / 2;
-        }
-        lv_obj_set_pos(ctx->face_theme.snapshot_img, -ext_draw, clamped_y - ext_draw);
-        return;
-    }
-
-    lv_obj_set_y(ctx->face_theme.panel, clamped_y);
-}
-
-static int32_t face_theme_current_y(const clock_ui_context_t *ctx)
-{
-    lv_coord_t ext_draw = 0;
-
-    if (ctx == NULL || ctx->face_theme.panel == NULL) {
-        return FACE_THEME_SHEET_CLOSED_Y;
-    }
-
-    if (!ctx->face_theme.snapshot_visible || ctx->face_theme.snapshot_img == NULL) {
-        return lv_obj_get_y(ctx->face_theme.panel);
-    }
-
-    if (ctx->face_theme.snapshot_buf != NULL &&
-        ctx->face_theme.snapshot_buf->header.w > SCREEN_SIZE) {
-        ext_draw = (lv_coord_t)((int32_t)ctx->face_theme.snapshot_buf->header.w - SCREEN_SIZE) / 2;
-    }
-
-    return lv_obj_get_y(ctx->face_theme.snapshot_img) + ext_draw;
-}
-
-static void face_theme_sheet_anim_cb(void *obj, int32_t value)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_obj_get_user_data((lv_obj_t *)obj);
-
-    if (ctx == NULL) {
-        return;
-    }
-
-    face_theme_update_visual_state(ctx, value);
-}
-
-static void face_theme_prepare_overlay(clock_ui_context_t *ctx)
-{
-    if (ctx == NULL || ctx->face_theme.overlay == NULL) {
-        return;
-    }
-
-    ctx->face_theme.overlay_open = true;
-    lv_obj_clear_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_move_foreground(ctx->face_theme.overlay);
-    face_theme_auto_close_reset(ctx);
-    sync_active_face_visual_state(ctx);
-}
-
-static void face_theme_sheet_anim_ready_cb(lv_anim_t *anim)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
-
-    if (ctx == NULL) {
-        return;
-    }
-
-    ctx->face_theme.animating = false;
-    ctx->face_theme.dragging = false;
-    ctx->face_theme.drag_from_face = false;
-    face_theme_set_snapshot_visible(ctx, false);
-
-    if (!ctx->face_theme.target_open) {
-        ctx->face_theme.overlay_open = false;
-        lv_obj_add_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
-        face_theme_update_visual_state(ctx, FACE_THEME_SHEET_CLOSED_Y);
-        face_theme_auto_close_pause(ctx);
-    } else {
-        face_theme_update_visual_state(ctx, FACE_THEME_SHEET_OPEN_Y);
-        face_theme_auto_close_reset(ctx);
-    }
-
-    sync_active_face_visual_state(ctx);
-}
-
-static uint32_t face_theme_sheet_anim_duration(int32_t from_y, int32_t to_y)
-{
-    int32_t distance = LV_ABS(to_y - from_y);
-    int32_t travel = FACE_THEME_SHEET_OPEN_Y - FACE_THEME_SHEET_CLOSED_Y;
-
-    if (travel <= 0) {
-        return FACE_THEME_SHEET_SHOW_MS;
-    }
-
-    return (uint32_t)LV_CLAMP(110, 110 + ((distance * 150) / travel), 260);
-}
-
-static void face_theme_animate_to(clock_ui_context_t *ctx, int32_t target_y)
-{
-    lv_anim_t anim;
-    int32_t current_y;
-
-    if (ctx == NULL || ctx->face_theme.overlay == NULL || ctx->face_theme.panel == NULL) {
-        return;
-    }
-
-    target_y = LV_CLAMP(FACE_THEME_SHEET_CLOSED_Y, target_y, FACE_THEME_SHEET_OPEN_Y);
-    current_y = face_theme_current_y(ctx);
-
-    lv_anim_delete(ctx->face_theme.panel, face_theme_sheet_anim_cb);
-    ctx->face_theme.animating = false;
-
-    if (current_y == target_y) {
-        ctx->face_theme.target_open = (target_y >= FACE_THEME_SHEET_OPEN_Y);
-        if (ctx->face_theme.target_open) {
-            face_theme_prepare_overlay(ctx);
-            face_theme_update_visual_state(ctx, FACE_THEME_SHEET_OPEN_Y);
-        } else {
-            ctx->face_theme.overlay_open = false;
-            face_theme_update_visual_state(ctx, FACE_THEME_SHEET_CLOSED_Y);
-            lv_obj_add_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
-        }
-        ctx->face_theme.dragging = false;
-        ctx->face_theme.drag_from_face = false;
-        return;
-    }
-
-    face_theme_prepare_overlay(ctx);
-    face_theme_set_snapshot_visible(ctx, true);
-    ctx->face_theme.target_open = (target_y >= FACE_THEME_SHEET_OPEN_Y);
-    ctx->face_theme.animating = true;
-    lv_anim_init(&anim);
-    lv_anim_set_var(&anim, ctx->face_theme.panel);
-    lv_anim_set_user_data(&anim, ctx);
-    lv_anim_set_exec_cb(&anim, face_theme_sheet_anim_cb);
-    lv_anim_set_values(&anim, current_y, target_y);
-    lv_anim_set_time(&anim, face_theme_sheet_anim_duration(current_y, target_y));
-    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
-    lv_anim_set_ready_cb(&anim, face_theme_sheet_anim_ready_cb);
-    lv_anim_start(&anim);
-}
-
-static void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3])
+void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3])
 {
     if (colors == NULL) {
         return;
@@ -623,302 +367,6 @@ static void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint3
     }
 }
 
-bool face_theme_overlay_is_open(const clock_ui_context_t *ctx)
-{
-    return ctx != NULL &&
-           ctx->face_theme.overlay_open &&
-           ctx->face_theme.overlay != NULL &&
-           !lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN);
-}
-
-void hide_face_theme_button(clock_ui_context_t *ctx)
-{
-    if (ctx == NULL) {
-        return;
-    }
-
-    ctx->face_theme.button_visible = false;
-    if (ctx->face_theme.button != NULL) {
-        lv_obj_add_flag(ctx->face_theme.button, LV_OBJ_FLAG_HIDDEN);
-    }
-}
-
-void face_theme_overlay_close(clock_ui_context_t *ctx)
-{
-    if (ctx == NULL || ctx->face_theme.overlay == NULL || ctx->face_theme.panel == NULL) {
-        return;
-    }
-
-    if (lv_obj_has_flag(ctx->face_theme.overlay, LV_OBJ_FLAG_HIDDEN) && !ctx->face_theme.animating) {
-        ctx->face_theme.overlay_open = false;
-        face_theme_auto_close_pause(ctx);
-        return;
-    }
-
-    face_theme_auto_close_pause(ctx);
-    face_theme_animate_to(ctx, FACE_THEME_SHEET_CLOSED_Y);
-}
-
-static void sync_face_theme_overlay(clock_ui_context_t *ctx)
-{
-    clock_face_id_t face;
-    uint8_t selected_theme;
-    uint32_t key;
-
-    if (ctx == NULL || ctx->face_theme.overlay == NULL) {
-        return;
-    }
-
-    face = sanitize_enabled_face(ctx->face_theme.picker_face);
-    selected_theme = face_theme_value(ctx, face);
-    key = 0x80000000U | ((uint32_t)ctx->settings->language << 16) | ((uint32_t)selected_theme << 8) | (uint32_t)face;
-    if (ctx->face_theme.synced_key == key) {
-        return;
-    }
-    ctx->face_theme.synced_key = key;
-    lv_label_set_text(ctx->face_theme.title, ui_l10n_text(ctx, L10N_THEMES));
-
-    for (uint8_t theme = 0; theme < CLOCK_FACE_THEME_COUNT; ++theme) {
-        uint32_t swatches[3];
-        bool selected = (theme == selected_theme);
-
-        ctx->face_theme.option_ctx[theme].ui = ctx;
-        ctx->face_theme.option_ctx[theme].face = face;
-        ctx->face_theme.option_ctx[theme].theme = theme;
-        lv_label_set_text(ctx->face_theme.option_title[theme],
-                          ui_l10n_text(ctx, face_theme_text_id(theme)));
-        face_theme_preview_colors(face, theme, swatches);
-        for (int swatch = 0; swatch < 3; ++swatch) {
-            lv_obj_set_style_bg_color(ctx->face_theme.option_swatches[theme][swatch],
-                                      lv_color_hex(swatches[swatch]),
-                                      0);
-        }
-
-        lv_obj_set_style_border_width(ctx->face_theme.option_card[theme], selected ? 2 : 1, 0);
-        lv_obj_set_style_border_color(ctx->face_theme.option_card[theme],
-                                      selected ? lv_color_hex(UI_ACCENT_COL) : lv_color_hex(0x2C2C2C),
-                                      0);
-        lv_obj_set_style_bg_color(ctx->face_theme.option_card[theme],
-                                  selected ? lv_color_hex(0x1F2428) : lv_color_hex(0x171717),
-                                  0);
-    }
-
-    ctx->face_theme.snapshot_dirty = true;
-}
-
-static void face_theme_option_event_cb(lv_event_t *event)
-{
-    face_theme_option_ctx_t *option_ctx = (face_theme_option_ctx_t *)lv_event_get_user_data(event);
-
-    if (option_ctx == NULL || option_ctx->ui == NULL) {
-        return;
-    }
-
-    request_set_face_theme(option_ctx->ui, option_ctx->face, option_ctx->theme);
-    face_theme_overlay_close(option_ctx->ui);
-}
-
-static void face_theme_overlay_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_indev_t *indev = lv_event_get_indev(event);
-    lv_obj_t *target = lv_event_get_target(event);
-    lv_point_t point;
-    lv_coord_t dy;
-    int32_t target_y;
-    int32_t close_threshold_y = -((FACE_THEME_SHEET_OPEN_Y - FACE_THEME_SHEET_CLOSED_Y) * 20 / 100);
-
-    if (ctx == NULL) {
-        return;
-    }
-
-    if ((code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING ||
-         code == LV_EVENT_RELEASED || code == LV_EVENT_PRESS_LOST) && indev != NULL) {
-        lv_indev_get_point(indev, &point);
-    }
-
-    if (code == LV_EVENT_PRESSED || code == LV_EVENT_PRESSING || code == LV_EVENT_RELEASED) {
-        face_theme_auto_close_reset(ctx);
-    }
-
-    if (code == LV_EVENT_PRESSED) {
-        if (ctx->face_theme.animating) {
-            lv_anim_delete(ctx->face_theme.panel, face_theme_sheet_anim_cb);
-            ctx->face_theme.animating = false;
-        }
-        ctx->face_theme.dragging = true;
-        ctx->face_theme.drag_from_face = false;
-        ctx->face_theme.drag_start_point = point;
-        ctx->face_theme.drag_start_y = face_theme_current_y(ctx);
-        if (target == ctx->face_theme.drag_handle) {
-            face_theme_set_snapshot_visible(ctx, true);
-        }
-        return;
-    }
-
-    if (code == LV_EVENT_PRESS_LOST) {
-        if (ctx->face_theme.dragging) {
-            face_theme_animate_to(ctx, face_theme_current_y(ctx) <= close_threshold_y
-                                           ? FACE_THEME_SHEET_CLOSED_Y
-                                           : FACE_THEME_SHEET_OPEN_Y);
-        }
-        ctx->face_theme.dragging = false;
-        ctx->face_theme.drag_from_face = false;
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSING && ctx->face_theme.dragging) {
-        dy = point.y - ctx->face_theme.drag_start_point.y;
-        target_y = ctx->face_theme.drag_start_y + dy;
-        face_theme_update_visual_state(ctx, target_y);
-        return;
-    }
-
-    if (code == LV_EVENT_RELEASED && ctx->face_theme.dragging) {
-        ctx->face_theme.dragging = false;
-        ctx->face_theme.drag_from_face = false;
-        target_y = face_theme_current_y(ctx);
-        if (target_y <= close_threshold_y) {
-            face_theme_animate_to(ctx, FACE_THEME_SHEET_CLOSED_Y);
-        } else {
-            face_theme_animate_to(ctx, FACE_THEME_SHEET_OPEN_Y);
-        }
-        return;
-    }
-
-    if (code == LV_EVENT_CLICKED &&
-        lv_event_get_current_target(event) == ctx->face_theme.overlay &&
-        lv_event_get_target(event) == ctx->face_theme.overlay) {
-        face_theme_overlay_close(ctx);
-    }
-}
-
-static void face_theme_close_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL) {
-        return;
-    }
-
-    face_theme_overlay_close(ctx);
-}
-
-static void face_theme_button_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL || ctx->face_theme.overlay == NULL || ctx->tileview == NULL) {
-        return;
-    }
-
-    ctx->face_theme.picker_face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
-    sync_face_theme_overlay(ctx);
-    face_theme_update_visual_state(ctx, FACE_THEME_SHEET_CLOSED_Y);
-    face_theme_animate_to(ctx, FACE_THEME_SHEET_OPEN_Y);
-}
-
-static void create_face_theme_pull_hint(clock_ui_context_t *ctx)
-{
-    ctx->face_theme.pull_hint = lv_obj_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->face_theme.pull_hint, 88, 6);
-    lv_obj_set_style_radius(ctx->face_theme.pull_hint, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(ctx->face_theme.pull_hint, 0, 0);
-    lv_obj_set_style_bg_color(ctx->face_theme.pull_hint, lv_color_hex(0x808080), 0);
-    lv_obj_set_style_bg_opa(ctx->face_theme.pull_hint, LV_OPA_50, 0);
-    lv_obj_set_style_opa(ctx->face_theme.pull_hint, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_shadow_width(ctx->face_theme.pull_hint, 0, 0);
-    lv_obj_remove_flag(ctx->face_theme.pull_hint, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->face_theme.pull_hint, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_align(ctx->face_theme.pull_hint, LV_ALIGN_TOP_MID, 0, 16);
-}
-
-static void open_face_theme_overlay_for_active_face(clock_ui_context_t *ctx)
-{
-    if (ctx == NULL || ctx->face_theme.overlay == NULL || ctx->tileview == NULL) {
-        return;
-    }
-
-    ctx->face_theme.picker_face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
-    sync_face_theme_overlay(ctx);
-    face_theme_update_visual_state(ctx, FACE_THEME_SHEET_CLOSED_Y);
-    face_theme_animate_to(ctx, FACE_THEME_SHEET_OPEN_Y);
-}
-
-static void shell_settings_button_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL) {
-        return;
-    }
-
-    face_theme_overlay_close(ctx);
-    ui_settings_open((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-static void update_button_event_cb(lv_event_t *event)
-{
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-
-    if (ctx == NULL || ctx->runtime == NULL || ctx->runtime->ota_busy) {
-        return;
-    }
-
-    request_ota_install(ctx);
-    sync_update_button(ctx);
-}
-
-void sync_update_button(clock_ui_context_t *ctx)
-{
-    bool visible;
-
-    if (ctx == NULL || ctx->update_button == NULL || ctx->runtime == NULL) {
-        return;
-    }
-
-    visible = ctx->runtime->ota_update_available && !ctx->runtime->ota_reboot_pending;
-    if (visible) {
-        lv_obj_clear_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
-    }
-
-    if (ctx->update_button_label != NULL) {
-        char label[96];
-
-        if (ctx->runtime->ota_busy) {
-            snprintf(label, sizeof(label), LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_UPDATING));
-        } else {
-            snprintf(label, sizeof(label), LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_INSTALL_UPDATE));
-        }
-        if (strcmp(lv_label_get_text(ctx->update_button_label), label) != 0) {
-            lv_label_set_text(ctx->update_button_label, label);
-        }
-    }
-    if (ctx->runtime->ota_busy) {
-        lv_obj_add_state(ctx->update_button, LV_STATE_DISABLED);
-    } else {
-        lv_obj_remove_state(ctx->update_button, LV_STATE_DISABLED);
-    }
-}
-
-void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face)
-{
-    for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
-        if (ctx->page_dots[i] == NULL) {
-            continue;
-        }
-
-        lv_color_t color = (i == active_face) ? lv_color_white() : lv_color_hex(0x555555);
-
-        if (!lv_color_eq(lv_obj_get_style_bg_color(ctx->page_dots[i], LV_PART_MAIN), color)) {
-            lv_obj_set_style_bg_color(ctx->page_dots[i], color, 0);
-        }
-    }
-}
-
 clock_face_id_t tile_to_face(clock_ui_context_t *ctx, lv_obj_t *tile)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
@@ -939,112 +387,15 @@ static void apply_face_navigation_mode(clock_ui_context_t *ctx, clock_face_id_t 
     lv_obj_set_scroll_dir(ctx->tileview, LV_DIR_NONE);
 }
 
-static void face_swipe_event_cb(lv_event_t *event)
+void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face)
 {
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_event_code_t code = lv_event_get_code(event);
-    lv_indev_t *indev = lv_event_get_indev(event);
-    lv_point_t point;
-    lv_coord_t dx;
-    lv_coord_t dy;
+    face_controls_set_face(ctx, active_face);
+}
+
+void face_shell_swipe_face(clock_ui_context_t *ctx, int32_t dx)
+{
     clock_face_id_t current_face;
     clock_face_id_t target_face;
-
-    if (ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || brightness_panel_is_open(ctx) ||
-        (face_theme_overlay_is_open(ctx) && !ctx->face_theme.drag_from_face)) {
-        ctx->faces.face_swipe_tracking = false;
-        return;
-    }
-
-    if (indev == NULL) {
-        ctx->faces.face_swipe_tracking = false;
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSED) {
-        lv_indev_get_point(indev, &ctx->faces.face_swipe_start_point);
-        ctx->faces.face_swipe_tracking = true;
-        return;
-    }
-
-    if (code == LV_EVENT_PRESSING && ctx->faces.face_swipe_tracking) {
-        int32_t target_y;
-
-        lv_indev_get_point(indev, &point);
-        dx = point.x - ctx->faces.face_swipe_start_point.x;
-        dy = point.y - ctx->faces.face_swipe_start_point.y;
-
-        if (!ctx->face_theme.drag_from_face) {
-            if (dy < 18 || dy < LV_ABS(dx) + 12) {
-                return;
-            }
-
-            ctx->face_theme.picker_face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
-            sync_face_theme_overlay(ctx);
-            if (ctx->face_theme.animating) {
-                lv_anim_delete(ctx->face_theme.panel, face_theme_sheet_anim_cb);
-                ctx->face_theme.animating = false;
-            }
-            ctx->face_theme.dragging = true;
-            ctx->face_theme.drag_from_face = true;
-            ctx->face_theme.drag_start_point = ctx->faces.face_swipe_start_point;
-            ctx->face_theme.drag_start_y = FACE_THEME_SHEET_CLOSED_Y;
-            face_theme_prepare_overlay(ctx);
-            face_theme_set_snapshot_visible(ctx, true);
-            face_theme_update_visual_state(ctx, FACE_THEME_SHEET_CLOSED_Y);
-        }
-
-        target_y = ctx->face_theme.drag_start_y + dy;
-        face_theme_update_visual_state(ctx, target_y);
-        return;
-    }
-
-    if (code == LV_EVENT_PRESS_LOST) {
-        ctx->faces.face_swipe_tracking = false;
-        if (ctx->face_theme.drag_from_face) {
-            face_theme_animate_to(ctx, FACE_THEME_SHEET_CLOSED_Y);
-        }
-        ctx->face_theme.dragging = false;
-        ctx->face_theme.drag_from_face = false;
-        return;
-    }
-
-    if (code != LV_EVENT_RELEASED || !ctx->faces.face_swipe_tracking) {
-        return;
-    }
-
-    ctx->faces.face_swipe_tracking = false;
-    lv_indev_get_point(indev, &point);
-    dx = point.x - ctx->faces.face_swipe_start_point.x;
-    dy = point.y - ctx->faces.face_swipe_start_point.y;
-
-    if (ctx->face_theme.drag_from_face) {
-        int32_t target_y = face_theme_current_y(ctx);
-        int32_t open_threshold_y = FACE_THEME_SHEET_CLOSED_Y + ((FACE_THEME_SHEET_OPEN_Y - FACE_THEME_SHEET_CLOSED_Y) * 45) / 100;
-
-        ctx->face_theme.dragging = false;
-        ctx->face_theme.drag_from_face = false;
-        if (target_y >= open_threshold_y) {
-            face_theme_animate_to(ctx, FACE_THEME_SHEET_OPEN_Y);
-        } else {
-            face_theme_animate_to(ctx, FACE_THEME_SHEET_CLOSED_Y);
-        }
-        return;
-    }
-
-    if (LV_ABS(dx) < 24 && LV_ABS(dy) < 24) {
-        show_affordances_temporarily(ctx);
-        return;
-    }
-
-    if (dy >= 64 && dy >= LV_ABS(dx) + 20) {
-        open_face_theme_overlay_for_active_face(ctx);
-        return;
-    }
-
-    if (LV_ABS(dx) < 56 || LV_ABS(dx) <= LV_ABS(dy) + 20) {
-        return;
-    }
 
     current_face = ctx->runtime->in_night_mode ? ctx->settings->night_mode.face : ctx->settings->current_face;
     target_face = (dx < 0) ? clock_face_step_enabled(current_face, 1) : clock_face_step_enabled(current_face, -1);
@@ -1052,10 +403,11 @@ static void face_swipe_event_cb(lv_event_t *event)
         return;
     }
 
+    face_controls_hide(ctx);
     if (!face_reveal_start(ctx, target_face)) {
         set_active_face(ctx, target_face, LV_ANIM_OFF);
+        face_controls_show(ctx);
     }
-    show_affordances_temporarily(ctx);
 
     if (ctx->runtime->in_night_mode) {
         if (ctx->settings->night_mode.face != target_face) {
@@ -1064,6 +416,83 @@ static void face_swipe_event_cb(lv_event_t *event)
     } else if (ctx->settings->current_face != target_face) {
         request_set_current_face(ctx, target_face);
     }
+}
+
+static bool theme_pull_active(const clock_ui_context_t *ctx)
+{
+    return ctx->face_theme.dragging && ctx->face_theme.drag_from_closed;
+}
+
+/* Presses on the face area (and on the themes tab of the controls, which routes here). */
+static void face_swipe_event_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    lv_event_code_t code = lv_event_get_code(event);
+    lv_indev_t *indev = lv_event_get_indev(event);
+    lv_point_t point;
+    lv_coord_t dx;
+    lv_coord_t dy;
+
+    if (indev == NULL || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || face_quick_visible(ctx) ||
+        (face_themes_visible(ctx) && !theme_pull_active(ctx))) {
+        ctx->faces.face_swipe_tracking = false;
+        return;
+    }
+
+    lv_indev_get_point(indev, &point);
+    if (code == LV_EVENT_PRESSED) {
+        ctx->faces.face_swipe_start_point = point;
+        ctx->faces.face_swipe_tracking = true;
+        return;
+    }
+    if (!ctx->faces.face_swipe_tracking) {
+        return;
+    }
+    dx = point.x - ctx->faces.face_swipe_start_point.x;
+    dy = point.y - ctx->faces.face_swipe_start_point.y;
+
+    if (code == LV_EVENT_PRESSING) {
+        if (!theme_pull_active(ctx)) {
+            if (dy < FACE_PULL_START || dy < LV_ABS(dx) + 12 || ctx->faces.face_reveal_animating) {
+                return;
+            }
+            face_themes_prepare(ctx);
+            face_sheet_drag_begin(&ctx->face_theme.sheet, ctx->faces.face_swipe_start_point, true);
+        }
+        face_sheet_drag_to(&ctx->face_theme.sheet, dy);
+        return;
+    }
+
+    ctx->faces.face_swipe_tracking = false;
+    if (theme_pull_active(ctx)) {
+        face_sheet_drag_end(&ctx->face_theme.sheet, code == LV_EVENT_PRESS_LOST);
+        return;
+    }
+    if (code != LV_EVENT_RELEASED) {
+        return;
+    }
+
+    if (LV_ABS(dx) < 24 && LV_ABS(dy) < 24) {
+        if (lv_event_get_current_target(event) == ctx->face_chrome.themes_tab) {
+            face_themes_open(ctx);
+        } else {
+            face_controls_toggle(ctx);
+        }
+        return;
+    }
+
+    if (LV_ABS(dx) < 56 || LV_ABS(dx) <= LV_ABS(dy) + 20) {
+        return;
+    }
+    face_shell_swipe_face(ctx, dx);
+}
+
+void face_shell_attach_swipe(clock_ui_context_t *ctx, lv_obj_t *obj)
+{
+    lv_obj_add_event_cb(obj, face_swipe_event_cb, LV_EVENT_PRESSED, ctx);
+    lv_obj_add_event_cb(obj, face_swipe_event_cb, LV_EVENT_PRESSING, ctx);
+    lv_obj_add_event_cb(obj, face_swipe_event_cb, LV_EVENT_RELEASED, ctx);
+    lv_obj_add_event_cb(obj, face_swipe_event_cb, LV_EVENT_PRESS_LOST, ctx);
 }
 
 static void create_face_reveal_layer(clock_ui_context_t *ctx)
@@ -1092,10 +521,7 @@ static void create_face_swipe_layer(clock_ui_context_t *ctx)
     lv_obj_set_style_radius(ctx->faces.face_swipe_layer, 0, 0);
     lv_obj_set_style_pad_all(ctx->faces.face_swipe_layer, 0, 0);
     lv_obj_clear_flag(ctx->faces.face_swipe_layer, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_event_cb(ctx->faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->faces.face_swipe_layer, face_swipe_event_cb, LV_EVENT_PRESS_LOST, ctx);
+    face_shell_attach_swipe(ctx, ctx->faces.face_swipe_layer);
 }
 
 void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enable_t anim)
@@ -1115,13 +541,17 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
         visible_index = clock_face_visible_id_to_index(face);
     }
 
-    face_theme_overlay_close(ctx);
+    /* A refresh re-applies the same face: only a real face change closes the theme sheet. */
+    if (ctx->tileview != NULL && face != tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview))) {
+        face_themes_close(ctx, true);
+    }
     ctx->suppress_events = true;
     apply_face_navigation_mode(ctx, face);
     sync_face_animation_state(ctx, face);
     lv_tileview_set_tile_by_index(ctx->tileview, visible_index, 0, anim);
     update_dots(ctx, face);
     ui_alarms_on_face_changed(ctx, face);
+    face_night_sync(ctx, face_now(), false);
     ctx->suppress_events = false;
 }
 
@@ -1165,7 +595,9 @@ static void tileview_scroll_event_cb(lv_event_t *event)
         ctx->faces.tileview_scrolling = true;
         face = tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
         sync_face_animation_state(ctx, face);
-        show_affordances_temporarily(ctx);
+        if (!ctx->suppress_events) {
+            show_affordances_temporarily(ctx);
+        }
         return;
     }
 
@@ -1175,213 +607,10 @@ static void tileview_scroll_event_cb(lv_event_t *event)
         sync_face_animation_state(ctx, face);
         update_face(ctx, face);
         update_dots(ctx, face);
-        show_affordances_temporarily(ctx);
-    }
-}
-
-static void create_dots(clock_ui_context_t *ctx)
-{
-    int visible_count = clock_face_visible_count();
-    int start_x = -((visible_count - 1) * 18) / 2;
-
-    for (int index = 0; index < visible_count; ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
-
-        ctx->page_dots[face] = lv_obj_create(ui_chrome_root(ctx));
-        lv_obj_set_size(ctx->page_dots[face], 10, 10);
-        lv_obj_set_style_radius(ctx->page_dots[face], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(ctx->page_dots[face], 0, 0);
-        lv_obj_set_style_opa(ctx->page_dots[face], LV_OPA_TRANSP, 0);
-        lv_obj_set_scrollbar_mode(ctx->page_dots[face], LV_SCROLLBAR_MODE_OFF);
-        lv_obj_remove_flag(ctx->page_dots[face], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_add_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
-        lv_obj_align(ctx->page_dots[face], LV_ALIGN_BOTTOM_MID, start_x + index * 18, -38);
-    }
-
-    update_dots(ctx, sanitize_enabled_face(ctx->settings->current_face));
-}
-
-static void create_settings_button(clock_ui_context_t *ctx)
-{
-    lv_obj_t *label;
-
-    ctx->settings_button = lv_button_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->settings_button, 56, 56);
-    lv_obj_align(ctx->settings_button, LV_ALIGN_TOP_RIGHT, -28, 28);
-    lv_obj_set_style_radius(ctx->settings_button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(ctx->settings_button, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_bg_opa(ctx->settings_button, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(ctx->settings_button, 0, 0);
-    lv_obj_add_event_cb(ctx->settings_button, shell_settings_button_event_cb, LV_EVENT_CLICKED, ctx);
-    ui_attach_click_feedback(ctx->settings_button, LV_EVENT_CLICKED);
-
-    label = lv_label_create(ctx->settings_button);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, LV_SYMBOL_SETTINGS);
-    lv_obj_center(label);
-}
-
-void create_update_button(clock_ui_context_t *ctx)
-{
-    ctx->update_button = lv_button_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->update_button, 210, 44);
-    lv_obj_align(ctx->update_button, LV_ALIGN_TOP_MID, 0, 30);
-    lv_obj_set_style_radius(ctx->update_button, 22, 0);
-    lv_obj_set_style_bg_color(ctx->update_button, lv_color_hex(0xF3B340), 0);
-    lv_obj_set_style_bg_color(ctx->update_button, lv_color_hex(0xD99B2F), LV_STATE_PRESSED);
-    lv_obj_set_style_bg_opa(ctx->update_button, LV_OPA_90, 0);
-    lv_obj_set_style_border_width(ctx->update_button, 0, 0);
-    lv_obj_set_style_shadow_width(ctx->update_button, 18, 0);
-    lv_obj_set_style_shadow_opa(ctx->update_button, LV_OPA_30, 0);
-    lv_obj_set_style_shadow_color(ctx->update_button, lv_color_hex(0xF3B340), 0);
-    lv_obj_add_flag(ctx->update_button, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_event_cb(ctx->update_button, update_button_event_cb, LV_EVENT_CLICKED, ctx);
-    ui_attach_click_feedback(ctx->update_button, LV_EVENT_CLICKED);
-
-    ctx->update_button_label = lv_label_create(ctx->update_button);
-    lv_obj_set_style_text_font(ctx->update_button_label, &ui_i18n_20, 0);
-    lv_obj_set_style_text_color(ctx->update_button_label, lv_color_hex(0x15110A), 0);
-    lv_label_set_text_fmt(ctx->update_button_label, LV_SYMBOL_DOWNLOAD " %s", ui_l10n_text(ctx, L10N_INSTALL_UPDATE));
-    lv_obj_center(ctx->update_button_label);
-}
-
-void create_face_theme_button(clock_ui_context_t *ctx)
-{
-    lv_obj_t *label;
-
-    ctx->face_theme.button = lv_button_create(ui_chrome_root(ctx));
-    lv_obj_set_size(ctx->face_theme.button, 56, 56);
-    lv_obj_align(ctx->face_theme.button, LV_ALIGN_LEFT_MID, 52, 72);
-    lv_obj_set_style_radius(ctx->face_theme.button, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(ctx->face_theme.button, lv_color_hex(0x1A1A1A), 0);
-    lv_obj_set_style_bg_opa(ctx->face_theme.button, LV_OPA_70, 0);
-    lv_obj_set_style_border_width(ctx->face_theme.button, 0, 0);
-    lv_obj_add_event_cb(ctx->face_theme.button, face_theme_button_event_cb, LV_EVENT_CLICKED, ctx);
-    ui_attach_click_feedback(ctx->face_theme.button, LV_EVENT_CLICKED);
-
-    label = lv_label_create(ctx->face_theme.button);
-    lv_obj_set_style_text_font(label, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(label, lv_color_white(), 0);
-    lv_label_set_text(label, LV_SYMBOL_SETTINGS);
-    lv_obj_center(label);
-    ctx->face_theme.button_visible = true;
-}
-
-void create_face_theme_overlay(clock_ui_context_t *ctx)
-{
-    ui_surface_t surface;
-
-    ui_surface_create_fullscreen(&surface,
-                                 ui_chrome_root(ctx),
-                                 lv_color_black(),
-                                 LV_OPA_70,
-                                 lv_color_hex(0x0D0D0D),
-                                 SETTINGS_HEADER_HEIGHT,
-                                 ui_l10n_text(ctx, L10N_THEMES),
-                                 face_theme_overlay_event_cb,
-                                 face_theme_close_event_cb,
-                                 ctx);
-    ctx->face_theme.overlay = surface.overlay;
-    ctx->face_theme.panel = surface.panel;
-    ctx->face_theme.snapshot_img = lv_image_create(surface.overlay);
-    ctx->face_theme.backdrop_img = ui_backdrop_create(surface.overlay);
-    ctx->face_theme.title = surface.title;
-    ctx->face_theme.content = surface.content;
-    shell_bind_label(ctx, surface.title, L10N_THEMES);
-    lv_obj_set_user_data(surface.panel, ctx);
-    lv_obj_add_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
-    lv_obj_clear_flag(ctx->face_theme.snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(surface.panel, lv_pct(100), FACE_THEME_SHEET_HEIGHT);
-    lv_obj_align(surface.panel, LV_ALIGN_TOP_MID, 0, FACE_THEME_SHEET_CLOSED_Y);
-    lv_obj_set_style_radius(surface.panel, 0, 0);
-    lv_obj_set_style_bg_opa(surface.overlay, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_text_font(surface.title, &ui_i18n_24, 0);
-    lv_obj_set_width(surface.title, 440);
-    lv_obj_align(surface.title, LV_ALIGN_TOP_MID, 0, 18);
-    ctx->face_theme.grabber = lv_obj_create(surface.panel);
-    lv_obj_set_size(ctx->face_theme.grabber, 72, 6);
-    lv_obj_set_style_radius(ctx->face_theme.grabber, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_border_width(ctx->face_theme.grabber, 0, 0);
-    lv_obj_set_style_bg_color(ctx->face_theme.grabber, lv_color_hex(0x9C9C9C), 0);
-    lv_obj_set_style_bg_opa(ctx->face_theme.grabber, LV_OPA_70, 0);
-    lv_obj_set_style_shadow_width(ctx->face_theme.grabber, 0, 0);
-    lv_obj_remove_flag(ctx->face_theme.grabber, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->face_theme.grabber, LV_OBJ_FLAG_FLOATING | LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_align(ctx->face_theme.grabber, LV_ALIGN_BOTTOM_MID, 0, -18);
-    ctx->face_theme.drag_handle = lv_obj_create(surface.panel);
-    lv_obj_set_size(ctx->face_theme.drag_handle, lv_pct(100), 72);
-    lv_obj_align(ctx->face_theme.drag_handle, LV_ALIGN_BOTTOM_MID, 0, 0);
-    lv_obj_set_style_bg_opa(ctx->face_theme.drag_handle, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->face_theme.drag_handle, 0, 0);
-    lv_obj_set_style_radius(ctx->face_theme.drag_handle, 0, 0);
-    lv_obj_set_style_pad_all(ctx->face_theme.drag_handle, 0, 0);
-    lv_obj_set_scrollbar_mode(ctx->face_theme.drag_handle, LV_SCROLLBAR_MODE_OFF);
-    lv_obj_clear_flag(ctx->face_theme.drag_handle, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->face_theme.drag_handle, LV_OBJ_FLAG_FLOATING);
-    lv_obj_add_event_cb(ctx->face_theme.drag_handle, face_theme_overlay_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(ctx->face_theme.drag_handle, face_theme_overlay_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(ctx->face_theme.drag_handle, face_theme_overlay_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(ctx->face_theme.drag_handle, face_theme_overlay_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(surface.panel, face_theme_overlay_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(surface.panel, face_theme_overlay_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(surface.panel, face_theme_overlay_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(surface.panel, face_theme_overlay_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_event_cb(surface.content, face_theme_overlay_event_cb, LV_EVENT_PRESSED, ctx);
-    lv_obj_add_event_cb(surface.content, face_theme_overlay_event_cb, LV_EVENT_PRESSING, ctx);
-    lv_obj_add_event_cb(surface.content, face_theme_overlay_event_cb, LV_EVENT_RELEASED, ctx);
-    lv_obj_add_event_cb(surface.content, face_theme_overlay_event_cb, LV_EVENT_PRESS_LOST, ctx);
-    lv_obj_add_flag(surface.content, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
-    lv_obj_set_style_pad_top(surface.content, 12, 0);
-    lv_obj_set_style_pad_bottom(surface.content, 24, 0);
-    lv_obj_set_style_pad_row(surface.content, 18, 0);
-    lv_obj_set_flex_align(surface.content, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_clear_flag(surface.content, LV_OBJ_FLAG_SCROLLABLE);
-
-    for (uint8_t theme = 0; theme < CLOCK_FACE_THEME_COUNT; ++theme) {
-        lv_obj_t *card = create_card(surface.content);
-        lv_obj_t *row;
-
-        ctx->face_theme.option_card[theme] = card;
-        lv_obj_set_width(card, 540);
-        lv_obj_set_style_pad_all(card, 24, 0);
-        lv_obj_set_style_pad_row(card, 16, 0);
-        lv_obj_set_style_border_width(card, 1, 0);
-        lv_obj_set_style_border_color(card, lv_color_hex(0x2C2C2C), 0);
-        lv_obj_set_style_bg_color(card, lv_color_hex(0x171717), 0);
-        lv_obj_set_style_bg_color(card, lv_color_hex(0x22272B), LV_STATE_PRESSED);
-        lv_obj_add_flag(card, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
-        lv_obj_add_event_cb(card, face_theme_option_event_cb, LV_EVENT_CLICKED, &ctx->face_theme.option_ctx[theme]);
-        ui_attach_click_feedback(card, LV_EVENT_CLICKED);
-
-        ctx->face_theme.option_title[theme] = lv_label_create(card);
-        lv_obj_set_style_text_font(ctx->face_theme.option_title[theme], &lv_font_montserrat_24, 0);
-        lv_obj_set_style_text_color(ctx->face_theme.option_title[theme], lv_color_white(), 0);
-        shell_bind_label(ctx, ctx->face_theme.option_title[theme], face_theme_text_id(theme));
-        lv_obj_add_flag(ctx->face_theme.option_title[theme], LV_OBJ_FLAG_EVENT_BUBBLE);
-
-        row = create_row(card);
-        lv_obj_set_style_pad_column(row, 14, 0);
-        center_row(row);
-        lv_obj_add_flag(row, LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
-        for (int swatch = 0; swatch < 3; ++swatch) {
-            ctx->face_theme.option_swatches[theme][swatch] = lv_obj_create(row);
-            lv_obj_set_size(ctx->face_theme.option_swatches[theme][swatch], 34, 34);
-            lv_obj_set_style_radius(ctx->face_theme.option_swatches[theme][swatch], LV_RADIUS_CIRCLE, 0);
-            lv_obj_set_style_border_width(ctx->face_theme.option_swatches[theme][swatch], 2, 0);
-            lv_obj_set_style_border_color(ctx->face_theme.option_swatches[theme][swatch], lv_color_hex(0xFFFFFF), 0);
-            lv_obj_set_style_border_opa(ctx->face_theme.option_swatches[theme][swatch], LV_OPA_20, 0);
-            lv_obj_set_style_pad_all(ctx->face_theme.option_swatches[theme][swatch], 0, 0);
-            lv_obj_clear_flag(ctx->face_theme.option_swatches[theme][swatch], LV_OBJ_FLAG_SCROLLABLE);
-            lv_obj_add_flag(ctx->face_theme.option_swatches[theme][swatch],
-                            LV_OBJ_FLAG_EVENT_BUBBLE | LV_OBJ_FLAG_GESTURE_BUBBLE);
+        if (!ctx->suppress_events) {
+            show_affordances_temporarily(ctx);
         }
     }
-
-    ctx->face_theme.snapshot_dirty = true;
-    ctx->face_theme.auto_close_timer = ui_chrome_timer_create(ctx, face_theme_auto_close_timer_cb, FACE_THEME_AUTO_CLOSE_MS, ctx);
-    lv_timer_pause(ctx->face_theme.auto_close_timer);
-    face_theme_overlay_close(ctx);
 }
 
 void build_root_ui(clock_ui_context_t *ctx)
@@ -1436,123 +665,148 @@ void build_root_ui(clock_ui_context_t *ctx)
 #endif
 }
 
+/* --- Debug calls (simulator, perf tour) ------------------------------------------------- */
+
 static void debug_close_theme(clock_ui_context_t *ctx)
 {
-    face_theme_overlay_close(ctx);
+    face_themes_close(ctx, true);
 }
 
 static void debug_close_quick(clock_ui_context_t *ctx)
 {
-    brightness_overlay_hide_immediately(ctx);
+    face_quick_close(ctx, false);
 }
+
+static void debug_open_theme(clock_ui_context_t *ctx)
+{
+    face_themes_prepare(ctx);
+    face_sheet_open(&ctx->face_theme.sheet, false);
+}
+
+static void debug_open_quick(clock_ui_context_t *ctx)
+{
+    face_quick_sync(ctx);
+    face_sheet_open(&ctx->brightness.sheet, false);
+}
+
+static void debug_hide_controls(clock_ui_context_t *ctx)
+{
+    face_controls_hide(ctx);
+}
+
+/* Cycles the theme of the active face (renders the theme previews in the simulator). */
+static void debug_next_theme(clock_ui_context_t *ctx)
+{
+    clock_face_id_t face = face_shell_active_face(ctx);
+    uint8_t theme = ctx->settings->face_themes[face];
+
+    request_set_face_theme(ctx, face, (uint8_t)((theme + 1U) % CLOCK_FACE_THEME_COUNT));
+}
+
+/* --- Hooks (ui_areas.h) ----------------------------------------------------------------- */
 
 void ui_face_chrome_create(clock_ui_context_t *ctx)
 {
-    create_dots(ctx);
-    create_face_theme_pull_hint(ctx);
-    create_brightness_pull_hint(ctx);
-    create_brightness_edge_sensor(ctx);
-    create_brightness_overlay(ctx);
-    create_brightness_panel(ctx);
-    create_settings_button(ctx);
-    create_update_button(ctx);
-    ctx->affordance_hide_timer = ui_chrome_timer_create(ctx, affordance_hide_timer_cb, AFFORDANCE_VISIBLE_MS, ctx);
-    lv_timer_pause(ctx->affordance_hide_timer);
+    face_night_create(ctx);
+    face_quick_create_edge_sensor(ctx);
+    face_controls_create(ctx);
+    if (ctx->face_chrome.themes_tab != NULL) {
+        face_shell_attach_swipe(ctx, ctx->face_chrome.themes_tab);
+    }
     ui_debug_register("show_controls", ui_face_chrome_show_controls);
+    ui_debug_register("hide_controls", debug_hide_controls);
+    ui_debug_register("open_theme", debug_open_theme);
     ui_debug_register("close_theme", debug_close_theme);
+    ui_debug_register("open_quick", debug_open_quick);
     ui_debug_register("close_quick", debug_close_quick);
+    ui_debug_register("next_theme", debug_next_theme);
+    face_night_register_debug();
 }
 
 void ui_face_chrome_create_top(clock_ui_context_t *ctx)
 {
-    create_face_theme_overlay(ctx);
-    lv_obj_move_foreground(ctx->face_theme.pull_hint);
-    lv_obj_move_foreground(ctx->brightness.pull_hint);
+    face_themes_create(ctx);
+    face_quick_create(ctx);
+    /* The bottom pull zone stays above the alarm banner, as before. */
     lv_obj_move_foreground(ctx->brightness.edge_sensor);
 }
 
 void ui_face_chrome_destroy(clock_ui_context_t *ctx)
 {
-    if (ctx->face_theme.snapshot_buf != NULL) {
-        lv_draw_buf_destroy(ctx->face_theme.snapshot_buf);
-        ctx->face_theme.snapshot_buf = NULL;
-    }
+    face_themes_destroy(ctx);
+    face_quick_destroy(ctx);
 }
 
 void ui_face_chrome_tick(clock_ui_context_t *ctx, time_t now, clock_face_id_t active_face, bool face_covered)
 {
-    LV_UNUSED(now);
     if (!face_covered && !ctx->faces.tileview_scrolling) {
-        update_dots(ctx, active_face);
+        face_controls_set_face(ctx, active_face);
     }
-    sync_update_button(ctx);
-    if (ctx->brightness.animating ||
-        ctx->brightness.dragging ||
-        brightness_panel_is_open(ctx) ||
-        (ctx->brightness.overlay != NULL && !lv_obj_has_flag(ctx->brightness.overlay, LV_OBJ_FLAG_HIDDEN))) {
-        update_brightness_ui(ctx);
+    if (face_controls_visible(ctx)) {
+        if (ctx->runtime->alarm_ringing) {
+            face_controls_hide(ctx);
+        } else {
+            face_controls_sync(ctx, now, false);
+        }
+    }
+    face_night_sync(ctx, now, false);
+    if (face_quick_visible(ctx)) {
+        face_quick_sync(ctx);
     }
 }
 
 void ui_face_chrome_refresh(clock_ui_context_t *ctx)
 {
-    update_brightness_ui(ctx);
-    sync_update_button(ctx);
+    time_t now = face_now();
+
+    face_quick_sync(ctx);
+    face_themes_sync(ctx);
+    face_controls_sync(ctx, now, true);
+    face_night_sync(ctx, now, true);
 }
 
 void ui_face_chrome_on_face_changed(clock_ui_context_t *ctx, clock_face_id_t face)
 {
-    update_dots(ctx, face);
+    face_controls_set_face(ctx, face);
+    face_night_sync(ctx, face_now(), false);
 }
 
 void ui_face_chrome_show_controls(clock_ui_context_t *ctx)
 {
-    show_affordances_temporarily(ctx);
+    face_controls_show(ctx);
 }
 
 void ui_face_chrome_set_hidden(clock_ui_context_t *ctx, bool hidden)
 {
-    lv_obj_t *objs[] = {ctx->settings_button, ctx->update_button, ctx->face_theme.button};
-
-    for (size_t i = 0; i < sizeof(objs) / sizeof(objs[0]); i++) {
-        if (objs[i] == NULL) {
-            continue;
-        }
-        if (hidden) {
-            lv_obj_add_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
-        } else if (objs[i] == ctx->update_button) {
-            sync_update_button(ctx);
-        } else if (objs[i] != ctx->face_theme.button || ctx->face_theme.button_visible) {
-            lv_obj_clear_flag(objs[i], LV_OBJ_FLAG_HIDDEN);
-        }
+    face_controls_set_hidden(ctx, hidden);
+    face_quick_set_hidden(ctx, hidden);
+    if (hidden) {
+        face_themes_close(ctx, false);
+        face_quick_close(ctx, false);
     }
-    for (int face = 0; face < CLOCK_FACE_COUNT; ++face) {
-        if (ctx->page_dots[face] == NULL) {
-            continue;
-        }
-        if (hidden) {
-            lv_obj_add_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
-        } else {
-            lv_obj_clear_flag(ctx->page_dots[face], LV_OBJ_FLAG_HIDDEN);
-        }
-    }
+    face_night_sync(ctx, face_now(), false);
 }
 
 void ui_face_chrome_close_all(clock_ui_context_t *ctx)
 {
-    brightness_overlay_hide_immediately(ctx);
-    brightness_panel_hide(ctx);
-    if (face_theme_overlay_is_open(ctx)) {
-        face_theme_overlay_close(ctx);
-    }
+    face_quick_close(ctx, false);
+    face_themes_close(ctx, false);
+    face_controls_hide(ctx);
+    face_night_sync(ctx, face_now(), false);
 }
 
 bool ui_face_chrome_covers_face(const clock_ui_context_t *ctx)
 {
-    return ctx->face_theme.overlay_open;
+    /* While a sheet moves, the face is drawn from the backdrop snapshot. */
+    return face_sheet_is_moving(&ctx->face_theme.sheet) || face_sheet_is_moving(&ctx->brightness.sheet);
 }
 
 bool ui_face_chrome_dims_face(const clock_ui_context_t *ctx)
 {
-    return brightness_panel_is_open(ctx);
+    return face_themes_visible(ctx) || face_quick_visible(ctx);
+}
+
+bool ui_face_chrome_controls_visible(const clock_ui_context_t *ctx)
+{
+    return face_controls_visible(ctx);
 }

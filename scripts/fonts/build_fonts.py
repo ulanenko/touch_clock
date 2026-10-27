@@ -35,7 +35,7 @@ SOURCES = {
 # punctuation the UI uses: dashes, quotes, bullet, ellipsis, arrows, minus, thin spaces.
 TEXT = ("0x20-0x7E,0xA0-0x17F,0x400-0x45F,0x490-0x491,0x2009,0x2013-0x2014,0x2018-0x2019,"
         "0x201C-0x201D,0x2022,0x2026,0x202F,0x2190-0x2193,0x2212")
-DIGITS = "0x20,0x25,0x2B-0x3A,0x2013,0x2212"
+DIGITS = "0x20,0x25,0x2B-0x3A,0x3D,0x3F,0xD7,0x2013,0x2212"
 
 # Glyphs missing from a face (Jost has no Ukrainian Є І Ї Ґ or arrows) come from a small
 # fallback font built from FALLBACK and chained with lv_font_conv --lv-fallback.
@@ -91,30 +91,28 @@ def fetch(key):
 
 
 def freeze_features(font, tags):
-    """Point the cmap at the single-substitution targets of the given GSUB features."""
+    """Point the cmap at the single-substitution targets of the given GSUB features,
+    applied one feature after another in the given order (lnum, then tnum)."""
     if not tags or "GSUB" not in font:
         return
     gsub = font["GSUB"].table
-    lookup_ids = set()
-    for record in gsub.FeatureList.FeatureRecord:
-        if record.FeatureTag in tags:
-            lookup_ids.update(record.Feature.LookupListIndex)
-    mapping = {}
-    for index in sorted(lookup_ids):
-        lookup = gsub.LookupList.Lookup[index]
-        for sub in lookup.SubTable:
-            if lookup.LookupType == 7:
-                sub = sub.ExtSubTable
-            if hasattr(sub, "mapping"):
-                mapping.update(sub.mapping)
-    for table in font["cmap"].tables:
-        for code, glyph in list(table.cmap.items()):
-            # Apply chained mappings (lnum then tnum) until stable.
-            seen = set()
-            while glyph in mapping and glyph not in seen:
-                seen.add(glyph)
-                glyph = mapping[glyph]
-            table.cmap[code] = glyph
+    for tag in tags:
+        lookup_ids = set()
+        for record in gsub.FeatureList.FeatureRecord:
+            if record.FeatureTag == tag:
+                lookup_ids.update(record.Feature.LookupListIndex)
+        mapping = {}
+        for index in sorted(lookup_ids):
+            lookup = gsub.LookupList.Lookup[index]
+            for sub in lookup.SubTable:
+                if lookup.LookupType == 7:
+                    sub = sub.ExtSubTable
+                if hasattr(sub, "mapping"):
+                    mapping.update(sub.mapping)
+        for table in font["cmap"].tables:
+            for code, glyph in list(table.cmap.items()):
+                if glyph in mapping:
+                    table.cmap[code] = mapping[glyph]
 
 
 def prepare(name, source, axes, features):

@@ -1,0 +1,73 @@
+# Night overlay over every face in the three styles (forced on with the night_overlay call).
+clock 22:18:00
+set ota_available 0
+wait 300
+call night_overlay
+set style 0
+wait 400
+set face 0
+wait 1200
+shot night_instrument_f0
+set face 1
+wait 1200
+shot night_instrument_f1
+set face 2
+wait 1200
+shot night_instrument_f2
+set face 5
+wait 1200
+shot night_instrument_f5
+set face 6
+wait 1200
+shot night_instrument_f6
+set face 7
+wait 1200
+shot night_instrument_f7
+set style 1
+wait 400
+set face 0
+wait 1200
+shot night_orbit_f0
+set face 1
+wait 1200
+shot night_orbit_f1
+set face 2
+wait 1200
+shot night_orbit_f2
+set face 5
+wait 1200
+shot night_orbit_f5
+set face 6
+wait 1200
+shot night_orbit_f6
+set face 7
+wait 1200
+shot night_orbit_f7
+set style 2
+wait 400
+set face 0
+wait 1200
+shot night_atelier_f0
+set face 1
+wait 1200
+shot night_atelier_f1
+set face 2
+wait 1200
+shot night_atelier_f2
+set face 5
+wait 1200
+shot night_atelier_f5
+set face 6
+wait 1200
+shot night_atelier_f6
+set face 7
+wait 1200
+shot night_atelier_f7
+# real night mode, then a tap shows the controls instead of the overlay
+call night_overlay
+set night_active 1
+wait 1200
+shot night_active_atelier
+tap 360 300
+wait 300
+shot night_active_tap

@@ -14,13 +14,18 @@
 #include "clock_ui_private.h"
 #include "ui/ui_areas.h"
 
-#define PERF_SEG_NAME_MAX 24
+#define PERF_SEG_NAME_MAX 40
 #define PERF_RENDER_SAMPLES 512
 #define PERF_SLOW_FRAME_US 33000
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
 #define PERF_THUMB_STEP 1
 #else
-#define PERF_THUMB_STEP 4
+#define PERF_THUMB_STEP CONFIG_TOUCH_CLOCK_PERF_TOUR_THUMB_STEP
+#endif
+
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
+static const char *const s_style_names[CLOCK_UI_STYLE_COUNT] = {"instrument", "orbit", "atelier"};
+#define PERF_STYLE_SETTLE_MS 2500
 #endif
 
 typedef enum {
@@ -46,6 +51,7 @@ typedef struct {
 
 typedef struct {
     char name[PERF_SEG_NAME_MAX];
+    char raw[PERF_SEG_NAME_MAX]; /* step name without the style prefix */
     uint32_t frames;
     uint32_t slow_frames;
     uint32_t white_frames;
@@ -78,6 +84,7 @@ static perf_gesture_state_t s_gesture;
 static perf_segment_t s_seg;
 static int s_step = -1;
 static int s_loop;
+static uint32_t s_hold_until;
 static uint32_t s_step_start;
 static bool s_step_started;
 static bool s_manual;
@@ -101,6 +108,11 @@ DEBUG_CALL(call_close_alarm_editor, "close_alarm_editor")
 DEBUG_CALL(call_close_alarms, "close_alarms")
 DEBUG_CALL(call_close_theme, "close_theme")
 DEBUG_CALL(call_close_brightness, "close_quick")
+DEBUG_CALL(call_show_controls, "show_controls")
+DEBUG_CALL(call_join_dialog, "join_dialog")
+DEBUG_CALL(call_night_face_picker, "night_face_picker")
+DEBUG_CALL(call_style_picker, "style_picker")
+DEBUG_CALL(call_settings_back, "settings_back")
 
 #define IDLE(seg, ms) {seg, PERF_STEP_IDLE, 0, 0, 0, 0, 0, NULL, ms}
 #define DRAG(seg, ax, ay, bx, by, dur, ms) {seg, PERF_STEP_GESTURE, ax, ay, bx, by, dur, NULL, ms}
@@ -139,6 +151,7 @@ static const perf_step_t s_steps[] = {
     IDLE("idle_face", 5000),
     THUMB("face"),
     DRAG("face_tap", 360, 300, 362, 302, 60, 1500),
+    THUMB("face_controls"),
     DRAG("face_swipe", 600, 280, 120, 280, 220, 1200),
     DRAG("face_swipe", 600, 280, 120, 280, 220, 1200),
     DRAG("face_swipe", 120, 280, 600, 280, 220, 1200),
@@ -153,7 +166,7 @@ static const perf_step_t s_steps[] = {
     THUMB("brightness_open"),
     CALL("brightness_close", call_close_brightness, 900),
     DRAG("face_tap", 360, 300, 362, 302, 60, 500),
-    DRAG("settings_tap", 664, 56, 664, 56, 60, 1200),
+    CALL("settings_tap", call_open_settings_root, 1200),
     THUMB("settings_root"),
     CALL("settings_wifi_open", call_open_wifi, 1200),
     THUMB("settings_wifi"),
@@ -168,6 +181,13 @@ static const perf_step_t s_steps[] = {
     FLICK_BURST("settings_other_scroll"),
     SLOW_UP("settings_other_slow"),
     SLOW_DOWN("settings_other_slow"),
+    CALL("settings_join", call_join_dialog, 1500),
+    THUMB("settings_join"),
+    CALL("settings_back", call_settings_back, 800),
+    CALL("settings_style", call_style_picker, 1200),
+    THUMB("settings_style"),
+    CALL("night_faces", call_night_face_picker, 2500),
+    THUMB("night_faces"),
     CALL("settings_close", call_close_settings, 1200),
     CALL("settings_reopen", call_open_settings_root, 1200),
     CALL("settings_close", call_close_settings, 1200),
@@ -184,10 +204,18 @@ static const perf_step_t s_steps[] = {
 
 #define PERF_STEP_COUNT ((int)(sizeof(s_steps) / sizeof(s_steps[0])))
 
-static void segment_reset(const char *name)
+static void segment_reset(const char *name_in)
 {
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
+    char name[PERF_SEG_NAME_MAX];
+
+    snprintf(name, sizeof(name), "%s.%s", s_style_names[s_loop % CLOCK_UI_STYLE_COUNT], name_in);
+#else
+    const char *name = name_in;
+#endif
     memset(&s_seg, 0, sizeof(s_seg));
     snprintf(s_seg.name, sizeof(s_seg.name), "%s", name);
+    snprintf(s_seg.raw, sizeof(s_seg.raw), "%s", name_in);
     s_seg.internal_free_min = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
     s_last_refr_start = 0;
 }
@@ -381,8 +409,15 @@ static void indev_read_cb(lv_indev_t *indev, lv_indev_data_t *data)
 }
 
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_THUMBNAILS
-static void dump_thumbnail(const char *name)
+static void dump_thumbnail(const char *name_in)
 {
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
+    char name[48];
+
+    snprintf(name, sizeof(name), "%s_%s", s_style_names[s_loop % CLOCK_UI_STYLE_COUNT], name_in);
+#else
+    const char *name = name_in;
+#endif
     lv_draw_buf_t *snap = lv_snapshot_take(lv_screen_active(), LV_COLOR_FORMAT_RGB565);
     uint32_t w;
     uint32_t h;
@@ -411,7 +446,7 @@ static void dump_thumbnail(const char *name)
 
 static void start_step(const perf_step_t *step)
 {
-    if (step->type != PERF_STEP_THUMB && strcmp(step->segment, s_seg.name) != 0) {
+    if (step->type != PERF_STEP_THUMB && strcmp(step->segment, s_seg.raw) != 0) {
         segment_report();
         segment_reset(step->segment);
     }
@@ -444,6 +479,20 @@ static void start_step(const perf_step_t *step)
     }
 }
 
+/* With TOUCH_CLOCK_PERF_TOUR_STYLES each loop runs in the next UI style; the chrome rebuild
+ * gets a moment to settle before the first step. */
+static void perf_begin_loop(void)
+{
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
+    clock_ui_style_t style = (clock_ui_style_t)(s_loop % CLOCK_UI_STYLE_COUNT);
+
+    printf("PERF style loop=%d style=%s\n", s_loop, s_style_names[style]);
+    request_set_ui_style(s_ctx, style);
+    clock_ui_refresh();
+    s_hold_until = lv_tick_get() + PERF_STYLE_SETTLE_MS;
+#endif
+}
+
 static void tour_timer_cb(lv_timer_t *timer)
 {
     LV_UNUSED(timer);
@@ -471,6 +520,11 @@ static void tour_timer_cb(lv_timer_t *timer)
         printf("PERF tour_begin loop=%d steps=%d\n", s_loop, PERF_STEP_COUNT);
         s_step = 0;
         s_step_started = false;
+        perf_begin_loop();
+        return;
+    }
+    if (lv_tick_get() < s_hold_until) {
+        return;
     }
 
     if (s_step >= PERF_STEP_COUNT) {
@@ -486,6 +540,8 @@ static void tour_timer_cb(lv_timer_t *timer)
         }
         s_step = 0;
         s_step_started = false;
+        perf_begin_loop();
+        return;
     }
 
     const perf_step_t *step = &s_steps[s_step];

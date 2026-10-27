@@ -1,0 +1,62 @@
+# Alarms area in the instrument style: every screen and state.
+set style 0
+wait 300
+call open_alarms
+wait 400
+shot instrument_list
+call alarms_scroll_end
+wait 400
+shot instrument_list_end
+call alarm_swipe_delete
+wait 400
+shot instrument_list_swipe
+call alarm_settings
+wait 300
+shot instrument_settings
+set alarm_test 1
+wait 100
+shot instrument_settings_test
+set alarm_test 0
+call open_alarm_editor
+wait 400
+shot instrument_editor
+call alarms_scroll_end
+wait 300
+shot instrument_editor_end
+call alarm_editor_details
+wait 400
+shot instrument_editor_details
+call alarms_scroll_end
+wait 300
+shot instrument_editor_details_end
+call new_alarm
+wait 400
+shot instrument_editor_new
+call new_alarm_details
+wait 400
+shot instrument_editor_new_details
+call close_alarm_editor
+call close_alarms
+wait 300
+set alarm_ringing 1
+wait 600
+shot instrument_ring
+call ringing_math
+wait 300
+shot instrument_ring_math
+call ringing_off
+set alarm_ringing 0
+wait 300
+set next_alarm_minutes 20
+wait 1100
+shot instrument_banner_waking
+set face 0
+wait 600
+shot instrument_banner_waking_dark
+set face 5
+set snooze_minutes_left 7
+wait 1100
+shot instrument_banner_snooze
+call banner_feedback
+wait 300
+shot instrument_banner_feedback

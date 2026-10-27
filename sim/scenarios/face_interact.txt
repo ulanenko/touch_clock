@@ -1,0 +1,101 @@
+# Face chrome interactions (Instrument geometry): taps, pulls, keys, the brightness arc.
+clock 14:13:00
+set style 0
+wait 600
+tap 360 300
+wait 200
+shot 01_tap_controls
+tap 360 300
+wait 200
+shot 02_tap_hides
+# pull the theme sheet from the face: mid-drag frames, then release past the threshold
+press 360 200
+move 360 230
+move 360 290
+wait 50
+shot 03_theme_pull_mid
+move 360 520
+wait 50
+shot 04_theme_pull_far
+release
+wait 500
+shot 05_theme_open
+# pick Theme 2: the sheet closes and the face takes the theme
+tap 360 238
+wait 600
+shot 06_theme_2_picked
+# pull quick actions from the bottom edge
+drag 360 700 360 300 400
+wait 500
+shot 07_quick_open
+# Night key and Sound key toggle the settings
+tap 304 308
+wait 200
+shot 08_night_toggled
+tap 416 308
+wait 200
+shot 09_sound_toggled
+# drag the brightness arc from the low end to the bottom of the rim
+press 92 515
+move 120 560
+move 180 620
+move 260 665
+move 360 678
+wait 50
+shot 10_arc_drag
+release
+wait 200
+shot 11_arc_released
+# tap on the dimmed face above the sheet closes it
+tap 360 100
+wait 500
+shot 12_quick_closed
+# open, then push it back down mid-way: it closes
+call open_quick
+wait 100
+press 360 240
+move 360 300
+move 360 420
+wait 50
+shot 13_quick_push_mid
+release
+wait 500
+shot 14_quick_push_closed
+# a face swipe: controls hidden during the reveal, shown after it
+drag 600 280 120 280 220
+wait 60
+shot 15_swipe_reveal_mid
+wait 500
+shot 16_swipe_done
+# the themes tab opens the sheet
+tap 360 22
+wait 500
+shot 17_tab_opens_theme
+call close_theme
+wait 500
+# tap on the actions hint at 6 with controls shown opens quick actions
+tap 360 300
+wait 100
+tap 360 700
+wait 500
+shot 18_hint_opens_quick
+# switching style with a sheet open rebuilds cleanly
+set style 1
+wait 600
+shot 19_style_switch_with_sheet
+call open_theme
+wait 100
+set style 2
+wait 600
+call open_quick
+wait 200
+shot 20_atelier_quick_after_switch
+set style 0
+wait 600
+# auto close
+call open_quick
+wait 5600
+shot 21_quick_auto_closed
+call show_controls
+wait 4200
+shot 22_controls_auto_hidden

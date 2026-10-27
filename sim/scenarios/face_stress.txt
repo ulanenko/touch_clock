@@ -1,0 +1,75 @@
+# Style changes in the middle of pulls, animations and taps (run under ASAN).
+clock 14:13:00
+wait 400
+# theme pull held while the style changes, then continued and released
+press 360 200
+move 360 260
+move 360 380
+set style 1
+wait 50
+move 360 420
+move 360 520
+release
+wait 400
+shot stress_01
+# quick sheet animating when the style changes
+drag 360 700 360 300 300
+set style 2
+wait 400
+call open_quick
+wait 50
+press 360 300
+move 360 320
+set style 0
+move 360 500
+release
+wait 500
+# arc held while the style changes
+call open_quick
+wait 100
+press 92 515
+move 150 600
+set style 1
+move 200 640
+release
+wait 300
+# controls shown, tap a key, style change with controls up
+call show_controls
+wait 100
+set style 2
+wait 300
+call show_controls
+set language 3
+wait 300
+call open_theme
+set language 2
+wait 300
+call close_theme
+wait 50
+set style 0
+wait 300
+# sheets opened back to back
+call open_theme
+call open_quick
+call open_theme
+wait 300
+call close_theme
+call close_quick
+# face swipes in a row, one during a reveal
+drag 600 280 120 280 120
+drag 600 280 120 280 120
+wait 50
+set style 1
+wait 600
+drag 120 280 600 280 120
+wait 600
+# night mode on and off with every style
+set night_active 1
+wait 1100
+set style 2
+wait 1100
+set style 0
+wait 1100
+set night_active 0
+wait 600
+shot stress_end

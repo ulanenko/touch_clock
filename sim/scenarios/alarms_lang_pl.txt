@@ -1,0 +1,115 @@
+# Alarms in language pl, every style: text fit.
+set language 1
+set style 0
+wait 400
+call open_alarms
+wait 300
+shot pl_instrument_list
+call alarm_settings
+wait 300
+shot pl_instrument_settings
+call open_alarm_editor
+wait 300
+shot pl_instrument_editor
+call alarm_editor_details
+wait 300
+shot pl_instrument_details
+call close_alarms
+call ringing
+wait 300
+shot pl_instrument_ring
+call ringing_math
+wait 200
+tap 260 284
+tap 260 284
+wait 200
+shot pl_instrument_math_wrong
+call ringing_off
+set next_alarm_minutes 20
+wait 1100
+shot pl_instrument_banner
+set snooze_minutes_left 7
+wait 1100
+shot pl_instrument_banner_snooze
+call banner_feedback
+wait 200
+shot pl_instrument_banner_feedback
+set snooze_minutes_left 0
+set next_alarm_minutes 0
+wait 2500
+set language 1
+set style 1
+wait 400
+call open_alarms
+wait 300
+shot pl_orbit_list
+call alarm_settings
+wait 300
+shot pl_orbit_settings
+call open_alarm_editor
+wait 300
+shot pl_orbit_editor
+call alarm_editor_details
+wait 300
+shot pl_orbit_details
+call close_alarms
+call ringing
+wait 300
+shot pl_orbit_ring
+call ringing_math
+wait 200
+tap 260 256
+tap 260 256
+wait 200
+shot pl_orbit_math_wrong
+call ringing_off
+set next_alarm_minutes 20
+wait 1100
+shot pl_orbit_banner
+set snooze_minutes_left 7
+wait 1100
+shot pl_orbit_banner_snooze
+call banner_feedback
+wait 200
+shot pl_orbit_banner_feedback
+set snooze_minutes_left 0
+set next_alarm_minutes 0
+wait 2500
+set language 1
+set style 2
+wait 400
+call open_alarms
+wait 300
+shot pl_atelier_list
+call alarm_settings
+wait 300
+shot pl_atelier_settings
+call open_alarm_editor
+wait 300
+shot pl_atelier_editor
+call alarm_editor_details
+wait 300
+shot pl_atelier_details
+call close_alarms
+call ringing
+wait 300
+shot pl_atelier_ring
+call ringing_math
+wait 200
+tap 260 236
+tap 260 236
+wait 200
+shot pl_atelier_math_wrong
+call ringing_off
+set next_alarm_minutes 20
+wait 1100
+shot pl_atelier_banner
+set snooze_minutes_left 7
+wait 1100
+shot pl_atelier_banner_snooze
+call banner_feedback
+wait 200
+shot pl_atelier_banner_feedback
+set snooze_minutes_left 0
+set next_alarm_minutes 0
+wait 2500

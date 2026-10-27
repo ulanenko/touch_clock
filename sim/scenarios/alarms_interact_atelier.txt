@@ -1,0 +1,85 @@
+# Alarms interactions in the atelier style: switches, editing, save, delete, add, stop, snooze, math.
+set style 2
+wait 300
+call open_alarms
+wait 300
+tap 540 372
+wait 300
+shot atelier_i01_toggle_off
+tap 540 372
+wait 300
+tap 300 272
+wait 400
+shot atelier_i02_editor_open
+drag 604 360 541 532 400
+wait 300
+tap 663 535
+wait 300
+shot atelier_i03_time_changed
+tap 360 538
+wait 800
+shot atelier_i04_page2
+tap 168 233
+wait 200
+tap 504 318
+wait 200
+tap 540 497
+wait 200
+shot atelier_i05_options
+tap 455 660
+wait 500
+shot atelier_i06_saved
+drag 420 472 250 472 200
+wait 400
+shot atelier_i07_swipe
+tap 538 472
+wait 400
+shot atelier_i08_deleted
+tap 540 120
+wait 400
+shot atelier_i09_new
+tap 422 474
+wait 500
+shot atelier_i10_added
+call close_alarms
+wait 300
+set alarm_ringing 1
+wait 500
+press 144 568
+move 220 620
+move 360 660
+move 500 620
+shot atelier_i11_sliding
+move 572 568
+release
+wait 400
+shot atelier_i12_math
+tap 360 236
+wait 150
+tap 260 530
+wait 150
+tap 360 236
+tap 360 530
+wait 300
+shot atelier_i13_wrong
+tap 260 236
+tap 460 432
+wait 400
+shot atelier_i14_solved
+set alarm_ringing 1
+wait 400
+tap 360 420
+wait 1500
+shot atelier_i15_snoozed
+set snooze_minutes_left 0
+set alarm_ringing 1
+wait 400
+press 144 568
+move 360 660
+move 572 568
+release
+wait 400
+wait 300
+tap 360 636
+wait 1500
+shot atelier_i16_math_snoozed

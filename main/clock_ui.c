@@ -574,17 +574,6 @@ int count_enabled_alarms(const clock_ui_context_t *ctx)
     return count;
 }
 
-int find_alarm_slot_for_new_alarm(const clock_ui_context_t *ctx)
-{
-    for (int i = 0; i < MAX_ALARMS; ++i) {
-        if (!ctx->settings->alarms[i].enabled) {
-            return i;
-        }
-    }
-
-    return -1;
-}
-
 uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm)
 {
     if (alarm->repeat_mode == ALARM_REPEAT_ONCE) {

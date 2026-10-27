@@ -1,0 +1,55 @@
+# Settings interactions in Orbit: navigation by taps, the join keyboard, switches, the
+# language picker and the interface style picker (lands back on Other in the new style).
+set style 1
+wait 400
+call open_settings
+wait 200
+tap 360 236
+wait 200
+shot int_01_wifi_from_tap
+drag 120 360 560 360 200
+wait 300
+shot int_02_back_by_swipe
+call join_dialog
+wait 200
+tap 81 256
+tap 143 256
+tap 205 256
+tap 267 256
+wait 100
+shot int_03_typed
+tap 440 566
+wait 300
+shot int_04_connected
+call open_night
+wait 200
+tap 590 216
+wait 300
+shot int_05_night_off
+tap 590 216
+wait 300
+call open_other
+wait 200
+tap 590 416
+wait 200
+shot int_06_sound_off
+tap 590 416
+wait 200
+tap 360 312
+wait 300
+shot int_07_style_picker
+tap 360 502
+wait 600
+shot int_08_atelier_other
+call language_picker
+wait 200
+shot int_09_language_atelier
+tap 360 330
+wait 300
+shot int_10_other_ru
+call open_settings
+wait 200
+shot int_11_home_ru
+call close_settings
+wait 200
+shot int_12_face

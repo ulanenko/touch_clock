@@ -4,138 +4,185 @@
  * Settings area state.
  *
  * Included by clock_ui_internal.h at the point where the shared helper types are defined;
- * do not include directly. Owned by the settings area (ui_settings.c): change it freely, but keep the struct name,
- * because the UI core zeroes it when the chrome is rebuilt for a style change.
+ * do not include directly. Owned by the settings area (ui_settings*.c): change it freely, but
+ * keep the struct name, because the UI core zeroes it when the chrome is rebuilt for a style
+ * change. Every pointer here points into the chrome tree or to buffers freed in
+ * ui_settings_destroy().
  */
 
+#include "ui/kit/ui_kit.h"
+
+/* Pages of the settings area. HOME..OTHER are the pages the core knows (ui_settings_page_t);
+ * the others are sub pages that belong to one of them. */
+typedef enum {
+    UI_ST_HOME = 0,
+    UI_ST_WIFI,
+    UI_ST_NIGHT,
+    UI_ST_OTHER,
+    UI_ST_TIMEZONE,     /* Wi-Fi */
+    UI_ST_MANUAL_TIME,  /* Wi-Fi */
+    UI_ST_SCHEDULE,     /* Night */
+    UI_ST_FACE,         /* Night */
+    UI_ST_NIGHT_BRIGHT, /* Night (Orbit brightness tile) */
+    UI_ST_LANGUAGE,     /* Other */
+    UI_ST_STYLE,        /* Other */
+    UI_ST_PAGE_COUNT,
+} ui_st_page_t;
+
+#define UI_ST_NET_MAX 10
+#define UI_ST_TZ_MAX 24
+#define UI_ST_DIM_MAX 24
+
+/* User data of list rows (networks, time zones, faces, languages, styles). */
 typedef struct {
-    bool close_dragging;
+    struct clock_ui_state_t *ui;
+    uint8_t index;
+} ui_st_item_t;
+
+/* A label or icon that turns text_3 while Night mode is off. */
+typedef struct {
+    lv_obj_t *obj;
+    lv_color_t color;
+    bool image;
+} ui_st_dim_t;
+
+typedef struct {
+    /* Navigation. */
     bool open;
-    bool wifi_open;
-    bool night_open;
-    bool other_open;
-    bool night_face_picker_open;
-    bool night_schedule_editor_open;
-    bool close_swipe_consumed;
-    bool wifi_scrolling;
+    uint8_t page; /* ui_st_page_t on screen */
+    bool built[UI_ST_PAGE_COUNT];
+    kit_page_t pages[UI_ST_PAGE_COUNT];
+    lv_obj_t *legend[UI_ST_PAGE_COUNT]; /* collapsed title at the top (Instrument, Atelier) */
+    bool scrolling;
+    bool wifi_scrolling; /* read by the perf tour */
     bool night_scrolling;
     bool other_scrolling;
-    bool settings_control_dragging;
-    bool settings_control_interaction_suppressed;
-    bool wifi_cache_valid;
-    bool night_cache_valid;
-    time_t night_face_preview_minute;
-    bool cached_night_enabled;
-    bool cached_night_sunrise_brightness_enabled;
-    bool cached_in_night_mode;
-    uint8_t cached_timezone_id;
-    time_sync_mode_t cached_time_sync_mode;
-    uint8_t cached_night_start_hour;
-    uint8_t cached_night_start_minute;
-    uint8_t cached_night_end_hour;
-    uint8_t cached_night_end_minute;
-    uint8_t cached_night_brightness;
-    clock_face_id_t cached_night_face;
-    uint32_t scan_generation;
-    uint32_t cached_wifi_scan_generation;
-    char cached_wifi_status[96];
-    char cached_wifi_saved_ssid[33];
-    char pending_ssid[33];
-    lv_point_t close_drag_start_point;
-    lv_point_t settings_control_drag_start_point;
-    lv_obj_t *settings_control_drag_target;
-    lv_obj_t *overlay;
-    lv_obj_t *panel;
-    lv_obj_t *content;
-    lv_obj_t *top_sensor;
-    lv_obj_t *bottom_sensor;
-    lv_obj_t *left_sensor;
-    lv_obj_t *right_sensor;
-    lv_obj_t *wifi_overlay;
-    lv_obj_t *wifi_content;
-    lv_obj_t *wifi_top_sensor;
-    lv_obj_t *wifi_bottom_sensor;
-    lv_obj_t *wifi_left_sensor;
-    lv_obj_t *wifi_right_sensor;
-    lv_obj_t *other_overlay;
-    lv_obj_t *other_content;
-    lv_obj_t *other_top_sensor;
-    lv_obj_t *other_bottom_sensor;
-    lv_obj_t *other_left_sensor;
-    lv_obj_t *other_right_sensor;
-    lv_obj_t *other_sound_card;
-    lv_obj_t *other_sound_sw;
-    lv_obj_t *other_sound_volume_card;
-    lv_obj_t *other_sound_volume_slider;
-    lv_obj_t *other_sound_volume_label;
-    lv_obj_t *other_language_dropdown;
-    lv_obj_t *other_update_card;
-    lv_obj_t *other_update_status_label;
-    lv_obj_t *other_update_progress_label;
-    lv_obj_t *other_update_available_label;
-    lv_obj_t *other_update_check_btn;
-    lv_obj_t *other_update_install_btn;
-    lv_obj_t *night_overlay;
-    lv_obj_t *night_content;
-    lv_obj_t *night_top_sensor;
-    lv_obj_t *night_bottom_sensor;
-    lv_obj_t *night_left_sensor;
-    lv_obj_t *night_right_sensor;
-    lv_obj_t *night_schedule_overlay;
-    lv_obj_t *night_schedule_content;
-    lv_obj_t *wifi_card;
-    lv_obj_t *timezone_card;
-    lv_obj_t *networks_card;
-    lv_obj_t *night_card;
-    lv_obj_t *wifi_dialog_overlay;
-    lv_obj_t *wifi_dialog;
-    lv_obj_t *wifi_dialog_title;
-    lv_obj_t *wifi_password_ta;
-    lv_obj_t *wifi_keyboard;
-    lv_obj_t *wifi_status_label;
-    lv_obj_t *wifi_saved_label;
-    lv_obj_t *wifi_network_list;
-    lv_obj_t *wifi_timezone_dd;
-    lv_obj_t *time_mode_card;
-    lv_obj_t *time_mode_label;
-    lv_obj_t *manual_time_card;
-    lv_obj_t *manual_year_dd;
-    lv_obj_t *manual_month_dd;
-    lv_obj_t *manual_day_dd;
-    lv_obj_t *manual_hour_dd;
-    lv_obj_t *manual_min_dd;
-    bool cached_ui_click_sound_enabled;
-    uint8_t cached_ui_click_volume;
-    lv_obj_t *night_enabled_sw;
-    lv_obj_t *night_schedule_card;
-    lv_obj_t *night_schedule_button;
-    lv_obj_t *night_schedule_summary;
-    lv_obj_t *night_start_hour_dd;
-    lv_obj_t *night_start_min_dd;
-    lv_obj_t *night_end_hour_dd;
-    lv_obj_t *night_end_min_dd;
-    lv_obj_t *night_face_card;
-    lv_obj_t *night_face_button;
-    lv_obj_t *night_face_preview_shell;
-    lv_obj_t *night_face_preview;
-    lv_draw_buf_t *night_face_preview_buf;
-    lv_obj_t *night_face_preview_scroll;
-    lv_draw_buf_t *night_face_preview_scroll_buf;
-    lv_obj_t *night_face_render_canvas;
-    lv_obj_t *night_face_dd;
-    lv_obj_t *night_face_picker_overlay;
-    lv_obj_t *night_face_picker_content;
-    lv_obj_t *night_face_picker_card[CLOCK_FACE_COUNT];
-    lv_obj_t *night_face_picker_preview[CLOCK_FACE_COUNT];
-    lv_draw_buf_t *night_face_picker_preview_buf[CLOCK_FACE_COUNT];
-    lv_obj_t *night_face_picker_label[CLOCK_FACE_COUNT];
-    lv_obj_t *night_brightness_card;
-    lv_obj_t *night_brightness_slider;
-    lv_obj_t *night_brightness_dd;
-    lv_obj_t *night_sunrise_card;
+    int32_t last_minute;
+    clock_language_t applied_language;
+
+    /* Home. */
+    lv_obj_t *home_status;   /* status readout / line: network part */
+    lv_obj_t *home_status_2; /* status: sync part */
+    lv_obj_t *home_led;
+    lv_obj_t *home_footer;   /* Instrument: version */
+    lv_obj_t *home_footer_2; /* Instrument: update ready */
+    lv_obj_t *home_update;   /* Instrument LED / Atelier ruby chip on Other */
+    lv_obj_t *home_update_label;
+
+    /* Wi-Fi. */
+    lv_obj_t *wifi_hero;
+    lv_obj_t *wifi_hero_title;
+    lv_obj_t *wifi_hero_sub;
+    lv_obj_t *wifi_hero_signal;
+    lv_obj_t *wifi_hero_mark;
+    lv_obj_t *wifi_other_label; /* "Other networks" section */
+    lv_obj_t *wifi_net_group;
+    lv_obj_t *wifi_net_count;
+    lv_obj_t *wifi_scan_btn;
+    lv_obj_t *wifi_scan_label;
+    lv_obj_t *wifi_tz_title;
+    lv_obj_t *wifi_tz_value;
+    lv_obj_t *wifi_tz_sub;
+    lv_obj_t *wifi_auto_sw;
+    lv_obj_t *wifi_auto_sub;
+    lv_obj_t *wifi_sync_sub;
+    lv_obj_t *wifi_manual_row;
+    lv_obj_t *wifi_forget_btn;
+    uint32_t wifi_list_gen;
+    bool wifi_list_valid;
+    bool wifi_list_connected;
+    bool wifi_list_scanning;
+    char wifi_list_ssid[33];
+    ui_st_item_t net_item[UI_ST_NET_MAX];
+
+    /* Join network. */
+    lv_obj_t *join_root;
+    lv_obj_t *join_title;
+    lv_obj_t *join_meta;
+    lv_obj_t *join_field;
+    lv_obj_t *join_eye;
+    lv_obj_t *join_keyboard;
+    bool join_open;
+    bool join_show_password;
+    char join_ssid[33];
+
+    /* Time zone and manual time. */
+    lv_obj_t *tz_check[UI_ST_TZ_MAX];
+    lv_obj_t *tz_row[UI_ST_TZ_MAX];
+    ui_st_item_t tz_item[UI_ST_TZ_MAX];
+    lv_obj_t *man_day;
+    lv_obj_t *man_month;
+    lv_obj_t *man_year;
+    lv_obj_t *man_hour;
+    lv_obj_t *man_minute;
+
+    /* Night mode. */
+    lv_obj_t *night_sw;
+    lv_obj_t *night_hint;
+    lv_obj_t *night_sched_value;
+    lv_obj_t *night_sched_sub;
+    lv_obj_t *night_dial;
+    lv_obj_t *night_start_value;
+    lv_obj_t *night_end_value;
+    lv_obj_t *night_face_img;
+    lv_obj_t *night_face_sub;
+    lv_obj_t *night_bright_slider;
+    lv_obj_t *night_bright_value;
+    lv_obj_t *night_gauge;
     lv_obj_t *night_sunrise_sw;
-    lv_obj_t *night_status_label;
-    network_ctx_t network_ctx[CLOCK_WIFI_SCAN_RESULT_MAX];
-    face_ctx_t face_ctx[CLOCK_FACE_COUNT];
-    ui_edge_ctx_t close_edge_ctx[4];
+    lv_obj_t *night_click[6];
+    ui_st_dim_t night_dim[UI_ST_DIM_MAX];
+    uint8_t night_dim_count;
+    lv_obj_t *night_ring;
+    lv_obj_t *night_jewel[2];
+    int8_t night_drag;        /* jewel being dragged, -1 none */
+    uint16_t night_drag_min[2]; /* schedule ends during a drag, minutes of the day */
+    bool night_valid;
+    bool night_enabled_shown;
+    uint32_t night_sched_shown;
+    int16_t night_bright_shown;
+    clock_face_id_t night_face_shown;
+    int32_t night_face_minute;
+    lv_draw_buf_t *night_face_buf;
+
+    /* Schedule editor. */
+    lv_obj_t *sched_seg;
+    lv_obj_t *sched_hour;
+    lv_obj_t *sched_minute;
+    uint8_t sched_which; /* 0 start, 1 end */
+
+    /* Night face picker. */
+    lv_obj_t *face_img[CLOCK_FACE_COUNT];
+    lv_obj_t *face_ring[CLOCK_FACE_COUNT];
+    lv_obj_t *face_check[CLOCK_FACE_COUNT];
+    lv_obj_t *face_name[CLOCK_FACE_COUNT];
+    lv_draw_buf_t *face_buf[CLOCK_FACE_COUNT];
+    ui_st_item_t face_item[CLOCK_FACE_COUNT];
+    int32_t face_minute;
+    lv_obj_t *thumb_shell; /* offscreen renderer for round face thumbnails */
+    lv_obj_t *thumb_image;
+
+    /* Night brightness page (Orbit). */
+    lv_obj_t *nb_slider;
+    lv_obj_t *nb_value;
+
+    /* Other. */
+    lv_obj_t *other_lang_value;
+    lv_obj_t *other_style_value;
+    lv_obj_t *other_sound_sw;
+    lv_obj_t *other_vol_slider;
+    lv_obj_t *other_vol_value;
+    lv_obj_t *other_vol_icons[2];
+    lv_obj_t *upd_head;
+    lv_obj_t *upd_old;
+    lv_obj_t *upd_arrow;
+    lv_obj_t *upd_sub;
+    lv_obj_t *upd_btn;
+    lv_obj_t *upd_bar;
+    lv_obj_t *upd_bar_fill;
+    lv_obj_t *about_anchor;
+    lv_obj_t *lang_check[CLOCK_LANGUAGE_COUNT];
+    ui_st_item_t lang_item[CLOCK_LANGUAGE_COUNT];
+    lv_obj_t *style_check[CLOCK_UI_STYLE_COUNT];
+    ui_st_item_t style_item[CLOCK_UI_STYLE_COUNT];
 } clock_ui_settings_state_t;

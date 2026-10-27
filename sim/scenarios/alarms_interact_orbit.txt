@@ -1,0 +1,86 @@
+# Alarms interactions in the orbit style: switches, editing, save, delete, add, stop, snooze, math.
+set style 1
+wait 300
+call open_alarms
+wait 300
+tap 548 336
+wait 300
+shot orbit_i01_toggle_off
+tap 548 336
+wait 300
+tap 300 240
+wait 400
+shot orbit_i02_editor_open
+drag 267 330 267 224 300
+wait 600
+tap 453 436
+wait 600
+shot orbit_i03_time_changed
+drag 360 420 360 100 300
+wait 800
+shot orbit_i04_page2
+tap 145 168
+wait 200
+tap 507 257
+wait 200
+tap 548 470
+wait 200
+shot orbit_i05_options
+tap 420 604
+wait 500
+shot orbit_i06_saved
+drag 420 432 250 432 200
+wait 400
+shot orbit_i07_swipe
+tap 578 432
+wait 400
+shot orbit_i08_deleted
+tap 360 648
+wait 400
+shot orbit_i09_new
+tap 360 604
+wait 500
+shot orbit_i10_added
+call close_alarms
+wait 300
+set alarm_ringing 1
+wait 500
+press 136 548
+move 200 600
+move 300 640
+move 420 640
+move 520 610
+shot orbit_i11_sliding
+move 584 548
+release
+wait 400
+shot orbit_i12_math
+tap 260 256
+wait 150
+tap 260 532
+wait 150
+tap 260 256
+tap 360 532
+wait 300
+shot orbit_i13_wrong
+tap 460 440
+wait 400
+shot orbit_i14_solved
+set alarm_ringing 1
+wait 400
+tap 360 420
+wait 1500
+shot orbit_i15_snoozed
+set snooze_minutes_left 0
+set alarm_ringing 1
+wait 400
+press 136 548
+move 300 640
+move 520 610
+move 584 548
+release
+wait 400
+wait 300
+tap 360 624
+wait 1500
+shot orbit_i16_math_snoozed
