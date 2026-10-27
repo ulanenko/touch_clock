@@ -1155,13 +1155,65 @@ void create_wharton_face(clock_ui_context_t *ctx, lv_obj_t *parent)
     ctx->faces.wharton_face_obj = lv_canvas_create(parent);
     lv_canvas_set_buffer(ctx->faces.wharton_face_obj, ctx->faces.wharton_face_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565);
     lv_obj_clear_flag(ctx->faces.wharton_face_obj, LV_OBJ_FLAG_SCROLLABLE);
+    ctx->faces.wharton_drawn = false;
+}
+
+/* Dirty areas of one Wharton tick; past the limit the union is invalidated instead. */
+#define WH_DIRTY_MAX 12
+
+typedef struct {
+    lv_area_t areas[WH_DIRTY_MAX];
+    lv_area_t all;
+    int count;
+} wh_dirty_t;
+
+static void wh_dirty_add(wh_dirty_t *dirty, const lv_area_t *area)
+{
+    if (dirty->count == 0) {
+        dirty->all = *area;
+    } else {
+        dirty->all.x1 = LV_MIN(dirty->all.x1, area->x1);
+        dirty->all.y1 = LV_MIN(dirty->all.y1, area->y1);
+        dirty->all.x2 = LV_MAX(dirty->all.x2, area->x2);
+        dirty->all.y2 = LV_MAX(dirty->all.y2, area->y2);
+    }
+    if (dirty->count < WH_DIRTY_MAX) {
+        dirty->areas[dirty->count] = *area;
+    }
+    dirty->count++;
+}
+
+/* One dot: when redrawing in place, the cell is cleared first so the old dot's edge does
+ * not show through the new one's antialiasing. */
+static void wh_dot(lv_layer_t *layer, const lv_area_t *cell, const lv_area_t *dot, uint32_t color, uint32_t bg,
+                   bool clear, wh_dirty_t *dirty)
+{
+    lv_draw_rect_dsc_t dsc;
+
+    lv_draw_rect_dsc_init(&dsc);
+    dsc.bg_opa = LV_OPA_COVER;
+    dsc.border_width = 0;
+    dsc.shadow_width = 0;
+    dsc.outline_width = 0;
+    if (clear) {
+        dsc.bg_color = lv_color_hex(bg);
+        lv_draw_rect(layer, &dsc, cell);
+        wh_dirty_add(dirty, cell);
+    }
+    dsc.bg_color = lv_color_hex(color);
+    dsc.radius = lv_area_get_width(dot) / 2;
+    lv_draw_rect(layer, &dsc, dot);
 }
 
 static void update_wharton_face(clock_ui_context_t *ctx)
 {
     dot_theme_palette_t palette = wharton_theme_palette(ctx);
+    clock_ui_face_state_t *f = &ctx->faces;
+    lv_obj_t *canvas = f->wharton_face_obj;
     lv_layer_t layer;
-    lv_draw_rect_dsc_t dsc;
+    wh_dirty_t dirty = {0};
+    lv_area_t coords;
+    bool full;
     int digit_w;
     int colon_w;
     int pair_gap;
@@ -1175,28 +1227,28 @@ static void update_wharton_face(clock_ui_context_t *ctx)
 
     build_wharton_state(ctx);
     lv_obj_set_style_bg_color(ctx->tiles[CLOCK_FACE_WHARTON], lv_color_hex(palette.bg), 0);
-    lv_canvas_fill_bg(ctx->faces.wharton_face_obj, lv_color_hex(palette.bg), LV_OPA_COVER);
-    lv_canvas_init_layer(ctx->faces.wharton_face_obj, &layer);
-    lv_draw_rect_dsc_init(&dsc);
-    dsc.bg_opa = LV_OPA_COVER;
-    dsc.border_width = 0;
-    dsc.shadow_width = 0;
-    dsc.outline_width = 0;
+    /* Every second used to repaint the whole canvas and invalidate the screen; now only
+     * the dots that changed are redrawn and only their cells invalidated. */
+    full = !f->wharton_drawn || f->wharton_drawn_colors[0] != palette.bg || f->wharton_drawn_colors[1] != palette.off ||
+           f->wharton_drawn_colors[2] != palette.on;
+    if (full) {
+        lv_canvas_fill_bg(canvas, lv_color_hex(palette.bg), LV_OPA_COVER);
+    }
+    lv_canvas_init_layer(canvas, &layer);
 
     for (int i = 0; i < WH_RING_DOTS; ++i) {
+        bool lit = i < f->wharton_second_count;
+        bool was_lit = i < f->wharton_drawn_second_count;
         float angle = (i * 6.0f - 90.0f) * (M_PI / 180.0f);
         int cx = CENTER + (int)(WH_RING_R * cosf(angle));
         int cy = CENTER + (int)(WH_RING_R * sinf(angle));
-        int radius = (i < ctx->faces.wharton_second_count) ? WH_DOT_LIT_R : WH_DOT_DIM_R;
-        lv_area_t area;
+        int radius = lit ? WH_DOT_LIT_R : WH_DOT_DIM_R;
+        lv_area_t cell = {cx - WH_DOT_LIT_R, cy - WH_DOT_LIT_R, cx + WH_DOT_LIT_R, cy + WH_DOT_LIT_R};
+        lv_area_t dot = {cx - radius, cy - radius, cx + radius, cy + radius};
 
-        area.x1 = cx - radius;
-        area.y1 = cy - radius;
-        area.x2 = cx + radius;
-        area.y2 = cy + radius;
-        dsc.radius = radius;
-        dsc.bg_color = lv_color_hex((i < ctx->faces.wharton_second_count) ? palette.on : palette.off);
-        lv_draw_rect(&layer, &dsc, &area);
+        if (full || lit != was_lit) {
+            wh_dot(&layer, &cell, &dot, lit ? palette.on : palette.off, palette.bg, !full, &dirty);
+        }
     }
 
     digit_w = WH_DIGIT_COLS * WH_DOT_PITCH - WH_DOT_GAP;
@@ -1213,33 +1265,66 @@ static void update_wharton_face(clock_ui_context_t *ctx)
     digit_x[2] = colon_x + colon_w + colon_gap;
     digit_x[3] = digit_x[2] + digit_w + pair_gap;
 
-    dsc.radius = WH_DOT_SZ / 2;
     for (int d = 0; d < 4; ++d) {
         for (int c = 0; c < WH_DIGIT_COLS; ++c) {
             for (int r = 0; r < WH_DIGIT_ROWS; ++r) {
+                bool on = f->wharton_digit_dots[d][c][r];
                 lv_area_t area;
+
+                if (!full && on == f->wharton_drawn_digit_dots[d][c][r]) {
+                    continue;
+                }
                 area.x1 = digit_x[d] + c * WH_DOT_PITCH;
                 area.y1 = base_y + r * WH_DOT_PITCH;
                 area.x2 = area.x1 + WH_DOT_SZ - 1;
                 area.y2 = area.y1 + WH_DOT_SZ - 1;
-                dsc.bg_color = lv_color_hex(ctx->faces.wharton_digit_dots[d][c][r] ? palette.on : palette.off);
-                lv_draw_rect(&layer, &dsc, &area);
+                wh_dot(&layer, &area, &area, on ? palette.on : palette.off, palette.bg, !full, &dirty);
             }
         }
     }
 
-    dsc.bg_color = lv_color_hex(ctx->faces.wharton_colon_on ? palette.on : palette.off);
-    for (int i = 0; i < 2; ++i) {
-        lv_area_t area;
-        int colon_y = base_y + ((i == 0) ? 2 : 4) * WH_DOT_PITCH;
-        area.x1 = colon_x;
-        area.y1 = colon_y;
-        area.x2 = colon_x + WH_DOT_SZ - 1;
-        area.y2 = colon_y + WH_DOT_SZ - 1;
-        lv_draw_rect(&layer, &dsc, &area);
+    if (full || f->wharton_colon_on != f->wharton_drawn_colon_on) {
+        for (int i = 0; i < 2; ++i) {
+            lv_area_t area;
+            int colon_y = base_y + ((i == 0) ? 2 : 4) * WH_DOT_PITCH;
+
+            area.x1 = colon_x;
+            area.y1 = colon_y;
+            area.x2 = colon_x + WH_DOT_SZ - 1;
+            area.y2 = colon_y + WH_DOT_SZ - 1;
+            wh_dot(&layer, &area, &area, f->wharton_colon_on ? palette.on : palette.off, palette.bg, !full, &dirty);
+        }
     }
 
-    lv_canvas_finish_layer(ctx->faces.wharton_face_obj, &layer);
+    f->wharton_drawn = true;
+    f->wharton_drawn_colors[0] = palette.bg;
+    f->wharton_drawn_colors[1] = palette.off;
+    f->wharton_drawn_colors[2] = palette.on;
+    memcpy(f->wharton_drawn_digit_dots, f->wharton_digit_dots, sizeof(f->wharton_drawn_digit_dots));
+    f->wharton_drawn_colon_on = f->wharton_colon_on;
+    f->wharton_drawn_second_count = f->wharton_second_count;
+
+    if (full) {
+        lv_canvas_finish_layer(canvas, &layer);
+        return;
+    }
+    /* lv_canvas_finish_layer without its whole-canvas invalidation. */
+    while (layer.draw_task_head != NULL) {
+        lv_draw_dispatch_wait_for_request();
+        if (!lv_draw_dispatch_layer(lv_obj_get_display(canvas), &layer)) {
+            lv_draw_wait_for_finish();
+            lv_draw_dispatch_request();
+        }
+    }
+    lv_obj_get_coords(canvas, &coords);
+    if (dirty.count > WH_DIRTY_MAX) {
+        dirty.count = 1;
+        dirty.areas[0] = dirty.all;
+    }
+    for (int i = 0; i < dirty.count; i++) {
+        lv_area_move(&dirty.areas[i], coords.x1, coords.y1);
+        lv_obj_invalidate_area(canvas, &dirty.areas[i]);
+    }
 }
 
 static void rebuild_sternglas_snapshot(clock_ui_context_t *ctx)

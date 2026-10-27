@@ -233,6 +233,12 @@ typedef struct {
     bool wharton_digit_dots[4][WH_DIGIT_COLS][WH_DIGIT_ROWS];
     bool wharton_colon_on;
     int wharton_second_count;
+    /* What the canvas shows, so a tick redraws only the dots that changed. */
+    bool wharton_drawn;
+    uint32_t wharton_drawn_colors[3]; /* bg, off, on */
+    bool wharton_drawn_digit_dots[4][WH_DIGIT_COLS][WH_DIGIT_ROWS];
+    bool wharton_drawn_colon_on;
+    int wharton_drawn_second_count;
     void *wharton_face_buf;
     lv_obj_t *wharton_face_obj;
     lv_obj_t *face_reveal_render;
