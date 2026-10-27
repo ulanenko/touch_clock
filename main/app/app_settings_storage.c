@@ -8,6 +8,10 @@
 #include "domain/settings_policy.h"
 #include "domain/timezone_rules.h"
 
+#if defined(ESP_PLATFORM)
+#include "nvs.h"
+#endif
+
 #if defined(ESP_ERR_NVS_NOT_FOUND)
 #define SETTINGS_STORAGE_ERR_NOT_FOUND ESP_ERR_NVS_NOT_FOUND
 #elif defined(ESP_ERR_NOT_FOUND)

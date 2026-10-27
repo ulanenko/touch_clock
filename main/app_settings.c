@@ -8,10 +8,15 @@
 #include "app/app_settings_storage.h"
 #include "domain/settings_policy.h"
 #include "domain/timezone_rules.h"
+#include "esp_log.h"
+#include "esp_timer.h"
 #include "nvs.h"
+#include "sdkconfig.h"
 
 #define SETTINGS_NAMESPACE "clock"
 #define SETTINGS_VERSION_V11 11U
+
+static const char *TAG = "app_settings";
 
 static esp_err_t storage_get_u32(void *ctx, const char *key, uint32_t *value)
 {
@@ -43,34 +48,42 @@ static esp_err_t storage_get_blob(void *ctx, const char *key, void *buffer, size
     return nvs_get_blob(*(nvs_handle_t *)ctx, key, buffer, size);
 }
 
+static esp_err_t storage_check_write(const char *key, esp_err_t err)
+{
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "NVS write of '%s' failed: %s", key, esp_err_to_name(err));
+    }
+    return err;
+}
+
 static esp_err_t storage_set_u32(void *ctx, const char *key, uint32_t value)
 {
-    return nvs_set_u32(*(nvs_handle_t *)ctx, key, value);
+    return storage_check_write(key, nvs_set_u32(*(nvs_handle_t *)ctx, key, value));
 }
 
 static esp_err_t storage_set_u8(void *ctx, const char *key, uint8_t value)
 {
-    return nvs_set_u8(*(nvs_handle_t *)ctx, key, value);
+    return storage_check_write(key, nvs_set_u8(*(nvs_handle_t *)ctx, key, value));
 }
 
 static esp_err_t storage_set_i8(void *ctx, const char *key, int8_t value)
 {
-    return nvs_set_i8(*(nvs_handle_t *)ctx, key, value);
+    return storage_check_write(key, nvs_set_i8(*(nvs_handle_t *)ctx, key, value));
 }
 
 static esp_err_t storage_set_i64(void *ctx, const char *key, int64_t value)
 {
-    return nvs_set_i64(*(nvs_handle_t *)ctx, key, value);
+    return storage_check_write(key, nvs_set_i64(*(nvs_handle_t *)ctx, key, value));
 }
 
 static esp_err_t storage_set_str(void *ctx, const char *key, const char *value)
 {
-    return nvs_set_str(*(nvs_handle_t *)ctx, key, value);
+    return storage_check_write(key, nvs_set_str(*(nvs_handle_t *)ctx, key, value));
 }
 
 static esp_err_t storage_set_blob(void *ctx, const char *key, const void *value, size_t size)
 {
-    return nvs_set_blob(*(nvs_handle_t *)ctx, key, value, size);
+    return storage_check_write(key, nvs_set_blob(*(nvs_handle_t *)ctx, key, value, size));
 }
 
 static esp_err_t storage_erase_key(void *ctx, const char *key)
@@ -135,11 +148,15 @@ esp_err_t app_settings_load(app_settings_t *settings)
 
 esp_err_t app_settings_save(const app_settings_t *settings)
 {
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    int64_t start_us = esp_timer_get_time();
+#endif
     nvs_handle_t handle;
     esp_err_t err;
 
     err = nvs_open(SETTINGS_NAMESPACE, NVS_READWRITE, &handle);
     if (err != ESP_OK) {
+        ESP_LOGW(TAG, "NVS open for save failed: %s", esp_err_to_name(err));
         return err;
     }
 
@@ -151,6 +168,9 @@ esp_err_t app_settings_save(const app_settings_t *settings)
     }
 
     nvs_close(handle);
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    printf("PERF settings_save us=%lld err=%d\n", esp_timer_get_time() - start_us, err);
+#endif
     return err;
 }
 
