@@ -19,3 +19,4 @@ perf_images/
 sim/build*/
 sim/out/
 build_*/
+design/alarm_sounds/
