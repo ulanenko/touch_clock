@@ -368,15 +368,16 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
         memcpy(settings->alarms, defaults.alarms, sizeof(settings->alarms));
     }
     {
-        size_t face_themes_size = sizeof(settings->face_themes);
+        /* One theme per face. A blob saved before faces were added is shorter: its themes
+         * are kept and the newer faces start on their first theme. */
+        uint8_t stored[sizeof(settings->face_themes)];
+        size_t face_themes_size = sizeof(stored);
 
-        if (storage->get_blob == NULL ||
-            storage->get_blob(storage->ctx,
-                              SETTINGS_KEY_FACE_THEMES,
-                              settings->face_themes,
-                              &face_themes_size) != ESP_OK ||
-            face_themes_size != sizeof(settings->face_themes)) {
-            memcpy(settings->face_themes, defaults.face_themes, sizeof(settings->face_themes));
+        memcpy(settings->face_themes, defaults.face_themes, sizeof(settings->face_themes));
+        if (storage->get_blob != NULL &&
+            storage->get_blob(storage->ctx, SETTINGS_KEY_FACE_THEMES, stored, &face_themes_size) == ESP_OK &&
+            face_themes_size <= sizeof(stored)) {
+            memcpy(settings->face_themes, stored, face_themes_size);
         }
     }
 

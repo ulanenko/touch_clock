@@ -73,10 +73,25 @@ static void sheet_apply(face_sheet_t *s, int32_t y)
     }
 }
 
+/* Only one sheet moves at a time, so the sheets share one panel snapshot buffer: the sheet
+ * that last took it owns it, and another sheet taking it over leaves the owner to snapshot
+ * its panel again when it next moves. */
+static lv_draw_buf_t *s_snapshot_pool;
+static face_sheet_t *s_snapshot_owner;
+
 static bool sheet_take_snapshot(face_sheet_t *s)
 {
-    lv_draw_buf_t **buf = &s->snapshot_buf;
+    lv_draw_buf_t **buf = &s_snapshot_pool;
 
+    if (s_snapshot_owner != s && s_snapshot_owner != NULL) {
+        if (s_snapshot_owner->snapshot_visible) {
+            return false; /* the other sheet is showing it: this one moves live */
+        }
+        s_snapshot_owner->snapshot_buf = NULL;
+        s_snapshot_owner->snapshot_dirty = true;
+    }
+    s_snapshot_owner = s;
+    s->snapshot_buf = NULL;
     lv_obj_update_layout(s->panel);
     if (*buf == NULL || lv_snapshot_reshape_draw_buf(s->panel, *buf) != LV_RESULT_OK) {
         if (*buf != NULL) {
@@ -90,6 +105,7 @@ static bool sheet_take_snapshot(face_sheet_t *s)
     if (lv_snapshot_take_to_draw_buf(s->panel, LV_COLOR_FORMAT_RGB565, *buf) != LV_RESULT_OK) {
         return false;
     }
+    s->snapshot_buf = *buf;
     lv_image_set_src(s->snapshot_img, *buf);
     lv_obj_invalidate(s->snapshot_img);
     return true;
@@ -496,8 +512,12 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
 
 void face_sheet_destroy(face_sheet_t *s)
 {
-    if (s->snapshot_buf != NULL) {
-        lv_draw_buf_destroy(s->snapshot_buf);
-        s->snapshot_buf = NULL;
+    if (s_snapshot_owner == s) {
+        if (s_snapshot_pool != NULL) {
+            lv_draw_buf_destroy(s_snapshot_pool);
+            s_snapshot_pool = NULL;
+        }
+        s_snapshot_owner = NULL;
     }
+    s->snapshot_buf = NULL;
 }

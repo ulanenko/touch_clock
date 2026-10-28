@@ -38,6 +38,18 @@ static const face_manifest_entry_t s_face_manifest[CLOCK_FACE_COUNT] = {
         .enabled = true,
         .name = "Modern Silver",
     },
+    [CLOCK_FACE_EMBER] = {
+        .enabled = true,
+        .name = "Ember",
+    },
+    [CLOCK_FACE_NOCTURNE] = {
+        .enabled = true,
+        .name = "Nocturne",
+    },
+    [CLOCK_FACE_FILAMENT] = {
+        .enabled = true,
+        .name = "Filament",
+    },
 };
 
 bool face_catalog_is_valid(int face)

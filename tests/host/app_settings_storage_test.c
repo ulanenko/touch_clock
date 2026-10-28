@@ -489,6 +489,34 @@ static int test_alarm_sound_round_trip(void)
     return 0;
 }
 
+/* Face themes saved before the evening faces existed: a blob of 8 themes. */
+static int test_face_themes_from_fewer_faces(void)
+{
+    fake_store_t store = {0};
+    app_settings_storage_t storage = make_storage(&store);
+    app_settings_t saved;
+    app_settings_t loaded;
+    const uint8_t old_themes[8] = {1, 2, 0, 0, 0, 2, 1, 2};
+
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &saved));
+    EXPECT_EQ_INT(ESP_OK, app_settings_save_to_storage(&storage, &saved));
+    EXPECT_EQ_INT(ESP_OK, store_set_blob(&store, "face_themes", old_themes, sizeof(old_themes)));
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
+    EXPECT_EQ_INT(1, loaded.face_themes[CLOCK_FACE_DIGITAL]);
+    EXPECT_EQ_INT(2, loaded.face_themes[CLOCK_FACE_MATRIX]);
+    EXPECT_EQ_INT(2, loaded.face_themes[CLOCK_FACE_STERNGLAS]);
+    EXPECT_EQ_INT(2, loaded.face_themes[CLOCK_FACE_MODERN_SILVER]);
+    EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_EMBER]);
+    EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_FILAMENT]);
+
+    loaded.face_themes[CLOCK_FACE_NOCTURNE] = 2;
+    EXPECT_EQ_INT(ESP_OK, app_settings_save_to_storage(&storage, &loaded));
+    EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &saved));
+    EXPECT_EQ_INT(2, saved.face_themes[CLOCK_FACE_NOCTURNE]);
+    EXPECT_EQ_INT(1, saved.face_themes[CLOCK_FACE_DIGITAL]);
+    return 0;
+}
+
 static int test_future_structured_version_loads_without_reset(void)
 {
     fake_store_t store = {0};
@@ -549,6 +577,10 @@ int main(void)
     }
 
     status = test_alarm_sound_round_trip();
+    if (status != 0) {
+        return status;
+    }
+    status = test_face_themes_from_fewer_faces();
     if (status != 0) {
         return status;
     }

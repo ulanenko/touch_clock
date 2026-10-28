@@ -40,6 +40,15 @@ static const ui_l10n_str_t s_forest = UI_L10N_STR("Forest", "Las", "Ліс", "Л
 static const ui_l10n_str_t s_blue = UI_L10N_STR("Blue", "Błękit", "Синій", "Синий", "Blauw");
 static const ui_l10n_str_t s_red = UI_L10N_STR("Red", "Czerwień", "Червоний", "Красный", "Rood");
 static const ui_l10n_str_t s_graphite = UI_L10N_STR("Graphite", "Grafit", "Графіт", "Графит", "Grafiet");
+static const ui_l10n_str_t s_ember = UI_L10N_STR("Ember", "Żar", "Жар", "Жар", "Gloed");
+static const ui_l10n_str_t s_rosewood = UI_L10N_STR("Rosewood", "Palisander", "Палісандр", "Палисандр", "Palissander");
+static const ui_l10n_str_t s_kiln = UI_L10N_STR("Kiln", "Piec", "Піч", "Печь", "Oven");
+static const ui_l10n_str_t s_indigo = UI_L10N_STR("Indigo", "Indygo", "Індиго", "Индиго", "Indigo");
+static const ui_l10n_str_t s_candle = UI_L10N_STR("Candle", "Świeca", "Свічка", "Свеча", "Kaars");
+static const ui_l10n_str_t s_sea_glass = UI_L10N_STR("Sea glass", "Szkło morskie", "Морське скло", "Морское стекло",
+                                                     "Zeeglas");
+static const ui_l10n_str_t s_argon = UI_L10N_STR("Argon", "Argon", "Аргон", "Аргон", "Argon");
+static const ui_l10n_str_t s_mercury = UI_L10N_STR("Mercury", "Rtęć", "Ртуть", "Ртуть", "Kwik");
 
 static const ui_l10n_str_t *theme_name(clock_face_id_t face, uint8_t theme)
 {
@@ -50,6 +59,9 @@ static const ui_l10n_str_t *theme_name(clock_face_id_t face, uint8_t theme)
         [CLOCK_FACE_STERNGLAS] = {&s_porcelain, &s_copper, &s_midnight},
         [CLOCK_FACE_AVENIR] = {&s_apricot, &s_navy, &s_forest},
         [CLOCK_FACE_MODERN_SILVER] = {&s_blue, &s_red, &s_graphite},
+        [CLOCK_FACE_EMBER] = {&s_ember, &s_rosewood, &s_kiln},
+        [CLOCK_FACE_NOCTURNE] = {&s_indigo, &s_candle, &s_sea_glass},
+        [CLOCK_FACE_FILAMENT] = {&s_amber, &s_argon, &s_mercury},
     };
 
     if (face >= CLOCK_FACE_COUNT || theme >= CLOCK_FACE_THEME_COUNT) {
@@ -67,6 +79,9 @@ static const lv_image_dsc_t *theme_thumb(clock_face_id_t face, uint8_t theme)
         [CLOCK_FACE_STERNGLAS] = {&ui_face_thumbs_f5_t0, &ui_face_thumbs_f5_t1, &ui_face_thumbs_f5_t2},
         [CLOCK_FACE_AVENIR] = {&ui_face_thumbs_f6_t0, &ui_face_thumbs_f6_t1, &ui_face_thumbs_f6_t2},
         [CLOCK_FACE_MODERN_SILVER] = {&ui_face_thumbs_f7_t0, &ui_face_thumbs_f7_t1, &ui_face_thumbs_f7_t2},
+        [CLOCK_FACE_EMBER] = {&ui_face_thumbs_f8_t0, &ui_face_thumbs_f8_t1, &ui_face_thumbs_f8_t2},
+        [CLOCK_FACE_NOCTURNE] = {&ui_face_thumbs_f9_t0, &ui_face_thumbs_f9_t1, &ui_face_thumbs_f9_t2},
+        [CLOCK_FACE_FILAMENT] = {&ui_face_thumbs_f10_t0, &ui_face_thumbs_f10_t1, &ui_face_thumbs_f10_t2},
     };
 
     if (face >= CLOCK_FACE_COUNT || theme >= CLOCK_FACE_THEME_COUNT) {

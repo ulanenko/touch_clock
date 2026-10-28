@@ -59,6 +59,23 @@ static night_layout_t night_layout(clock_face_id_t face)
     case CLOCK_FACE_MODERN_SILVER:
         l.moon_y = 96; /* inside the dot ring */
         break;
+    case CLOCK_FACE_EMBER:
+        /* Under the hub, clear of the 12 o'clock dot; the hands pass over it. */
+        l.moon_y = -1;
+        l.row_y = 478;
+        l.count_y = 522;
+        break;
+    case CLOCK_FACE_NOCTURNE:
+        /* Between the date and the hill; the face has its own moon. */
+        l.moon_y = -1;
+        l.row_y = 470;
+        l.count_y = 514;
+        break;
+    case CLOCK_FACE_FILAMENT:
+        /* Under the tube sockets. */
+        l.row_y = 492;
+        l.count_y = 536;
+        break;
     default:
         break;
     }

@@ -5,8 +5,10 @@
  *
  * One full-screen layer holds everything. Its own background is the face dim (the face
  * shows at 85 %), and its draw callback paints the rim decorations of the style (Instrument
- * tabs, Orbit bands, the Atelier bezel) under the controls. Showing or hiding the controls
- * is a single flag on that layer; nothing fades, so a tap costs no extra frames.
+ * tabs, Orbit bands, the Atelier bezel) under the controls. The controls come in as a sweep
+ * round the dial from twelve o'clock: each springs in from the rim, growing and fading in,
+ * as the sweep passes it (the page dots one by one). They leave with a quick fade when they
+ * time out or are tapped away; anything else that hides them does so at once.
  *
  * Positions follow the designs and keep clear of the numerals and logos of the faces
  * (checked on face_0 digital, face_1 matrix, face_5 Sternglas and face_7 Georg Jensen).
@@ -20,6 +22,11 @@
 #include "ui/ui_format.h"
 
 #define CONTROLS_VISIBLE_MS 4000
+#define CONTROLS_SWEEP_MS 240 /* the entrance passes round the dial in this time */
+#define CONTROLS_IN_MS 340    /* and each control takes this to come in */
+#define CONTROLS_OUT_SWEEP_MS 60
+#define CONTROLS_OUT_MS 170
+#define CONTROLS_GLIDE 28     /* px a control springs in from the rim */
 /* No dim under the controls: a full-screen translucent fill costs about 10 ms on every frame
  * they are visible, including every frame of a face swipe, and the plates read well without. */
 #define CONTROLS_DIM_OPA LV_OPA_TRANSP
@@ -246,6 +253,63 @@ static int8_t visible_index(clock_face_id_t face)
     return (int8_t)(index < 0 ? 0 : index);
 }
 
+/* Where a control at a clock angle (0 at twelve, clockwise) is in the entrance or exit:
+ * 1 in place, 0 gone. */
+static float reveal_x(const clock_ui_face_chrome_state_t *fc, float clock_deg)
+{
+    float t = (float)fc->reveal_ms;
+
+    switch (fc->reveal_mode) {
+    case 1:
+        return LV_CLAMP(0.0f, (t - clock_deg / 360.0f * CONTROLS_SWEEP_MS) / CONTROLS_IN_MS, 1.0f);
+    case 2:
+        return 1.0f - LV_CLAMP(0.0f, (t - clock_deg / 360.0f * CONTROLS_OUT_SWEEP_MS) / CONTROLS_OUT_MS, 1.0f);
+    default:
+        return 1.0f;
+    }
+}
+
+/* Ease-out with a small overshoot (about 8 %), for the spring in. */
+static float reveal_back_out(float x)
+{
+    const float c1 = 1.4f;
+    const float c3 = c1 + 1.0f;
+    float u = x - 1.0f;
+
+    return 1.0f + c3 * u * u * u + c1 * u * u;
+}
+
+static lv_opa_t reveal_opa(const clock_ui_face_chrome_state_t *fc, float x)
+{
+    float a = fc->reveal_mode == 1 ? LV_MIN(1.0f, x * 1.8f) : x;
+
+    return (lv_opa_t)lroundf(a * 255.0f);
+}
+
+/* How far from its place a control still is, towards the rim. */
+static float reveal_glide(const clock_ui_face_chrome_state_t *fc, float x)
+{
+    return fc->reveal_mode == 1 ? (1.0f - reveal_back_out(x)) * CONTROLS_GLIDE
+                                : (1.0f - x) * (1.0f - x) * CONTROLS_GLIDE * 0.6f;
+}
+
+static float reveal_scale(const clock_ui_face_chrome_state_t *fc, float x)
+{
+    return fc->reveal_mode == 1 ? 0.75f + 0.25f * reveal_back_out(x) : 0.92f + 0.08f * x;
+}
+
+/* The clock angle of a point (0 at twelve, clockwise). Just left of twelve counts as twelve,
+ * where the sweep starts, not as the end of the turn. */
+static float clock_angle(float dx, float dy)
+{
+    float deg = atan2f(dx, -dy) * 180.0f / 3.14159265f;
+
+    if (deg < 0.0f) {
+        deg += 360.0f;
+    }
+    return deg > 350.0f ? 0.0f : deg;
+}
+
 static void draw_arc_dots(lv_layer_t *layer, const clock_ui_face_chrome_state_t *fc, float radius,
                           float step_deg, lv_color_t off, int32_t off_r, lv_color_t on, int32_t on_r, bool on_ring)
 {
@@ -256,8 +320,17 @@ static void draw_arc_dots(lv_layer_t *layer, const clock_ui_face_chrome_state_t 
         int32_t x = (int32_t)lroundf(KIT_CENTER + radius * cosf(a));
         int32_t y = (int32_t)lroundf(KIT_CENTER + radius * sinf(a));
 
+        float dx = (float)(x - KIT_CENTER);
+        float dy = (float)(y - KIT_CENTER);
+        float rx = reveal_x(fc, clock_angle(dx, dy));
+        float grow = fc->reveal_mode == 1 ? reveal_back_out(rx) : 1.0f;
+        lv_opa_t opa = reveal_opa(fc, rx);
+
+        if (opa <= LV_OPA_MIN) {
+            continue;
+        }
         if (i == fc->dot_active) {
-            face_draw_dot(layer, x, y, on_r, on, LV_OPA_COVER);
+            face_draw_dot(layer, x, y, LV_MAX(1, (int32_t)lroundf((float)on_r * grow)), on, opa);
             if (on_ring) {
                 lv_draw_arc_dsc_t d;
 
@@ -269,11 +342,11 @@ static void draw_arc_dots(lv_layer_t *layer, const clock_ui_face_chrome_state_t 
                 d.start_angle = 0;
                 d.end_angle = 360;
                 d.color = on;
-                d.opa = LV_OPA_50;
+                d.opa = (lv_opa_t)(opa / 2);
                 kit_draw_arc(layer, &d);
             }
         } else {
-            face_draw_dot(layer, x, y, off_r, off, LV_OPA_COVER);
+            face_draw_dot(layer, x, y, LV_MAX(1, (int32_t)lroundf((float)off_r * grow)), off, opa);
         }
     }
 }
@@ -292,9 +365,15 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
                                                  fill, fill_opa, edge, LV_OPA_COVER, &fc->rim_band_area[i]);
         }
         if (fc->rim_band[i] != NULL) {
+            lv_area_t area = fc->rim_band_area[i];
+            float rx = reveal_x(fc, i == 0 ? 0.0f : 180.0f);
+
+            /* The bands spring down (12) and up (6) from the rim. */
+            lv_area_move(&area, 0, (i == 0 ? -1 : 1) * (int32_t)lroundf(reveal_glide(fc, rx)));
             lv_draw_image_dsc_init(&img);
             img.src = fc->rim_band[i];
-            lv_draw_image(layer, &img, &fc->rim_band_area[i]);
+            img.opa = reveal_opa(fc, rx);
+            lv_draw_image(layer, &img, &area);
         }
     }
 }
@@ -375,7 +454,8 @@ static void draw_atelier_rim(lv_layer_t *layer, const clock_ui_face_chrome_state
     kit_dial_t dial;
 
     atelier_bezel_spec(&dial);
-    kit_dial_draw(layer, &dial);
+    /* The bezel leads the sweep in, and fades. */
+    kit_dial_draw_opa(layer, &dial, (lv_opa_t)lroundf(LV_MIN(1.0f, reveal_x(fc, 0.0f) * 1.5f) * 255.0f));
     draw_arc_dots(layer, fc, 335.0f, 4.6f, sk->text_2, 4, sk->accent, 6, true);
 }
 
@@ -400,11 +480,13 @@ static void layer_draw_cb(lv_event_t *e)
 
 /* --- Events ----------------------------------------------------------------------------- */
 
+static void controls_leave(clock_ui_context_t *ctx);
+
 static void hide_timer_cb(lv_timer_t *timer)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
 
-    face_controls_hide(ctx);
+    controls_leave(ctx);
 }
 
 void affordance_hide_timer_cb(lv_timer_t *timer)
@@ -799,7 +881,113 @@ static bool controls_allowed(const clock_ui_context_t *ctx)
 {
     return ctx->face_chrome.layer != NULL && !ctx->face_chrome.hidden && !ui_settings_is_open(ctx) &&
            !ui_alarms_is_open(ctx) && !face_themes_visible(ctx) && !face_quick_visible(ctx) &&
-           !ctx->faces.face_reveal_animating && !(ctx->runtime != NULL && ctx->runtime->alarm_ringing);
+           !ctx->faces.face_slide_active && !(ctx->runtime != NULL && ctx->runtime->alarm_ringing);
+}
+
+/* Redraws the parts of the rim decoration that change in the entrance or exit: the Atelier
+ * bezel while it fades (the whole screen), else only the tabs and the page dots. The controls
+ * themselves redraw where they move as their styles change. */
+static void reveal_invalidate_rim(clock_ui_context_t *ctx)
+{
+    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
+    lv_area_t dots = {120, 560, SCREEN_SIZE - 120, SCREEN_SIZE - 1};
+
+    if (fc->reveal_mode == 2 || (ui_skin_style() == CLOCK_UI_STYLE_ATELIER && reveal_x(fc, 0.0f) * 1.5f < 1.0f)) {
+        lv_obj_invalidate(fc->layer);
+        return;
+    }
+    lv_obj_invalidate_area(fc->layer, &dots);
+    for (int i = 0; i < 2; i++) {
+        lv_area_t band = fc->rim_band_area[i];
+
+        if (fc->rim_band[i] == NULL) {
+            continue;
+        }
+        band.y1 -= CONTROLS_GLIDE + 4;
+        band.y2 += CONTROLS_GLIDE + 4;
+        lv_obj_invalidate_area(fc->layer, &band);
+    }
+}
+
+/* Places the controls for the entrance or exit at reveal_ms; the layer's rim decoration
+ * follows in its draw callback. */
+static void reveal_apply(clock_ui_context_t *ctx)
+{
+    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
+    uint32_t count = lv_obj_get_child_count(fc->layer);
+
+    for (uint32_t i = 0; i < count; i++) {
+        lv_obj_t *child = lv_obj_get_child(fc->layer, (int32_t)i);
+        lv_area_t c;
+        float dx;
+        float dy;
+        float len;
+        float x;
+        float glide;
+
+        /* Hidden ones too, so none is left part-way when it shows later. The child's centre
+         * where it rests (its coordinates include the glide). */
+        lv_obj_get_coords(child, &c);
+        dx = (float)(c.x1 + c.x2) / 2.0f - (float)lv_obj_get_style_translate_x(child, 0) - (float)KIT_CENTER;
+        dy = (float)(c.y1 + c.y2) / 2.0f - (float)lv_obj_get_style_translate_y(child, 0) - (float)KIT_CENTER;
+        len = sqrtf(dx * dx + dy * dy);
+        if (len < 1.0f) {
+            dx = 0.0f;
+            dy = -1.0f;
+            len = 1.0f;
+        }
+        x = reveal_x(fc, clock_angle(dx, dy));
+        glide = reveal_glide(fc, x);
+        lv_obj_set_style_translate_x(child, (int32_t)lroundf(dx / len * glide), 0);
+        lv_obj_set_style_translate_y(child, (int32_t)lroundf(dy / len * glide), 0);
+        lv_obj_set_style_transform_pivot_x(child, lv_pct(50), 0);
+        lv_obj_set_style_transform_pivot_y(child, lv_pct(50), 0);
+        lv_obj_set_style_transform_scale(child, (int32_t)lroundf(reveal_scale(fc, x) * 256.0f), 0);
+        lv_obj_set_style_opa(child, reveal_opa(fc, x), 0);
+    }
+    reveal_invalidate_rim(ctx);
+}
+
+static void reveal_anim_cb(void *var, int32_t value)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)var;
+
+    ctx->face_chrome.reveal_ms = (int16_t)value;
+    reveal_apply(ctx);
+}
+
+static void reveal_done_cb(lv_anim_t *anim)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
+    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
+
+    if (fc->reveal_mode == 2) {
+        lv_obj_add_flag(fc->layer, LV_OBJ_FLAG_HIDDEN);
+    }
+    fc->reveal_mode = 0;
+    reveal_apply(ctx);
+}
+
+/* Starts the entrance (mode 1) or the exit (mode 2) from its beginning. */
+static void reveal_start(clock_ui_context_t *ctx, uint8_t mode)
+{
+    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
+    uint32_t total = mode == 1 ? CONTROLS_SWEEP_MS + CONTROLS_IN_MS : CONTROLS_OUT_SWEEP_MS + CONTROLS_OUT_MS;
+    lv_anim_t anim;
+
+    lv_anim_delete(ctx, reveal_anim_cb);
+    fc->reveal_mode = mode;
+    fc->reveal_ms = 0;
+    reveal_apply(ctx);
+    lv_anim_init(&anim);
+    lv_anim_set_var(&anim, ctx);
+    lv_anim_set_user_data(&anim, ctx);
+    lv_anim_set_exec_cb(&anim, reveal_anim_cb);
+    lv_anim_set_values(&anim, 0, (int32_t)total);
+    lv_anim_set_duration(&anim, total);
+    lv_anim_set_path_cb(&anim, lv_anim_path_linear);
+    lv_anim_set_completed_cb(&anim, reveal_done_cb);
+    lv_anim_start(&anim);
 }
 
 void face_controls_show(clock_ui_context_t *ctx)
@@ -815,6 +1003,8 @@ void face_controls_show(clock_ui_context_t *ctx)
         ctx->affordances_visible = true;
         lv_obj_move_foreground(fc->layer);
         lv_obj_remove_flag(fc->layer, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_update_layout(fc->layer);
+        reveal_start(ctx, 1);
         face_night_sync(ctx, face_now(), false);
     }
     if (fc->hide_timer != NULL) {
@@ -824,7 +1014,32 @@ void face_controls_show(clock_ui_context_t *ctx)
     }
 }
 
+/* Hides the controls at once: something else is about to take the screen. */
 void face_controls_hide(clock_ui_context_t *ctx)
+{
+    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
+
+    if (fc->hide_timer != NULL) {
+        lv_timer_pause(fc->hide_timer);
+    }
+    if (fc->layer == NULL || (!fc->visible && lv_obj_has_flag(fc->layer, LV_OBJ_FLAG_HIDDEN))) {
+        return;
+    }
+    lv_anim_delete(ctx, reveal_anim_cb);
+    lv_obj_add_flag(fc->layer, LV_OBJ_FLAG_HIDDEN);
+    if (fc->reveal_mode != 0) {
+        fc->reveal_mode = 0;
+        reveal_apply(ctx);
+    }
+    if (fc->visible) {
+        fc->visible = false;
+        ctx->affordances_visible = false;
+        face_night_sync(ctx, face_now(), false);
+    }
+}
+
+/* The controls glide out and fade: timed out, or tapped away. */
+static void controls_leave(clock_ui_context_t *ctx)
 {
     clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
 
@@ -836,14 +1051,14 @@ void face_controls_hide(clock_ui_context_t *ctx)
     }
     fc->visible = false;
     ctx->affordances_visible = false;
-    lv_obj_add_flag(fc->layer, LV_OBJ_FLAG_HIDDEN);
+    reveal_start(ctx, 2);
     face_night_sync(ctx, face_now(), false);
 }
 
 void face_controls_toggle(clock_ui_context_t *ctx)
 {
     if (ctx->face_chrome.visible) {
-        face_controls_hide(ctx);
+        controls_leave(ctx);
     } else {
         face_controls_show(ctx);
     }

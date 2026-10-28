@@ -10,6 +10,9 @@ int main(void)
         CLOCK_FACE_STERNGLAS,
         CLOCK_FACE_AVENIR,
         CLOCK_FACE_MODERN_SILVER,
+        CLOCK_FACE_EMBER,
+        CLOCK_FACE_NOCTURNE,
+        CLOCK_FACE_FILAMENT,
     };
     int visible_count;
 

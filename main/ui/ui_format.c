@@ -13,6 +13,41 @@ static const ui_l10n_str_t s_in_m = UI_L10N_STR("in %d min", "za %d min", "че�
 static const ui_l10n_str_t s_in_d = UI_L10N_STR("in %d d", "za %d dni", "через %d дн", "через %d дн",
                                                 "over %d d");
 
+static const ui_l10n_str_t s_month_short[12] = {
+    UI_L10N_STR("Jan", "sty", "січ.", "янв.", "jan"), UI_L10N_STR("Feb", "lut", "лют.", "февр.", "feb"),
+    UI_L10N_STR("Mar", "mar", "бер.", "мар.", "mrt"), UI_L10N_STR("Apr", "kwi", "квіт.", "апр.", "apr"),
+    UI_L10N_STR("May", "maj", "трав.", "мая", "mei"), UI_L10N_STR("Jun", "cze", "черв.", "июн.", "jun"),
+    UI_L10N_STR("Jul", "lip", "лип.", "июл.", "jul"), UI_L10N_STR("Aug", "sie", "серп.", "авг.", "aug"),
+    UI_L10N_STR("Sep", "wrz", "вер.", "сент.", "sep"), UI_L10N_STR("Oct", "paź", "жовт.", "окт.", "okt"),
+    UI_L10N_STR("Nov", "lis", "лист.", "нояб.", "nov"), UI_L10N_STR("Dec", "gru", "груд.", "дек.", "dec"),
+};
+
+/* Month names as used after a day number ("28 October", "28 października"). */
+static const ui_l10n_str_t s_month_long[12] = {
+    UI_L10N_STR("January", "stycznia", "січня", "января", "januari"),
+    UI_L10N_STR("February", "lutego", "лютого", "февраля", "februari"),
+    UI_L10N_STR("March", "marca", "березня", "марта", "maart"),
+    UI_L10N_STR("April", "kwietnia", "квітня", "апреля", "april"),
+    UI_L10N_STR("May", "maja", "травня", "мая", "mei"),
+    UI_L10N_STR("June", "czerwca", "червня", "июня", "juni"),
+    UI_L10N_STR("July", "lipca", "липня", "июля", "juli"),
+    UI_L10N_STR("August", "sierpnia", "серпня", "августа", "augustus"),
+    UI_L10N_STR("September", "września", "вересня", "сентября", "september"),
+    UI_L10N_STR("October", "października", "жовтня", "октября", "oktober"),
+    UI_L10N_STR("November", "listopada", "листопада", "ноября", "november"),
+    UI_L10N_STR("December", "grudnia", "грудня", "декабря", "december"),
+};
+
+static const ui_l10n_str_t s_weekday_long[7] = {
+    UI_L10N_STR("Sunday", "Niedziela", "Неділя", "Воскресенье", "Zondag"),
+    UI_L10N_STR("Monday", "Poniedziałek", "Понеділок", "Понедельник", "Maandag"),
+    UI_L10N_STR("Tuesday", "Wtorek", "Вівторок", "Вторник", "Dinsdag"),
+    UI_L10N_STR("Wednesday", "Środa", "Середа", "Среда", "Woensdag"),
+    UI_L10N_STR("Thursday", "Czwartek", "Четвер", "Четверг", "Donderdag"),
+    UI_L10N_STR("Friday", "Piątek", "П'ятниця", "Пятница", "Vrijdag"),
+    UI_L10N_STR("Saturday", "Sobota", "Субота", "Суббота", "Zaterdag"),
+};
+
 static int local_day_index(time_t t)
 {
     struct tm tm;
@@ -74,4 +109,26 @@ bool ui_next_alarm(const clock_ui_context_t *ctx, time_t now, time_t *when, int 
         *alarm_index = runtime->next_alarm_index;
     }
     return true;
+}
+
+const char *ui_weekday_name(const clock_ui_context_t *ctx, int wday)
+{
+    return ui_l10n_str(ctx, &s_weekday_long[((wday % 7) + 7) % 7]);
+}
+
+const char *ui_month_name(const clock_ui_context_t *ctx, int mon, bool long_form)
+{
+    int m = ((mon % 12) + 12) % 12;
+
+    return ui_l10n_str(ctx, long_form ? &s_month_long[m] : &s_month_short[m]);
+}
+
+void ui_format_long_date(const clock_ui_context_t *ctx, time_t when, char *out, size_t size)
+{
+    struct tm tm;
+    bool dutch = ctx->settings->language == CLOCK_LANGUAGE_DUTCH;
+
+    localtime_r(&when, &tm);
+    snprintf(out, size, dutch ? "%s %d %s" : "%s, %d %s", ui_weekday_name(ctx, tm.tm_wday), tm.tm_mday,
+             ui_month_name(ctx, tm.tm_mon, true));
 }

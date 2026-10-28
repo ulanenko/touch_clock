@@ -1,8 +1,8 @@
 /*
  * The faces and the face chrome hooks.
  *
- * Faces: the tileview of faces, the face swipe (left/right changes face with a circular
- * reveal, down pulls the theme sheet, a tap shows the controls) and the snapshot backdrop the
+ * Faces: the tileview of faces, the face swipe (sideways drags the faces along as two discs,
+ * down pulls the theme sheet, a tap shows the controls) and the snapshot backdrop the
  * pull sheets draw while they move. build_root_ui builds the faces and then the chrome.
  *
  * Face chrome: the ui_face_chrome_* hooks of ui_areas.h dispatch to the face chrome files
@@ -12,163 +12,460 @@
 #include "ui/ui_areas.h"
 #include "ui/ui_face_chrome.h"
 
+#include <math.h>
 #include <string.h>
 
 #include "domain/face_catalog.h"
 
-#define FACE_REVEAL_START_SIZE 48
-#define FACE_REVEAL_END_SIZE 1040
-#define FACE_REVEAL_MS 220
+#define FACE_SLIDE_GAP 40      /* px of black between the two discs */
+#define FACE_SLIDE_SPAN (SCREEN_SIZE + FACE_SLIDE_GAP)
+#define FACE_SLIDE_START 14    /* px sideways before a press on the face becomes a slide */
+#define FACE_SLIDE_COMMIT 140 /* px: released past this, the slide goes on to the next face */
+#define FACE_SLIDE_FLICK 0.35f /* px/ms: a flick this fast goes on to the next face from anywhere */
+#define FACE_SLIDE_OMEGA 0.022f /* 1/ms: the settling spring's stiffness (critically damped) */
+#define FACE_SLIDE_PROGRAM_V 0.0f /* px/ms: a slide started by a call starts from rest */
+#define FACE_SLIDE_FRESH_MS 5000 /* a snapshot of a face showing seconds is redone after this */
+#define FACE_SLIDE_PREPARE_MS 250 /* how often the idle face checks its neighbours' snapshots */
 #define FACE_PULL_START 18 /* px down before a press on the face becomes a theme sheet pull */
 
-static void face_reveal_anim_cb(void *var, int32_t value);
-static void face_reveal_anim_ready_cb(lv_anim_t *anim);
-static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face);
-static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face);
-
-static void face_reveal_anim_cb(void *var, int32_t value)
+/* Blacks out a snapshot outside the screen's circle, with an antialiased edge, so the slide
+ * can draw it as a plain image: masking it once here is far cheaper than clip_radius on every
+ * frame. */
+static void face_slide_mask_disc(lv_draw_buf_t *buf)
 {
-    clock_ui_context_t *ctx = (clock_ui_context_t *)var;
-    int32_t visible;
+    const float r = SCREEN_SIZE / 2.0f;
 
-    if (ctx == NULL || ctx->faces.face_reveal_shell == NULL) {
-        return;
+    for (int32_t y = 0; y < SCREEN_SIZE; ++y) {
+        uint16_t *row = (uint16_t *)(buf->data + (size_t)y * buf->header.stride);
+        float dy = (float)y + 0.5f - r;
+        float hw = dy * dy < r * r ? sqrtf(r * r - dy * dy) : 0.0f;
+        int32_t solid = (int32_t)floorf(r - hw - 0.5f); /* pixels left of this are fully outside */
+
+        solid = LV_CLAMP(0, solid, SCREEN_SIZE / 2);
+        memset(row, 0, (size_t)solid * sizeof(uint16_t));
+        memset(row + SCREEN_SIZE - solid, 0, (size_t)solid * sizeof(uint16_t));
+        for (int32_t x = solid; x < LV_MIN(solid + 3, SCREEN_SIZE / 2); ++x) {
+            float cover = LV_CLAMP(0.0f, hw - (r - ((float)x + 0.5f)) + 0.5f, 1.0f);
+            uint32_t a = (uint32_t)(cover * 256.0f);
+
+            for (int side = 0; side < 2; ++side) {
+                uint16_t *px = &row[side == 0 ? x : SCREEN_SIZE - 1 - x];
+                uint32_t v = *px;
+
+                *px = (uint16_t)((((v >> 11) * a >> 8) << 11) | ((((v >> 5) & 0x3F) * a >> 8) << 5) |
+                                 ((v & 0x1F) * a >> 8));
+            }
+        }
     }
-
-    /* Keep the view a multiple of 4 px so the cropped buffer stays 4-byte aligned. */
-    visible = LV_CLAMP(4, value, SCREEN_SIZE) & ~3;
-    ctx->faces.face_reveal_size = value;
-    lv_obj_set_size(ctx->faces.face_reveal_shell, visible, visible);
-    lv_obj_center(ctx->faces.face_reveal_shell);
-    lv_obj_invalidate(ctx->faces.face_reveal_shell);
 }
 
-/* Draws the centre of the target face snapshot clipped to the growing circle. Cropping the
- * snapshot to the circle's box lets clip_radius do the masking without the full-screen ARGB
- * layers that clip_corner on a parent object would allocate every frame. */
-static void face_reveal_draw_cb(lv_event_t *event)
+static lv_draw_buf_t *screen_scratch(clock_ui_context_t *ctx);
+
+/* The buffer of a slide slot. The face the slide starts on goes into the screen scratch
+ * buffer, which otherwise holds the backdrop of a moving sheet (never at the same time); the
+ * neighbours have buffers of their own. */
+static lv_draw_buf_t *face_slide_buf(clock_ui_context_t *ctx, int slot)
 {
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
-    lv_draw_buf_t *src = ctx->faces.face_reveal_buf;
-    lv_draw_buf_t *view = &ctx->faces.face_reveal_view;
-    lv_draw_image_dsc_t dsc;
-    lv_area_t area;
-    int32_t visible;
-    int32_t x0;
-    int32_t y0;
+    lv_draw_buf_t **buf = &ctx->faces.face_slide_bufs[slot];
 
-    if (src == NULL || src->data == NULL) {
-        return;
+    if (slot == 0) {
+        *buf = screen_scratch(ctx);
+    } else if (*buf == NULL) {
+        *buf = lv_draw_buf_create(SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
     }
-
-    lv_obj_get_coords(ctx->faces.face_reveal_shell, &area);
-    visible = lv_area_get_width(&area);
-    x0 = ((int32_t)src->header.w - visible) / 2;
-    y0 = ((int32_t)src->header.h - visible) / 2;
-    if (x0 < 0 || y0 < 0) {
-        return;
-    }
-
-    *view = *src;
-    view->header.w = visible;
-    view->header.h = visible;
-    view->data = src->data + (size_t)y0 * src->header.stride + (size_t)x0 * 2;
-    view->data_size = (uint32_t)src->header.stride * visible;
-
-    lv_draw_image_dsc_init(&dsc);
-    dsc.src = view;
-    dsc.image_area = area;
-    dsc.clip_radius = ctx->faces.face_reveal_size < SCREEN_SIZE ? visible / 2 : 0;
-    lv_draw_image(lv_event_get_layer(event), &dsc, &area);
+    return *buf;
 }
 
-static void face_reveal_anim_ready_cb(lv_anim_t *anim)
+/* Faces that show seconds go stale within a minute. */
+static bool face_shows_seconds(clock_face_id_t face)
 {
-    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
-
-    if (ctx == NULL || ctx->faces.face_reveal_shell == NULL) {
-        return;
-    }
-
-    ctx->faces.face_reveal_animating = false;
-    lv_obj_add_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN);
-    set_active_face(ctx, ctx->faces.face_reveal_target, LV_ANIM_OFF);
-    /* The page dots show which face this is; the controls stay hidden while the circle
-     * grows so the reveal frames draw nothing else. */
-    face_controls_show(ctx);
+    return face == CLOCK_FACE_DIGITAL || face == CLOCK_FACE_WHARTON || face == CLOCK_FACE_AVENIR ||
+           face == CLOCK_FACE_MODERN_SILVER;
 }
 
-static bool face_reveal_prepare(clock_ui_context_t *ctx, clock_face_id_t face)
+static ui_face_slide_shot_t face_slide_shot_now(clock_ui_context_t *ctx, clock_face_id_t face)
 {
-    const void *src;
+    return (ui_face_slide_shot_t) {
+        .face = face,
+        .minute = (long)(face_now() / 60),
+        .theme = ctx->settings->face_themes[face],
+        .language = (uint8_t)ctx->settings->language,
+        .taken_ms = lv_tick_get(),
+    };
+}
 
-    if (ctx == NULL ||
-        ctx->faces.face_reveal_render == NULL ||
-        ctx->faces.face_reveal_shell == NULL) {
-        return false;
-    }
+/* Whether a slot still shows the face as it is now. */
+static bool face_slide_shot_fresh(clock_ui_context_t *ctx, int slot, clock_face_id_t face)
+{
+    const ui_face_slide_shot_t *shot = &ctx->faces.face_slide_shots[slot];
+    ui_face_slide_shot_t now = face_slide_shot_now(ctx, face);
 
-    src = ui_face_preview_source(ctx, face);
+    return ctx->faces.face_slide_bufs[slot] != NULL && shot->face == face && shot->minute == now.minute &&
+           shot->theme == now.theme && shot->language == now.language &&
+           (!face_shows_seconds(face) || lv_tick_elaps(shot->taken_ms) < FACE_SLIDE_FRESH_MS);
+}
+
+/* Snapshots a face into a slide slot (RGB565, the full screen, masked to the disc). */
+static bool face_slide_snapshot(clock_ui_context_t *ctx, clock_face_id_t face, int slot)
+{
+    lv_obj_t *render = ctx->faces.face_slide_render;
+    const void *src = ui_face_preview_source(ctx, face);
+    lv_draw_buf_t *buf;
+
+    ctx->faces.face_slide_shots[slot].face = CLOCK_FACE_COUNT;
     if (src == NULL) {
         return false;
     }
-
-    lv_obj_set_size(ctx->faces.face_reveal_render, SCREEN_SIZE, SCREEN_SIZE);
-    lv_image_set_src(ctx->faces.face_reveal_render, src);
-    lv_image_set_inner_align(ctx->faces.face_reveal_render, LV_IMAGE_ALIGN_COVER);
-    lv_obj_update_layout(ctx->faces.face_reveal_render);
-
-    if (ctx->faces.face_reveal_buf == NULL ||
-        lv_snapshot_reshape_draw_buf(ctx->faces.face_reveal_render, ctx->faces.face_reveal_buf) != LV_RESULT_OK) {
-        if (ctx->faces.face_reveal_buf != NULL) {
-            lv_draw_buf_destroy(ctx->faces.face_reveal_buf);
-        }
-        ctx->faces.face_reveal_buf =
-            lv_snapshot_create_draw_buf(ctx->faces.face_reveal_render, LV_COLOR_FORMAT_RGB565);
-        if (ctx->faces.face_reveal_buf == NULL) {
-            return false;
-        }
-    }
-
-    if (lv_snapshot_take_to_draw_buf(ctx->faces.face_reveal_render,
-                                     LV_COLOR_FORMAT_RGB565,
-                                     ctx->faces.face_reveal_buf) != LV_RESULT_OK) {
+    lv_obj_set_size(render, SCREEN_SIZE, SCREEN_SIZE);
+    lv_image_set_src(render, src);
+    lv_image_set_inner_align(render, LV_IMAGE_ALIGN_COVER);
+    lv_obj_update_layout(render);
+    buf = face_slide_buf(ctx, slot);
+    if (buf == NULL || lv_snapshot_reshape_draw_buf(render, buf) != LV_RESULT_OK ||
+        lv_snapshot_take_to_draw_buf(render, LV_COLOR_FORMAT_RGB565, buf) != LV_RESULT_OK) {
         return false;
     }
-
-    ctx->faces.face_reveal_target = face;
+    face_slide_mask_disc(buf);
+    ctx->faces.face_slide_shots[slot] = face_slide_shot_now(ctx, face);
     return true;
 }
 
-static bool face_reveal_start(clock_ui_context_t *ctx, clock_face_id_t face)
+/* The slot of the neighbour on a side: 1 the next face, 2 the previous one. */
+static int face_slide_side_slot(int8_t dir)
 {
+    return dir < 0 ? 2 : 1;
+}
+
+/* Draws the two faces (masked to discs when snapshotted) as plain images, the starting one at
+ * the slide offset and its neighbour a disc width and the gap beside it, and black where
+ * neither is. It runs before the layer's own drawing and stops it: the layer's opaque
+ * background only tells LVGL to start each frame here, under it nothing is drawn. */
+static void face_slide_draw_cb(lv_event_t *event)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_event_get_user_data(event);
+    lv_layer_t *layer = lv_event_get_layer(event);
+    int32_t offset = ctx->faces.face_slide_offset;
+    int32_t xs[2] = {offset, offset + ctx->faces.face_slide_dir * FACE_SLIDE_SPAN};
+    int32_t covered_from = SCREEN_SIZE;
+    int32_t covered_to = -1;
+    lv_draw_rect_dsc_t black;
+    lv_area_t gap;
+
+    lv_event_stop_processing(event);
+    lv_draw_rect_dsc_init(&black);
+    black.bg_color = lv_color_black();
+    black.bg_opa = LV_OPA_COVER;
+    for (int i = 0; i < 2; ++i) {
+        int slot = i == 0 ? 0 : face_slide_side_slot(ctx->faces.face_slide_dir);
+        lv_draw_buf_t *buf = ctx->faces.face_slide_bufs[slot];
+        lv_draw_image_dsc_t dsc;
+        lv_area_t area;
+
+        if (buf == NULL || buf->data == NULL || xs[i] <= -SCREEN_SIZE || xs[i] >= SCREEN_SIZE ||
+            (i == 1 && ctx->faces.face_slide_dir == 0)) {
+            continue;
+        }
+        lv_area_set(&area, xs[i], 0, xs[i] + SCREEN_SIZE - 1, SCREEN_SIZE - 1);
+        lv_draw_image_dsc_init(&dsc);
+        dsc.src = buf;
+        dsc.image_area = area;
+        lv_draw_image(layer, &dsc, &area);
+        covered_from = LV_MIN(covered_from, LV_MAX(0, area.x1));
+        covered_to = LV_MAX(covered_to, LV_MIN(SCREEN_SIZE - 1, area.x2));
+    }
+    /* Black left of, right of and between the discs. */
+    if (covered_to < 0) {
+        lv_area_set(&gap, 0, 0, SCREEN_SIZE - 1, SCREEN_SIZE - 1);
+        lv_draw_rect(layer, &black, &gap);
+        return;
+    }
+    if (covered_from > 0) {
+        lv_area_set(&gap, 0, 0, covered_from - 1, SCREEN_SIZE - 1);
+        lv_draw_rect(layer, &black, &gap);
+    }
+    if (covered_to < SCREEN_SIZE - 1) {
+        lv_area_set(&gap, covered_to + 1, 0, SCREEN_SIZE - 1, SCREEN_SIZE - 1);
+        lv_draw_rect(layer, &black, &gap);
+    }
+    if (ctx->faces.face_slide_dir != 0) {
+        int32_t left = LV_MIN(xs[0], xs[1]);
+
+        lv_area_set(&gap, LV_MAX(0, left + SCREEN_SIZE), 0, LV_MIN(SCREEN_SIZE - 1, left + FACE_SLIDE_SPAN - 1),
+                    SCREEN_SIZE - 1);
+        if (gap.x1 <= gap.x2) {
+            lv_draw_rect(layer, &black, &gap);
+        }
+    }
+}
+
+static void face_slide_set_offset(clock_ui_context_t *ctx, int32_t offset)
+{
+    ctx->faces.face_slide_offset = LV_CLAMP(-FACE_SLIDE_SPAN, offset, FACE_SLIDE_SPAN);
+    lv_obj_invalidate(ctx->faces.face_slide_shell);
+}
+
+static clock_face_id_t face_slide_current(clock_ui_context_t *ctx)
+{
+    return sanitize_enabled_face(ctx->runtime->in_night_mode ? ctx->settings->night_mode.face
+                                                             : ctx->settings->current_face);
+}
+
+/* Puts the layer up over the face the slide starts on. */
+static bool face_slide_begin(clock_ui_context_t *ctx)
+{
+    clock_face_id_t from = face_slide_current(ctx);
+
+    if (ctx->faces.face_slide_shell == NULL || clock_face_step_enabled(from, 1) == from ||
+        !face_slide_snapshot(ctx, from, 0)) {
+        return false;
+    }
+    ctx->faces.face_slide_from = from;
+    ctx->faces.face_slide_to = from;
+    ctx->faces.face_slide_dir = 0;
+    ctx->faces.face_slide_offset = 0;
+    ctx->faces.face_slide_velocity = 0.0f;
+    ctx->faces.face_slide_active = true;
+    ctx->faces.face_slide_controls_were_visible = face_controls_visible(ctx);
+    face_controls_hide(ctx);
+    lv_obj_move_foreground(ctx->faces.face_slide_shell);
+    lv_obj_remove_flag(ctx->faces.face_slide_shell, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_invalidate(ctx->faces.face_slide_shell);
+    return true;
+}
+
+/* Makes sure the neighbour on the side the starting face moves away from is snapshotted:
+ * normally it already is (face_slide_prepare_cb). */
+static void face_slide_prepare_side(clock_ui_context_t *ctx, int32_t offset)
+{
+    int8_t dir = offset < 0 ? 1 : offset > 0 ? -1 : 0;
+    int slot = face_slide_side_slot(dir);
+    clock_face_id_t to;
+
+    if (dir == 0 || dir == ctx->faces.face_slide_dir) {
+        return;
+    }
+    to = clock_face_step_enabled(ctx->faces.face_slide_from, dir);
+    if (!face_slide_shot_fresh(ctx, slot, to) && !face_slide_snapshot(ctx, to, slot)) {
+        ctx->faces.face_slide_dir = 0;
+        return;
+    }
+    ctx->faces.face_slide_dir = dir;
+    ctx->faces.face_slide_to = to;
+}
+
+/* While the face sits idle, snapshots its neighbours ahead of a slide, one per call: again
+ * when a minute turns, and every few seconds for a face showing seconds. Snapshotting a face
+ * can draw into buffers the shown face shares (the hand-drawn faces), so the shown face is
+ * redrawn straight after, before LVGL renders. */
+static void face_slide_prepare_cb(lv_timer_t *timer)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
+    clock_face_id_t current;
+
+    if (ctx->faces.face_slide_active || ctx->faces.face_swipe_tracking || ui_settings_is_open(ctx) ||
+        ui_alarms_is_open(ctx) || face_themes_visible(ctx) || face_quick_visible(ctx) ||
+        (ctx->runtime != NULL && ctx->runtime->alarm_ringing) || lv_display_get_inactive_time(NULL) < 400) {
+        return;
+    }
+    for (lv_indev_t *indev = lv_indev_get_next(NULL); indev != NULL; indev = lv_indev_get_next(indev)) {
+        if (lv_indev_get_state(indev) == LV_INDEV_STATE_PRESSED) {
+            return;
+        }
+    }
+    current = face_slide_current(ctx);
+    if (face_shell_active_face(ctx) != current) {
+        return;
+    }
+    for (int8_t dir = 1; dir >= -1; dir -= 2) {
+        clock_face_id_t face = clock_face_step_enabled(current, dir);
+        int slot = face_slide_side_slot(dir);
+
+        if (face == current || face_slide_shot_fresh(ctx, slot, face)) {
+            continue;
+        }
+        face_slide_snapshot(ctx, face, slot);
+        update_face(ctx, current);
+        return;
+    }
+}
+
+static void face_slide_finish(lv_anim_t *anim)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
+    bool changed = LV_ABS(ctx->faces.face_slide_offset) >= FACE_SLIDE_SPAN && ctx->faces.face_slide_dir != 0;
+    clock_face_id_t face = changed ? ctx->faces.face_slide_to : ctx->faces.face_slide_from;
+
+    /* Snapshotting the neighbour may have drawn into buffers this face shares with it
+     * (the hand-drawn faces): bring the face up to date before the layer goes. */
+    update_face(ctx, face);
+    if (changed) {
+        /* The face the slide left is the new face's neighbour on the other side: keep its
+         * snapshot there (into that side's buffer: slot 0 is the scratch buffer). */
+        int back = face_slide_side_slot((int8_t)-ctx->faces.face_slide_dir);
+        lv_draw_buf_t *dst = face_slide_buf(ctx, back);
+        lv_draw_buf_t *src = ctx->faces.face_slide_bufs[0];
+
+        ctx->faces.face_slide_shots[back].face = CLOCK_FACE_COUNT;
+        if (dst != NULL && src != NULL && dst->data_size >= src->data_size) {
+            lv_draw_buf_copy(dst, NULL, src, NULL);
+            ctx->faces.face_slide_shots[back] = ctx->faces.face_slide_shots[0];
+        }
+        ctx->faces.face_slide_shots[face_slide_side_slot(ctx->faces.face_slide_dir)].face = CLOCK_FACE_COUNT;
+    }
+    ctx->faces.face_slide_active = false;
+    ctx->faces.face_slide_dir = 0;
+    lv_obj_add_flag(ctx->faces.face_slide_shell, LV_OBJ_FLAG_HIDDEN);
+    set_active_face(ctx, face, LV_ANIM_OFF);
+    if (changed) {
+        if (ctx->runtime->in_night_mode) {
+            if (ctx->settings->night_mode.face != face) {
+                request_set_night_face(ctx, face);
+            }
+        } else if (ctx->settings->current_face != face) {
+            request_set_current_face(ctx, face);
+        }
+    }
+    /* After a change the page dots show which face this is. */
+    if (changed || ctx->faces.face_slide_controls_were_visible) {
+        face_controls_show(ctx);
+    }
+}
+
+/* The settle follows a critically damped spring, x(t) = T + (d + (v + w d) t) e^(-w t) with
+ * d = x0 - T: it starts at the finger's speed and comes to rest without overshooting. */
+static float face_slide_spring_x(const clock_ui_context_t *ctx, float t)
+{
+    float d = ctx->faces.face_slide_spring_x0 - (float)ctx->faces.face_slide_spring_target;
+    float w = FACE_SLIDE_OMEGA;
+
+    return (float)ctx->faces.face_slide_spring_target + (d + (ctx->faces.face_slide_spring_v0 + w * d) * t) * expf(-w * t);
+}
+
+static void face_slide_anim_cb(void *var, int32_t value)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)var;
+
+    face_slide_set_offset(ctx, (int32_t)lroundf(face_slide_spring_x(ctx, (float)value)));
+}
+
+static void face_slide_settle(clock_ui_context_t *ctx, int32_t target, float v0)
+{
+    float d = (float)ctx->faces.face_slide_offset - (float)target;
+    uint32_t ms = 0;
     lv_anim_t anim;
 
-    if (ctx == NULL || ctx->faces.face_reveal_animating) {
-        return false;
+    /* Moving towards the target faster than w d would overshoot it: cap the speed there. */
+    if (v0 * d < 0.0f && fabsf(v0) > FACE_SLIDE_OMEGA * fabsf(d)) {
+        v0 = (v0 < 0.0f ? -1.0f : 1.0f) * FACE_SLIDE_OMEGA * fabsf(d);
     }
-
-    face = sanitize_enabled_face(face);
-    if (!face_reveal_prepare(ctx, face)) {
-        return false;
+    ctx->faces.face_slide_spring_x0 = (float)ctx->faces.face_slide_offset;
+    ctx->faces.face_slide_spring_v0 = v0;
+    ctx->faces.face_slide_spring_target = target;
+    /* Done once within half a pixel of the target. */
+    while (ms < 1000 && fabsf(face_slide_spring_x(ctx, (float)ms) - (float)target) >= 0.5f) {
+        ms += 8;
     }
-
-    ctx->faces.face_reveal_animating = true;
-    lv_anim_delete(ctx, face_reveal_anim_cb);
-    lv_obj_move_foreground(ctx->faces.face_reveal_shell);
-    lv_obj_clear_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN);
-    face_reveal_anim_cb(ctx, FACE_REVEAL_START_SIZE);
-
+    lv_anim_delete(ctx, face_slide_anim_cb);
     lv_anim_init(&anim);
     lv_anim_set_var(&anim, ctx);
     lv_anim_set_user_data(&anim, ctx);
-    lv_anim_set_exec_cb(&anim, face_reveal_anim_cb);
-    lv_anim_set_values(&anim, FACE_REVEAL_START_SIZE, FACE_REVEAL_END_SIZE);
-    lv_anim_set_time(&anim, FACE_REVEAL_MS);
-    lv_anim_set_path_cb(&anim, lv_anim_path_ease_out);
-    lv_anim_set_ready_cb(&anim, face_reveal_anim_ready_cb);
+    lv_anim_set_exec_cb(&anim, face_slide_anim_cb);
+    lv_anim_set_values(&anim, 0, (int32_t)LV_MAX(ms, 8));
+    lv_anim_set_duration(&anim, LV_MAX(ms, 8));
+    lv_anim_set_path_cb(&anim, lv_anim_path_linear);
+    lv_anim_set_completed_cb(&anim, face_slide_finish);
     lv_anim_start(&anim);
+}
+
+bool face_shell_slide_drag(clock_ui_context_t *ctx, lv_point_t start, lv_point_t point)
+{
+    uint32_t now = lv_tick_get();
+    int32_t offset;
+    bool began = false;
+
+    if (!ctx->faces.face_slide_dragging) {
+        int32_t dx = point.x - start.x;
+        int32_t dy = point.y - start.y;
+
+        if (ctx->faces.face_slide_active) {
+            /* Caught while settling: carry on from where the faces are. */
+            lv_anim_delete(ctx, face_slide_anim_cb);
+            ctx->faces.face_slide_anchor_x = point.x - ctx->faces.face_slide_offset;
+        } else {
+            if (LV_ABS(dx) < FACE_SLIDE_START || LV_ABS(dx) <= LV_ABS(dy) + 8 || !face_slide_begin(ctx)) {
+                return false;
+            }
+            /* From where the finger came down, less the dead zone: touch is read only every
+             * few frames, and a quick swipe has gone well past the dead zone by the first
+             * read that starts the slide. */
+            ctx->faces.face_slide_anchor_x = start.x + (dx < 0 ? -FACE_SLIDE_START : FACE_SLIDE_START);
+        }
+        ctx->faces.face_slide_dragging = true;
+        began = true;
+    }
+
+    offset = point.x - ctx->faces.face_slide_anchor_x;
+    face_slide_prepare_side(ctx, offset);
+    /* Timed after the snapshots, which can hold up the UI thread: the time they take is not
+     * the finger's. */
+    now = lv_tick_get();
+    if (began) {
+        ctx->faces.face_slide_last_x = point.x;
+        ctx->faces.face_slide_last_ms = now;
+        ctx->faces.face_slide_start_ms = now;
+        ctx->faces.face_slide_velocity = 0.0f;
+        ctx->faces.face_slide_start_x = point.x;
+    } else if (point.x != ctx->faces.face_slide_last_x && now != ctx->faces.face_slide_last_ms) {
+        float v = (float)(point.x - ctx->faces.face_slide_last_x) / (float)(now - ctx->faces.face_slide_last_ms);
+
+        ctx->faces.face_slide_velocity = 0.6f * v + 0.4f * ctx->faces.face_slide_velocity;
+        ctx->faces.face_slide_last_x = point.x;
+        ctx->faces.face_slide_last_ms = now;
+    }
+    ctx->faces.face_slide_read_ms = now;
+    face_slide_set_offset(ctx, offset);
     return true;
+}
+
+bool face_shell_slide_dragging(const clock_ui_context_t *ctx)
+{
+    return ctx->faces.face_slide_dragging;
+}
+
+void face_shell_slide_release(clock_ui_context_t *ctx)
+{
+    int32_t offset = ctx->faces.face_slide_offset;
+    float v = ctx->faces.face_slide_velocity;
+    int32_t target = 0;
+
+    if (!ctx->faces.face_slide_dragging) {
+        return;
+    }
+    ctx->faces.face_slide_dragging = false;
+    /* A quick, short swipe is a flick by its average speed, whatever its last samples say. */
+    {
+        uint32_t took = ctx->faces.face_slide_last_ms - ctx->faces.face_slide_start_ms;
+        float average = took > 0 ? (float)(ctx->faces.face_slide_last_x - ctx->faces.face_slide_start_x) / (float)took
+                                 : 0.0f;
+
+        if (took < 350 && LV_ABS(average) > LV_ABS(v)) {
+            v = average;
+        }
+    }
+    /* A finger seen resting before the lift has no speed left. Only touch reads count: a
+     * stalled UI thread reads nothing and must not turn a flick into a rest. */
+    if (ctx->faces.face_slide_read_ms - ctx->faces.face_slide_last_ms > 80) {
+        v = 0.0f;
+    }
+    if (ctx->faces.face_slide_dir != 0 && offset != 0) {
+        bool flick = LV_ABS(v) >= FACE_SLIDE_FLICK && (v < 0) == (offset < 0);
+        bool back_flick = LV_ABS(v) >= FACE_SLIDE_FLICK && (v < 0) != (offset < 0);
+
+        if ((LV_ABS(offset) >= FACE_SLIDE_COMMIT && !back_flick) || flick) {
+            target = offset < 0 ? -FACE_SLIDE_SPAN : FACE_SLIDE_SPAN;
+        }
+    }
+    face_slide_settle(ctx, target, v);
 }
 
 clock_face_id_t face_shell_active_face(clock_ui_context_t *ctx)
@@ -203,26 +500,37 @@ lv_obj_t *ui_backdrop_create(lv_obj_t *overlay)
     return backdrop;
 }
 
-static bool backdrop_capture(clock_ui_context_t *ctx, lv_obj_t *overlay)
+/* A full-screen RGB565 buffer for passing uses: the backdrop of a moving sheet, the face a
+ * slide starts on. */
+static lv_draw_buf_t *screen_scratch(clock_ui_context_t *ctx)
 {
-    lv_result_t res;
-
     if (!ctx->backdrop_ready) {
         uint32_t stride = SCREEN_SIZE * 2U;
         uint32_t size = stride * SCREEN_SIZE;
         void *data = heap_caps_aligned_alloc(CONFIG_CACHE_L2_CACHE_LINE_SIZE, size, MALLOC_CAP_SPIRAM);
 
         if (data == NULL) {
-            return false;
+            return NULL;
         }
         if (lv_draw_buf_init(&ctx->backdrop_buf, SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565,
                              stride, data, size) != LV_RESULT_OK) {
             heap_caps_free(data);
-            return false;
+            return NULL;
         }
         ctx->backdrop_ready = true;
     }
+    return &ctx->backdrop_buf;
+}
 
+static bool backdrop_capture(clock_ui_context_t *ctx, lv_obj_t *overlay)
+{
+    lv_result_t res;
+
+    if (screen_scratch(ctx) == NULL) {
+        return false;
+    }
+    /* The slide's snapshot of its starting face shares this buffer. */
+    ctx->faces.face_slide_shots[0].face = CLOCK_FACE_COUNT;
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
     res = lv_snapshot_take_to_draw_buf(ctx->screen, LV_COLOR_FORMAT_RGB565, &ctx->backdrop_buf);
     lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
@@ -264,7 +572,7 @@ void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backd
 
 void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3])
 {
-    if (colors == NULL) {
+    if (colors == NULL || evening_face_preview_colors(face, theme, colors)) {
         return;
     }
 
@@ -394,28 +702,22 @@ void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face)
 
 void face_shell_swipe_face(clock_ui_context_t *ctx, int32_t dx)
 {
-    clock_face_id_t current_face;
-    clock_face_id_t target_face;
-
-    current_face = ctx->runtime->in_night_mode ? ctx->settings->night_mode.face : ctx->settings->current_face;
-    target_face = (dx < 0) ? clock_face_step_enabled(current_face, 1) : clock_face_step_enabled(current_face, -1);
-    if (target_face == current_face) {
+    if (ctx->faces.face_slide_active) {
         return;
     }
-
-    face_controls_hide(ctx);
-    if (!face_reveal_start(ctx, target_face)) {
-        set_active_face(ctx, target_face, LV_ANIM_OFF);
-        face_controls_show(ctx);
+    if (!face_slide_begin(ctx)) {
+        return;
     }
+    face_slide_prepare_side(ctx, dx < 0 ? -1 : 1);
+    if (ctx->faces.face_slide_dir == 0) {
+        lv_anim_t anim;
 
-    if (ctx->runtime->in_night_mode) {
-        if (ctx->settings->night_mode.face != target_face) {
-            request_set_night_face(ctx, target_face);
-        }
-    } else if (ctx->settings->current_face != target_face) {
-        request_set_current_face(ctx, target_face);
+        lv_anim_init(&anim);
+        lv_anim_set_user_data(&anim, ctx);
+        face_slide_finish(&anim);
+        return;
     }
+    face_slide_settle(ctx, dx < 0 ? -FACE_SLIDE_SPAN : FACE_SLIDE_SPAN, FACE_SLIDE_PROGRAM_V);
 }
 
 static bool theme_pull_active(const clock_ui_context_t *ctx)
@@ -453,7 +755,10 @@ static void face_swipe_event_cb(lv_event_t *event)
 
     if (code == LV_EVENT_PRESSING) {
         if (!theme_pull_active(ctx)) {
-            if (dy < FACE_PULL_START || dy < LV_ABS(dx) + 12 || ctx->faces.face_reveal_animating) {
+            if (face_shell_slide_drag(ctx, ctx->faces.face_swipe_start_point, point)) {
+                return;
+            }
+            if (dy < FACE_PULL_START || dy < LV_ABS(dx) + 12 || ctx->faces.face_slide_active) {
                 return;
             }
             face_themes_prepare(ctx);
@@ -468,7 +773,11 @@ static void face_swipe_event_cb(lv_event_t *event)
         face_sheet_drag_end(&ctx->face_theme.sheet, code == LV_EVENT_PRESS_LOST);
         return;
     }
-    if (code != LV_EVENT_RELEASED) {
+    if (face_shell_slide_dragging(ctx)) {
+        face_shell_slide_release(ctx);
+        return;
+    }
+    if (code != LV_EVENT_RELEASED || ctx->faces.face_slide_active) {
         return;
     }
 
@@ -480,11 +789,10 @@ static void face_swipe_event_cb(lv_event_t *event)
         }
         return;
     }
-
-    if (LV_ABS(dx) < 56 || LV_ABS(dx) <= LV_ABS(dy) + 20) {
-        return;
+    /* A swipe so quick that it ended before the drag began (the UI thread was busy). */
+    if (LV_ABS(dx) >= 56 && LV_ABS(dx) > LV_ABS(dy) + 20) {
+        face_shell_swipe_face(ctx, dx);
     }
-    face_shell_swipe_face(ctx, dx);
 }
 
 void face_shell_attach_swipe(clock_ui_context_t *ctx, lv_obj_t *obj)
@@ -495,20 +803,28 @@ void face_shell_attach_swipe(clock_ui_context_t *ctx, lv_obj_t *obj)
     lv_obj_add_event_cb(obj, face_swipe_event_cb, LV_EVENT_PRESS_LOST, ctx);
 }
 
-static void create_face_reveal_layer(clock_ui_context_t *ctx)
+static void create_face_slide_layer(clock_ui_context_t *ctx)
 {
-    ctx->faces.face_reveal_render = lv_image_create(ctx->screen);
-    lv_obj_set_pos(ctx->faces.face_reveal_render, -2000, -2000);
-    lv_obj_clear_flag(ctx->faces.face_reveal_render, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_remove_flag(ctx->faces.face_reveal_render, LV_OBJ_FLAG_CLICKABLE);
+    ctx->faces.face_slide_render = lv_image_create(ctx->screen);
+    lv_obj_set_pos(ctx->faces.face_slide_render, -2000, -2000);
+    lv_obj_clear_flag(ctx->faces.face_slide_render, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_remove_flag(ctx->faces.face_slide_render, LV_OBJ_FLAG_CLICKABLE);
 
-    ctx->faces.face_reveal_shell = lv_obj_create(ctx->screen);
-    lv_obj_remove_style_all(ctx->faces.face_reveal_shell);
-    lv_obj_set_size(ctx->faces.face_reveal_shell, FACE_REVEAL_START_SIZE, FACE_REVEAL_START_SIZE);
-    lv_obj_center(ctx->faces.face_reveal_shell);
-    lv_obj_clear_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->faces.face_reveal_shell, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
-    lv_obj_add_event_cb(ctx->faces.face_reveal_shell, face_reveal_draw_cb, LV_EVENT_DRAW_MAIN, ctx);
+    /* Not clickable: a press while the faces settle reaches the swipe layer under it and
+     * catches them. */
+    ctx->faces.face_slide_shell = lv_obj_create(ctx->screen);
+    lv_obj_remove_style_all(ctx->faces.face_slide_shell);
+    lv_obj_set_size(ctx->faces.face_slide_shell, SCREEN_SIZE, SCREEN_SIZE);
+    lv_obj_set_style_bg_color(ctx->faces.face_slide_shell, lv_color_black(), 0);
+    lv_obj_set_style_bg_opa(ctx->faces.face_slide_shell, LV_OPA_COVER, 0);
+    lv_obj_remove_flag(ctx->faces.face_slide_shell, LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_flag(ctx->faces.face_slide_shell, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
+    lv_obj_add_event_cb(ctx->faces.face_slide_shell, face_slide_draw_cb,
+                        (lv_event_code_t)(LV_EVENT_DRAW_MAIN | LV_EVENT_PREPROCESS), ctx);
+    for (int slot = 0; slot < 3; ++slot) {
+        ctx->faces.face_slide_shots[slot].face = CLOCK_FACE_COUNT;
+    }
+    ctx->faces.face_slide_prepare_timer = lv_timer_create(face_slide_prepare_cb, FACE_SLIDE_PREPARE_MS, ctx);
 }
 
 static void create_face_swipe_layer(clock_ui_context_t *ctx)
@@ -650,13 +966,16 @@ void build_root_ui(clock_ui_context_t *ctx)
     create_sternglas_face(ctx, ctx->tiles[CLOCK_FACE_STERNGLAS]);
     create_avenir_face(ctx, ctx->tiles[CLOCK_FACE_AVENIR]);
     create_modern_silver_face(ctx, ctx->tiles[CLOCK_FACE_MODERN_SILVER]);
+    create_ember_face(ctx, ctx->tiles[CLOCK_FACE_EMBER]);
+    create_nocturne_face(ctx, ctx->tiles[CLOCK_FACE_NOCTURNE]);
+    create_filament_face(ctx, ctx->tiles[CLOCK_FACE_FILAMENT]);
 
     lv_obj_add_event_cb(ctx->tileview, tileview_value_changed_cb, LV_EVENT_VALUE_CHANGED, ctx);
     lv_obj_add_event_cb(ctx->tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL_BEGIN, ctx);
     lv_obj_add_event_cb(ctx->tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL, ctx);
     lv_obj_add_event_cb(ctx->tileview, tileview_scroll_event_cb, LV_EVENT_SCROLL_END, ctx);
 
-    create_face_reveal_layer(ctx);
+    create_face_slide_layer(ctx);
     create_face_swipe_layer(ctx);
     ui_chrome_build(ctx);
     set_active_face(ctx, ctx->settings->current_face, LV_ANIM_OFF);

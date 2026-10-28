@@ -22,7 +22,10 @@ typedef enum {
     CLOCK_FACE_STERNGLAS = 5,
     CLOCK_FACE_AVENIR = 6,
     CLOCK_FACE_MODERN_SILVER = 7,
-    CLOCK_FACE_COUNT = 8,
+    CLOCK_FACE_EMBER = 8, /* the evening faces: dim, low-glare */
+    CLOCK_FACE_NOCTURNE = 9,
+    CLOCK_FACE_FILAMENT = 10,
+    CLOCK_FACE_COUNT = 11,
 } clock_face_id_t;
 
 typedef enum {

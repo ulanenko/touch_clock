@@ -77,6 +77,12 @@ FONTS = {
     "at_sans_22": ("jost", {"wght": 400}, [], 22, TEXT),
     "at_sans_medium_20": ("jost", {"wght": 500}, [], 20, TEXT),
     "at_sans_medium_18": ("jost", {"wght": 500}, [], 18, TEXT),
+    # Evening faces: Nocturne's light serif time, Filament's light tube digits, and the
+    # small Jost labels all three use.
+    "ev_serif_light_176": ("cormorant", {"wght": 300}, ["lnum", "tnum"], 176, DIGITS),
+    "ev_sans_light_150": ("jost", {"wght": 300}, ["tnum"], 150, DIGITS),
+    "ev_sans_16": ("jost", {"wght": 400}, [], 16, TEXT),
+    "ev_sans_12": ("jost", {"wght": 400}, [], 12, TEXT),
 }
 
 

@@ -481,8 +481,22 @@ static void register_draw_cb(lv_event_t *e)
     pos = a0 + (span - len) * y / total;
 
     kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, radius, 4, a0, a1, sk->line, LV_OPA_COVER);
-    kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, radius, 4, pos, pos + len, st_atelier() ? sk->accent : sk->text_3,
-                  LV_OPA_COVER);
+    /* The thumb moves with every scroll step: an LVGL arc, as the ring cache would build (and
+     * keep) a new image for each position. */
+    {
+        lv_draw_arc_dsc_t arc;
+
+        lv_draw_arc_dsc_init(&arc);
+        arc.center = (lv_point_t) {KIT_CENTER, KIT_CENTER};
+        arc.radius = (uint16_t)(radius + 2); /* the ring's radius is its centre line */
+        arc.width = 4;
+        arc.start_angle = (lv_value_precise_t)((pos % 360 + 360) % 360);
+        arc.end_angle = (lv_value_precise_t)(((pos + len) % 360 + 360) % 360);
+        arc.rounded = 1;
+        arc.color = st_atelier() ? sk->accent : sk->text_3;
+        arc.opa = LV_OPA_COVER;
+        lv_draw_arc(layer, &arc);
+    }
 }
 
 void st_back_event_cb(lv_event_t *e)

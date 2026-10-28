@@ -701,7 +701,7 @@ void clock_ui_tick(time_t now)
     clock_face_id_t active_face;
     bool face_covered = ui_settings_is_open(ctx) || ui_alarms_is_open(ctx) || ui_face_chrome_covers_face(ctx);
 
-    if (!ctx->faces.face_reveal_animating &&
+    if (!ctx->faces.face_slide_active &&
         tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)) != desired_face) {
         set_active_face(ctx, desired_face, LV_ANIM_OFF);
     }

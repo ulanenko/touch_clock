@@ -649,7 +649,10 @@ static void edge_event_cb(lv_event_t *e)
 
     if (code == LV_EVENT_PRESSING) {
         if (!q->edge_pulling) {
-            if (dy > -EDGE_TRIGGER || LV_ABS(dy) < LV_ABS(dx) + 8 || ctx->faces.face_reveal_animating) {
+            if (face_shell_slide_drag(ctx, q->edge_start_point, p)) {
+                return;
+            }
+            if (dy > -EDGE_TRIGGER || LV_ABS(dy) < LV_ABS(dx) + 8 || ctx->faces.face_slide_active) {
                 return;
             }
             q->edge_pulling = true;
@@ -666,7 +669,11 @@ static void edge_event_cb(lv_event_t *e)
         face_sheet_drag_end(&q->sheet, code == LV_EVENT_PRESS_LOST);
         return;
     }
-    if (code != LV_EVENT_RELEASED) {
+    if (face_shell_slide_dragging(ctx)) {
+        face_shell_slide_release(ctx);
+        return;
+    }
+    if (code != LV_EVENT_RELEASED || ctx->faces.face_slide_active) {
         return;
     }
     if (LV_ABS(dx) < 24 && LV_ABS(dy) < 24) {
@@ -678,6 +685,7 @@ static void edge_event_cb(lv_event_t *e)
         }
         return;
     }
+    /* A swipe so quick that it ended before the drag began (the UI thread was busy). */
     if (LV_ABS(dx) >= 56 && LV_ABS(dx) > LV_ABS(dy) + 20) {
         face_shell_swipe_face(ctx, dx);
     }

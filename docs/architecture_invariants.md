@@ -4,8 +4,8 @@ This document defines the behavior that must remain stable while the internal st
 
 ## UX invariants
 
-- The active face carousel remains `Digital`, `Matrix`, `Wharton`, `Sternglas`, `Avenir`, `Modern Silver` in that order; legacy `Slava` face IDs remain persistence-only.
-- Face navigation keeps the existing swipe model, page-dot semantics, enabled-face ordering, and night-face substitution behavior.
+- The active face carousel remains `Digital`, `Matrix`, `Wharton`, `Sternglas`, `Avenir`, `Modern Silver`, `Ember`, `Nocturne`, `Filament` in that order; legacy `Slava` face IDs remain persistence-only.
+- Face navigation keeps the drag-to-slide model (the faces follow the finger and settle on release), page-dot semantics, enabled-face ordering, and night-face substitution behavior.
 - The quick-actions sheet keeps the same open zones, drag model, button set, and brightness interaction semantics.
 - Alarm management keeps the current list layout, editor flow, settings surface, ringing overlay, snooze flow, stop flow, preview-tone behavior, cancel-next flow, and undo window behavior.
 - Wi-Fi and settings surfaces keep the same hierarchy, saved-state labels, scan/connect/forget/sync behaviors, and timezone selection UX.

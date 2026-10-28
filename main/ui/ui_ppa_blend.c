@@ -142,10 +142,17 @@ static inline uint16_t argb_mix(uint32_t px, uint16_t c)
                       ((((px >> 3) & 0x1F) * mix + (c & 0x1F) * inv) >> 8));
 }
 
+/* An ARGB8888 pixel with its alpha scaled by opa (a fading image). */
+static inline uint32_t argb_fade(uint32_t px, lv_opa_t opa)
+{
+    return (px & 0x00FFFFFFu) | (((px >> 24) * opa / 255u) << 24);
+}
+
 /* Blends only the visible runs if the source lies in a registered sparse image. */
 static bool sparse_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc)
 {
     const uint8_t *src = dsc->src_buf;
+    lv_opa_t opa = dsc->opa;
     int count = __atomic_load_n(&s_sparse_count, __ATOMIC_ACQUIRE);
 
     for (int i = 0; i < count; i++) {
@@ -170,8 +177,14 @@ static bool sparse_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc)
                 int32_t lo = LV_MAX((int32_t)img->runs[k * 2], sx);
                 int32_t hi = LV_MIN((int32_t)img->runs[k * 2] + (int32_t)img->runs[k * 2 + 1], sx + dsc->dest_w);
 
-                for (int32_t x = lo; x < hi; x++) {
-                    dest[x] = argb_mix(src_px[x], dest[x]);
+                if (opa >= LV_OPA_MAX) {
+                    for (int32_t x = lo; x < hi; x++) {
+                        dest[x] = argb_mix(src_px[x], dest[x]);
+                    }
+                } else {
+                    for (int32_t x = lo; x < hi; x++) {
+                        dest[x] = argb_mix(argb_fade(src_px[x], opa), dest[x]);
+                    }
                 }
             }
             dest_row += dsc->dest_stride;
@@ -268,11 +281,15 @@ static void sw_blend(lv_layer_t *layer, const lv_draw_sw_blend_dsc_t *dsc, const
     image_dsc.dest_buf = lv_draw_layer_go_to_xy(layer, blend_area.x1 - layer->buf_area.x1,
                                                 blend_area.y1 - layer->buf_area.y1);
     if (image_dsc.src_color_format == LV_COLOR_FORMAT_ARGB8888 && image_dsc.mask_buf == NULL &&
-        image_dsc.opa >= LV_OPA_MAX && image_dsc.blend_mode == LV_BLEND_MODE_NORMAL) {
-        if (!sparse_over_rgb565(&image_dsc)) {
-            argb8888_over_rgb565(&image_dsc);
+        image_dsc.blend_mode == LV_BLEND_MODE_NORMAL) {
+        /* Registered sparse images at any opacity (a fading ring); others only when opaque. */
+        if (sparse_over_rgb565(&image_dsc)) {
+            return;
         }
-        return;
+        if (image_dsc.opa >= LV_OPA_MAX) {
+            argb8888_over_rgb565(&image_dsc);
+            return;
+        }
     }
     lv_draw_sw_blend_image_to_rgb565(&image_dsc);
 }

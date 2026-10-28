@@ -140,8 +140,14 @@ void face_quick_set_hidden(clock_ui_context_t *ctx, bool hidden);
 
 /* Routes presses on obj to the face gestures (tap, pull down, swipe left/right). */
 void face_shell_attach_swipe(clock_ui_context_t *ctx, lv_obj_t *obj);
-/* A horizontal swipe on the face area: changes face with the reveal. */
+/* Changes face with the slide, without a finger: to the next face for dx < 0. */
 void face_shell_swipe_face(clock_ui_context_t *ctx, int32_t dx);
+/* Moves the faces with a press that started at `start`: returns true once it drags them
+ * sideways (or caught them settling), false while the press is still undecided. */
+bool face_shell_slide_drag(clock_ui_context_t *ctx, lv_point_t start, lv_point_t point);
+bool face_shell_slide_dragging(const clock_ui_context_t *ctx);
+/* The finger lifted from a slide: settles on the nearer face, or the next one after a flick. */
+void face_shell_slide_release(clock_ui_context_t *ctx);
 /* The face sheets moved or changed state: re-evaluate the live/snapshot digital face. */
 void face_shell_sync_face_visuals(clock_ui_context_t *ctx);
 clock_face_id_t face_shell_active_face(clock_ui_context_t *ctx);

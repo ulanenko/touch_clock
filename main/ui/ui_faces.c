@@ -392,6 +392,9 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         break;
     }
     default:
+        if (evening_face_ink(ctx, face, &ink)) {
+            break;
+        }
         ink.text = lv_color_white();
         ink.accent = lv_color_white();
         ink.soft = lv_color_hex(0x8A8A8A);
@@ -465,11 +468,21 @@ void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face)
  */
 #define FACE_HANDS_PAD 6 /* antialiasing and square line ends past the hands' points */
 
-static void face_hands_create(ui_face_hands_t *hands, lv_obj_t *parent)
+/* Only one face shows at a time, so all the faces drawn this way share one view buffer
+ * (1 MB). The owner is the face whose pixels it holds; another face taking it over repaints
+ * in full, and leaves the previous owner to do the same when it next draws. */
+static lv_draw_buf_t *s_view_buf;
+static ui_face_hands_t *s_view_owner;
+
+void face_hands_create(ui_face_hands_t *hands, lv_obj_t *parent)
 {
     hands->valid = false;
-    if (hands->buf == NULL) {
-        hands->buf = lv_draw_buf_create(SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    if (s_view_buf == NULL) {
+        s_view_buf = lv_draw_buf_create(SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    }
+    hands->buf = s_view_buf;
+    if (s_view_owner == hands) {
+        s_view_owner = NULL;
     }
     hands->canvas = lv_canvas_create(parent);
     if (hands->buf != NULL) {
@@ -482,7 +495,7 @@ static void face_hands_create(ui_face_hands_t *hands, lv_obj_t *parent)
     lv_obj_add_flag(hands->canvas, LV_OBJ_FLAG_HIDDEN);
 }
 
-static void face_hands_box_init(lv_area_t *box)
+void face_hands_box_init(lv_area_t *box)
 {
     box->x1 = INT32_MAX;
     box->y1 = INT32_MAX;
@@ -490,7 +503,7 @@ static void face_hands_box_init(lv_area_t *box)
     box->y2 = INT32_MIN;
 }
 
-static void face_hands_box_points(lv_area_t *box, const lv_point_precise_t *points, size_t count)
+void face_hands_box_points(lv_area_t *box, const lv_point_precise_t *points, size_t count)
 {
     for (size_t i = 0; i < count; ++i) {
         int32_t x = (int32_t)floorf((float)points[i].x);
@@ -503,7 +516,7 @@ static void face_hands_box_points(lv_area_t *box, const lv_point_precise_t *poin
     }
 }
 
-static void face_hands_box_area(lv_area_t *box, const lv_area_t *area)
+void face_hands_box_area(lv_area_t *box, const lv_area_t *area)
 {
     box->x1 = LV_MIN(box->x1, area->x1);
     box->y1 = LV_MIN(box->y1, area->y1);
@@ -514,7 +527,7 @@ static void face_hands_box_area(lv_area_t *box, const lv_area_t *area)
 /* Starts a tick: `box` holds every point drawn, before shadow offsets (up to shadow_dx,
  * shadow_dy, both down and right). Restores the dial under the old and new hands and sets
  * the layer to draw only there. False when there is nothing to draw on. */
-static bool face_hands_begin(ui_face_hands_t *hands, const lv_draw_buf_t *dial, lv_area_t box, int32_t offset,
+bool face_hands_begin(ui_face_hands_t *hands, const lv_draw_buf_t *dial, lv_area_t box, int32_t offset,
                              int32_t shadow_dx, int32_t shadow_dy, lv_layer_t *layer, lv_area_t *dirty)
 {
     lv_area_t buf_area = {-offset, -offset, SCREEN_SIZE - 1 - offset, SCREEN_SIZE - 1 - offset};
@@ -524,6 +537,13 @@ static bool face_hands_begin(ui_face_hands_t *hands, const lv_draw_buf_t *dial, 
     if (hands->canvas == NULL || hands->buf == NULL || dial == NULL || dial->header.cf != LV_COLOR_FORMAT_RGB565 ||
         dial->header.w < SCREEN_SIZE || dial->header.h < SCREEN_SIZE) {
         return false;
+    }
+    if (s_view_owner != hands) {
+        if (s_view_owner != NULL) {
+            s_view_owner->valid = false;
+        }
+        s_view_owner = hands;
+        hands->valid = false;
     }
     box.x1 -= FACE_HANDS_PAD;
     box.y1 -= FACE_HANDS_PAD;
@@ -560,7 +580,7 @@ static bool face_hands_begin(ui_face_hands_t *hands, const lv_draw_buf_t *dial, 
 
 /* Finishes the drawing and shows it: the whole face the first time (in place of the dial
  * snapshot), afterwards only the repainted area. */
-static void face_hands_finish(ui_face_hands_t *hands, lv_obj_t *dial_img, lv_layer_t *layer, lv_area_t dirty,
+void face_hands_finish(ui_face_hands_t *hands, lv_obj_t *dial_img, lv_layer_t *layer, lv_area_t dirty,
                               int32_t offset)
 {
     lv_area_t coords;
@@ -954,6 +974,10 @@ const void *ui_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face
         return (ctx->faces.avenir_hands.valid) ? ctx->faces.avenir_hands.buf : ctx->faces.avenir_snapshot_buf;
     case CLOCK_FACE_MODERN_SILVER:
         return (ctx->faces.modern_silver_hands.valid) ? ctx->faces.modern_silver_hands.buf : ctx->faces.modern_silver_snapshot_buf;
+    case CLOCK_FACE_EMBER:
+    case CLOCK_FACE_NOCTURNE:
+    case CLOCK_FACE_FILAMENT:
+        return evening_face_preview_source(ctx, face);
     default:
         return ctx->faces.digital_snapshot_buf;
     }
@@ -1225,6 +1249,11 @@ void update_face(clock_ui_context_t *ctx, clock_face_id_t face)
         break;
     case CLOCK_FACE_MODERN_SILVER:
         update_modern_silver_face(ctx);
+        break;
+    case CLOCK_FACE_EMBER:
+    case CLOCK_FACE_NOCTURNE:
+    case CLOCK_FACE_FILAMENT:
+        update_evening_face(ctx, face);
         break;
     default:
         update_digital_face(ctx);

@@ -130,6 +130,8 @@ typedef struct {
     uint8_t dot_count;
     int8_t dot_active;       /* visible index of the active face, -1 before the first sync */
     bool visible;
+    int16_t reveal_ms;       /* time into the controls' entrance or exit */
+    uint8_t reveal_mode;     /* 0 at rest, 1 coming in, 2 leaving */
     bool hidden;             /* set_hidden(true): settings is open */
     bool update_shown;
     bool alarm_shown;

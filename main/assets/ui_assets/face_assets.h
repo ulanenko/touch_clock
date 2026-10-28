@@ -7,6 +7,9 @@
 LV_IMAGE_DECLARE(ui_face_thumbs_f0_t0); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f0_t1); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f0_t2); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f10_t0); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f10_t1); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f10_t2); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f1_t0); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f1_t1); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f1_t2); /* 132x132 RGB565 */
@@ -22,3 +25,9 @@ LV_IMAGE_DECLARE(ui_face_thumbs_f6_t2); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f7_t0); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f7_t1); /* 132x132 RGB565 */
 LV_IMAGE_DECLARE(ui_face_thumbs_f7_t2); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f8_t0); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f8_t1); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f8_t2); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f9_t0); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f9_t1); /* 132x132 RGB565 */
+LV_IMAGE_DECLARE(ui_face_thumbs_f9_t2); /* 132x132 RGB565 */

@@ -145,17 +145,23 @@ DEBUG_CALL(call_settings_back, "settings_back")
     DRAG(seg, 360, 620, 360, 220, 120, 150), DRAG(seg, 360, 220, 360, 620, 120, 150), \
     DRAG(seg, 360, 620, 360, 220, 120, 150), DRAG(seg, 360, 220, 360, 620, 120, 900)
 
-#if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
-#define GALLERY_FACE_CALL(id) \
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY || CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_COSTS
+#define SHOW_FACE_CALL(id) \
     static void call_show_face_##id(clock_ui_context_t *ctx) { request_set_current_face(ctx, (clock_face_id_t)(id)); }
-GALLERY_FACE_CALL(0)
-GALLERY_FACE_CALL(1)
-GALLERY_FACE_CALL(2)
-GALLERY_FACE_CALL(3)
-GALLERY_FACE_CALL(4)
-GALLERY_FACE_CALL(5)
-GALLERY_FACE_CALL(6)
-GALLERY_FACE_CALL(7)
+SHOW_FACE_CALL(0)
+SHOW_FACE_CALL(1)
+SHOW_FACE_CALL(2)
+SHOW_FACE_CALL(3)
+SHOW_FACE_CALL(4)
+SHOW_FACE_CALL(5)
+SHOW_FACE_CALL(6)
+SHOW_FACE_CALL(7)
+SHOW_FACE_CALL(8)
+SHOW_FACE_CALL(9)
+SHOW_FACE_CALL(10)
+#endif
+
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
 #define GALLERY_FACE(id) CALL("gallery", call_show_face_##id, 2500), THUMB("face_" #id)
 
 /* Full-resolution screenshots of every face, for design mockups. */
@@ -163,6 +169,16 @@ static const perf_step_t s_steps[] = {
     IDLE("gallery", 3000),
     GALLERY_FACE(0), GALLERY_FACE(1), GALLERY_FACE(2), GALLERY_FACE(3),
     GALLERY_FACE(4), GALLERY_FACE(5), GALLERY_FACE(6), GALLERY_FACE(7),
+    GALLERY_FACE(8), GALLERY_FACE(9), GALLERY_FACE(10),
+};
+#elif CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_COSTS
+/* Each face's first frames after switching to it, then its per-second ticks. */
+#define FACE_COST(id) CALL("face_" #id "_show", call_show_face_##id, 1500), IDLE("face_" #id "_tick", 6000)
+
+static const perf_step_t s_steps[] = {
+    IDLE("idle_face", 2000),
+    FACE_COST(0), FACE_COST(1), FACE_COST(2), FACE_COST(5), FACE_COST(6),
+    FACE_COST(7), FACE_COST(8), FACE_COST(9), FACE_COST(10),
 };
 #elif CONFIG_TOUCH_CLOCK_PERF_TOUR_SHORT
 /* A short tour around the night face picker, to check what stays slow after it. */
@@ -191,6 +207,9 @@ static const perf_step_t s_steps[] = {
     DRAG("face_swipe", 600, 280, 120, 280, 220, 1200),
     DRAG("face_swipe", 120, 280, 600, 280, 220, 1200),
     DRAG("face_swipe", 120, 280, 600, 280, 220, 1200),
+    DRAG("face_slide_slow", 620, 300, 160, 300, 1100, 1200),
+    DRAG("face_slide_slow", 160, 300, 620, 300, 1100, 1200),
+    DRAG("face_slide_cancel", 520, 300, 400, 300, 500, 1000),
     DRAG("theme_pull", 360, 140, 360, 560, 400, 900),
     THUMB("theme_open"),
     CALL("theme_close", call_close_theme, 900),
@@ -399,10 +418,11 @@ static void segment_report(void)
     }
     report_task_cpu(s_seg.name);
     ui_ppa_blend_stats(&ppa_ops, &ppa_us);
-    printf("PERF segx loop=%d name=%s frames=%lu flush_wait_avg=%lld ppa_ops=%lu ppa_us_avg=%lu\n", s_loop, s_seg.name,
-           (unsigned long)s_seg.frames, s_seg.frames ? s_seg.flush_wait_sum / s_seg.frames : 0,
+    printf("PERF segx loop=%d name=%s frames=%lu flush_wait_avg=%lld ppa_ops=%lu ppa_us_avg=%lu psram_free_kb=%u\n",
+           s_loop, s_seg.name, (unsigned long)s_seg.frames, s_seg.frames ? s_seg.flush_wait_sum / s_seg.frames : 0,
            (unsigned long)(ppa_ops - s_seg.ppa_ops_start),
-           (unsigned long)(s_seg.frames ? (ppa_us - s_seg.ppa_us_start) / s_seg.frames : 0));
+           (unsigned long)(s_seg.frames ? (ppa_us - s_seg.ppa_us_start) / s_seg.frames : 0),
+           (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
     printf("PERF seg loop=%d name=%s frames=%lu render_avg=%lld render_p95=%lu render_max=%lld "
            "pre_avg=%lld pre_max=%lld interval_max=%lld slow=%lu white=%lu internal_free_min=%u t_ms=%lld\n",
            s_loop,

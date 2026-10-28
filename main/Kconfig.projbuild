@@ -77,7 +77,7 @@ config TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST
 config TOUCH_CLOCK_PERF_TOUR_START_FACE
         int "Face each loop starts on (-1 keeps the current face)"
         depends on TOUCH_CLOCK_PERF_TOUR
-        range -1 7
+        range -1 10
         default -1
 
 config TOUCH_CLOCK_PERF_TOUR_THUMB_STEP
@@ -96,6 +96,11 @@ config TOUCH_CLOCK_PERF_TOUR_PROFILE_SEGMENTS
 
 config TOUCH_CLOCK_PERF_TOUR_SHORT
         bool "Run a short tour (settings, night face picker, alarms) instead of the full one"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default n
+
+config TOUCH_CLOCK_PERF_TOUR_FACE_COSTS
+        bool "Show every face in turn and time its first frames and its ticks instead of the tour"
         depends on TOUCH_CLOCK_PERF_TOUR
         default n
 

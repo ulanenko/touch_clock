@@ -35,7 +35,9 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <malloc/malloc.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -227,13 +229,17 @@ static const clock_ui_callbacks_t s_callbacks = {
     .on_next_alarm_cancel_undo_requested = cb_noop,
 };
 
+static int s_year = 2026;
+static int s_month = 10;
+static int s_day = 27;
+
 static time_t make_time(int hour, int minute, int second)
 {
     struct tm tm = {0};
 
-    tm.tm_year = 2026 - 1900;
-    tm.tm_mon = 9;
-    tm.tm_mday = 27;
+    tm.tm_year = s_year - 1900;
+    tm.tm_mon = s_month - 1;
+    tm.tm_mday = s_day;
     tm.tm_hour = hour;
     tm.tm_min = minute;
     tm.tm_sec = second;
@@ -850,6 +856,11 @@ static int run_scenario(FILE *f)
                 return 1;
             }
             step(SIM_STEP_MS);
+        } else if (strcmp(cmd, "date") == 0 && sscanf(line, "%*s %d-%d-%d", &x0, &y0, &x1) == 3) {
+            /* The day "clock" sets the time on. */
+            s_year = x0;
+            s_month = y0;
+            s_day = x1;
         } else if (strcmp(cmd, "clock") == 0 && sscanf(line, "%*s %d:%d:%d", &x0, &y0, &x1) == 3) {
             s_now = make_time(x0, y0, x1);
             clock_ui_tick(s_now);
@@ -857,6 +868,16 @@ static int run_scenario(FILE *f)
         } else if (strcmp(cmd, "benchdrag") == 0 &&
                    sscanf(line, "%*s %63s %d %d %d %d %d", a, &x0, &y0, &x1, &y1, &ms) == 6) {
             bench_drag(a, x0, y0, x1, y1, (uint32_t)ms);
+        } else if (strcmp(cmd, "hold") == 0 && sscanf(line, "%*s %d", &ms) == 1) {
+            /* Real seconds to wait, e.g. to inspect the process's heap from outside. */
+            fflush(stdout);
+            sleep((unsigned)ms);
+        } else if (strcmp(cmd, "mem") == 0) {
+            /* Heap in use, to find what holds memory after a step. */
+            malloc_statistics_t stats;
+
+            malloc_zone_statistics(NULL, &stats);
+            printf("mem %zu KB %s", stats.size_in_use / 1024, line + 4);
         } else if (strcmp(cmd, "drawcost") == 0) {
             int n = 15;
 

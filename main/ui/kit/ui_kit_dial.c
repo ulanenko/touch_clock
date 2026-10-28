@@ -473,6 +473,13 @@ void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial)
     dial_draw_opa(layer, dial, LV_OPA_COVER);
 }
 
+void kit_dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t opa)
+{
+    if (opa > LV_OPA_MIN) {
+        dial_draw_opa(layer, dial, opa);
+    }
+}
+
 void kit_dial_prewarm(const kit_dial_t *dial)
 {
     (void)dial_get(dial);

@@ -45,10 +45,13 @@ Recent work focused heavily on:
 - **Sternglas**: light minimalist analog face
 - **Avenir**: bold geometric analog face
 - **Modern Silver**: silver-toned analog face
+- **Ember**: dim analog face in warm reds, hour and minute hands only (themes Ember, Rosewood, Kiln)
+- **Nocturne**: serif time under a night sky, with today's moon (its real phase, maria and craters) over a dark hill (themes Indigo, Candle, Sea glass)
+- **Filament**: nixie-style tubes with ghost digits behind the lit one (themes Amber, Argon, Mercury)
 
 ### Main Interactions
 
-- swipe left/right between faces
+- drag left/right to slide between faces: the faces follow the finger as two discs and settle on release (a quarter of the way or a flick goes on to the next one)
 - swipe up from the bottom for quick actions
 - tap the alarm badge when an alarm is near to cancel only the next occurrence
 - tap the transient `Cancelled` badge again to restore that occurrence

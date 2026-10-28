@@ -115,6 +115,24 @@ void create_wharton_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_sternglas_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_avenir_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_modern_silver_face(clock_ui_context_t *ctx, lv_obj_t *parent);
+/* The evening faces (ui_faces_evening.c): dim, low-glare. */
+void create_ember_face(clock_ui_context_t *ctx, lv_obj_t *parent);
+void create_nocturne_face(clock_ui_context_t *ctx, lv_obj_t *parent);
+void create_filament_face(clock_ui_context_t *ctx, lv_obj_t *parent);
+void update_evening_face(clock_ui_context_t *ctx, clock_face_id_t face);
+const void *evening_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face);
+bool evening_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face, ui_face_ink_t *ink);
+bool evening_face_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3]);
+/* A face shown as one RGB565 canvas over a static layer, repainted only where it changes
+ * (ui_faces.c). Coordinates of `box` are the canvas's own, `offset` from the screen's. */
+void face_hands_create(ui_face_hands_t *hands, lv_obj_t *parent);
+void face_hands_box_init(lv_area_t *box);
+void face_hands_box_points(lv_area_t *box, const lv_point_precise_t *points, size_t count);
+void face_hands_box_area(lv_area_t *box, const lv_area_t *area);
+bool face_hands_begin(ui_face_hands_t *hands, const lv_draw_buf_t *dial, lv_area_t box, int32_t offset,
+                      int32_t shadow_dx, int32_t shadow_dy, lv_layer_t *layer, lv_area_t *dirty);
+void face_hands_finish(ui_face_hands_t *hands, lv_obj_t *dial_img, lv_layer_t *layer, lv_area_t dirty,
+                       int32_t offset);
 void ui_play_click_feedback(void);
 
 clock_face_id_t sanitize_enabled_face(clock_face_id_t face);

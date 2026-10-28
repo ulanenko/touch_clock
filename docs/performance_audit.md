@@ -131,6 +131,16 @@ Not usable on this board: the adapter's `DOUBLE_FULL` and `DOUBLE_DIRECT` modes 
 - **Atelier time-set dial.** The dial's guilloche grooves, rim, minute track and bezel hairline were 55 live LVGL arcs, built when the editor first opened (about 30 ms for the 712 px circle alone). They are now drawn per pixel straight into the dial canvas, weighted to match LVGL's lighter hairlines. The dial is also built 3 s after the chrome, so the editor never waits for it. The build still takes about 100 ms on the clock (numerals and ticks), but while the face is idle.
 - **Kit arcs and dials** are cached tiles instead of live `lv_draw_arc` (4-14 ms of mask setup each on the device).
 
+## Fixed 2026-10-28 (measured on the clock)
+
+- **Atelier hung the clock once PSRAM ran out (task watchdog in both draw tasks).** Atelier started with about 1.3 MB of PSRAM free, and the settings scroll took the rest. Three causes, all fixed:
+  - The settings scroll register drew its moving thumb with the kit ring cache, which built and kept a ~115 KB ring image for every scroll position (24 cache entries, about 3 MB, plus a ring build on scroll frames). The thumb is now an LVGL arc; the track stays cached. Settings scrolling also got faster: 11-15 ms a frame in Instrument and Orbit.
+  - Each hand-drawn face (Sternglas, Avenir, Modern Silver and the three evening faces) kept its own 1 MB view canvas. Only one face shows at a time, so they now share one (`face_hands_*` in `ui_faces.c` tracks the owner; a face that lost it repaints in full). The evening faces also share one base buffer. Together about 7 MB.
+  - The theme and quick sheets share one panel snapshot buffer, and the slide's snapshot of the face it starts on lives in the sheet backdrop buffer (they never run at the same time).
+- **Face slide.** A sideways drag now moves the faces with the finger as two discs (`face_shell_slide_*` in `ui_shell.c`), replacing the circular reveal on release. The snapshots are masked to the disc once when taken, so a frame is two plain image blits and a black gap (18-19 ms a frame; `clip_radius` on every frame cost 26-27 ms). The neighbours are snapshotted ahead while the face is idle (again each minute, every 5 s for faces with seconds), so a drag starts at once. The settle is a critically damped spring that starts at the finger's speed. A release counts as a flick by the drag's average speed when the drag was short, and the finger counts as resting only when touch reads saw it still: a busy UI thread no longer turns a flick into a snap-back.
+- **Evening faces.** `ev_fill` filled the 720x720 base through the per-pixel blend (three divides a pixel): Ember's base took 150-180 ms, now about 45 ms. Nocturne's moon (a shaded sphere with maria and craters, about 30k samples) is cached per theme and day, so retaking the shared base copies it.
+- **Face controls** come in as a sprung sweep round the dial (about 580 ms, only the moving controls and the rim redraw) and fade out in 230 ms.
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High
@@ -183,7 +193,8 @@ Then:
 - `CONFIG_TOUCH_CLOCK_PERF_TOUR` (default off; never ship it) enables `main/ui/ui_perf_tour.c`.
 - 25 s after boot, a virtual touch input plays face taps and swipes, theme pulls, the
   brightness pull, settings flick bursts and slow drags, and the alarm list and editor.
-- It prints one `PERF seg` line per step: render avg/p95/max, layout time, longest frame interval, slow frames and white frames.
+- It prints one `PERF seg` line per step: render avg/p95/max, layout time, longest frame interval, slow frames and white frames, and a `PERF segx` line with the flush wait, PPA time and free PSRAM.
+- `CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_COSTS=y` instead shows every face in turn and times its first frames and its ticks; `CONFIG_TOUCH_CLOCK_PERF_TOUR_START_FACE` picks the face each loop starts on.
 - `scripts/perf_tour.py` builds it in `build_perf/` from the local `sdkconfig`, with the
   console on USB-Serial-JTAG (the UART console is too slow for thumbnails).
 - It flashes, captures, and writes `perf_reports/<time>-<label>/` (`report.md`,

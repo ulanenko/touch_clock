@@ -174,6 +174,24 @@ typedef struct {
     bool valid;
 } ui_face_hands_t;
 
+/* An evening face: its static layer (drawn once per theme and day) and what it shows. */
+/* A face slide snapshot: which face, and what it showed. */
+typedef struct {
+    clock_face_id_t face; /* CLOCK_FACE_COUNT: none */
+    long minute;
+    uint8_t theme;
+    uint8_t language;
+    uint32_t taken_ms;
+} ui_face_slide_shot_t;
+
+typedef struct {
+    ui_face_hands_t view;
+    lv_draw_buf_t *base;
+    uint32_t base_key; /* theme and day the base was drawn for; UINT32_MAX for none */
+    int16_t shown_min; /* minute of the day drawn; -1 for none */
+    int8_t shown_sec;
+} ui_evening_face_t;
+
 #include "ui/ui_settings_state.h"
 
 #include "ui/ui_alarms_state.h"
@@ -256,16 +274,42 @@ typedef struct {
     int wharton_drawn_second_count;
     void *wharton_face_buf;
     lv_obj_t *wharton_face_obj;
-    lv_obj_t *face_reveal_render;
-    lv_obj_t *face_reveal_shell;
-    lv_draw_buf_t *face_reveal_buf;
-    lv_draw_buf_t face_reveal_view;
-    int32_t face_reveal_size;
+    /* The face slide: while a face is dragged sideways (and while it settles), a layer over
+     * everything draws snapshots of the face and of its neighbour as two discs. The
+     * neighbours are snapshotted ahead, while the face is idle. */
+    lv_obj_t *face_slide_render;   /* off-screen image the snapshots are taken from */
+    lv_obj_t *face_slide_shell;    /* the full-screen layer drawing the discs */
+    lv_draw_buf_t *face_slide_bufs[3]; /* [0] the face the slide started on, [1] next, [2] previous */
+    ui_face_slide_shot_t face_slide_shots[3]; /* what each buffer holds */
+    lv_timer_t *face_slide_prepare_timer;
+    float face_slide_spring_x0;    /* the settle: a critically damped spring from x0 at v0 */
+    float face_slide_spring_v0;
+    int32_t face_slide_spring_target;
+    clock_face_id_t face_slide_from;
+    clock_face_id_t face_slide_to;
+    int8_t face_slide_dir;         /* side the neighbour snapshot is of: 1 next, -1 previous, 0 none */
+    int32_t face_slide_offset;     /* x of the starting face's disc */
+    int32_t face_slide_anchor_x;   /* finger x at offset 0 */
+    int32_t face_slide_last_x;
+    uint32_t face_slide_last_ms;   /* when the finger last moved */
+    uint32_t face_slide_read_ms;   /* when the finger was last seen */
+    uint32_t face_slide_start_ms;  /* when the drag began */
+    int32_t face_slide_start_x;    /* and where the finger was then */
+    float face_slide_velocity;     /* px/ms, smoothed */
+    bool face_slide_active;        /* the layer is up: dragging or settling */
+    bool face_slide_dragging;
+    bool face_slide_controls_were_visible;
     lv_obj_t *face_swipe_layer;
-    clock_face_id_t face_reveal_target;
-    bool face_reveal_animating;
     bool face_swipe_tracking;
     lv_point_t face_swipe_start_point;
+    ui_evening_face_t ember;
+    ui_evening_face_t nocturne;
+    ui_evening_face_t filament;
+    /* The evening faces share one base buffer (only one face shows at a time; the view
+     * buffer is shared by every face_hands face); the owner is the face whose base it holds. */
+    lv_draw_buf_t *evening_base_buf;
+    clock_face_id_t evening_owner;
+    uint8_t *filament_ghosts; /* the ten cathode digits' outlines, one tube, A8 */
 } clock_ui_face_state_t;
 
 
