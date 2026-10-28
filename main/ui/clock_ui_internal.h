@@ -165,6 +165,15 @@ typedef struct {
     lv_color_t paper; /* the face's ground under the alarm details */
 } ui_face_ink_t;
 
+/* An analog face as shown: the dial snapshot with the hands drawn in (RGB565), and where
+ * the hands were drawn, so the next tick repaints only there. */
+typedef struct {
+    lv_obj_t *canvas;
+    lv_draw_buf_t *buf;
+    lv_area_t drawn;
+    bool valid;
+} ui_face_hands_t;
+
 #include "ui/ui_settings_state.h"
 
 #include "ui/ui_alarms_state.h"
@@ -218,24 +227,15 @@ typedef struct {
     lv_obj_t *sternglas_snapshot_img;
     lv_draw_buf_t *sternglas_snapshot_buf;
     uint8_t sternglas_snapshot_theme;
-    lv_obj_t *sternglas_composite_img;
-    lv_draw_buf_t *sternglas_composite_buf;
-    lv_obj_t *sternglas_hands_canvas;
-    void *sternglas_hands_buf;
+    ui_face_hands_t sternglas_hands;
     lv_obj_t *avenir_snapshot_img;
     lv_draw_buf_t *avenir_snapshot_buf;
     uint8_t avenir_snapshot_theme;
-    lv_obj_t *avenir_composite_img;
-    lv_draw_buf_t *avenir_composite_buf;
-    lv_obj_t *avenir_hands_canvas;
-    void *avenir_hands_buf;
+    ui_face_hands_t avenir_hands;
     lv_obj_t *modern_silver_snapshot_img;
     lv_draw_buf_t *modern_silver_snapshot_buf;
     uint8_t modern_silver_snapshot_theme;
-    lv_obj_t *modern_silver_composite_img;
-    lv_draw_buf_t *modern_silver_composite_buf;
-    lv_obj_t *modern_silver_hands_canvas;
-    void *modern_silver_hands_buf;
+    ui_face_hands_t modern_silver_hands;
     bool matrix_on[MTX_GRID_X][MTX_GRID_Y];
     /* What the canvas shows, so a tick redraws only the dots that changed. */
     bool matrix_drawn;

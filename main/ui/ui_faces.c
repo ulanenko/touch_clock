@@ -1,6 +1,8 @@
 #include "ui/clock_ui_private.h"
 #include "ui/ui_areas.h"
 
+#include "src/misc/lv_area_private.h"
+
 static const char *s_day_caps[7] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 static const char *s_month_caps[12] = {
     "JAN", "FEB", "MAR", "APR", "MAY", "JUN",
@@ -452,42 +454,136 @@ void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face)
     }
 }
 
-static void refresh_face_composite_snapshot(clock_ui_context_t *ctx, clock_face_id_t face,
-                                            lv_obj_t *snapshot_img,
-                                            lv_obj_t *hands_canvas,
-                                            lv_obj_t *composite_img,
-                                            lv_draw_buf_t **composite_buf)
+/*
+ * Analog hands over a static dial. The face shows one RGB565 canvas: the dial snapshot with
+ * the hands drawn in. A tick puts the dial back only where the hands were and now are, and
+ * redraws the hands there, instead of clearing a full-screen ARGB hands canvas and
+ * snapshotting the whole face again (about 110 ms a tick on the device).
+ *
+ * The hands are drawn in their own coordinates, `offset` from the screen's; the layer's
+ * buffer area is shifted to match, so the drawing code is the same as on a hands canvas.
+ */
+#define FACE_HANDS_PAD 6 /* antialiasing and square line ends past the hands' points */
+
+static void face_hands_create(ui_face_hands_t *hands, lv_obj_t *parent)
 {
-    lv_obj_t *tile;
+    hands->valid = false;
+    if (hands->buf == NULL) {
+        hands->buf = lv_draw_buf_create(SCREEN_SIZE, SCREEN_SIZE, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    }
+    hands->canvas = lv_canvas_create(parent);
+    if (hands->buf != NULL) {
+        lv_canvas_set_draw_buf(hands->canvas, hands->buf);
+    }
+    lv_obj_set_style_bg_opa(hands->canvas, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(hands->canvas, 0, 0);
+    lv_obj_set_style_pad_all(hands->canvas, 0, 0);
+    lv_obj_clear_flag(hands->canvas, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_add_flag(hands->canvas, LV_OBJ_FLAG_HIDDEN);
+}
 
-    if (snapshot_img == NULL || hands_canvas == NULL || composite_img == NULL || composite_buf == NULL) {
-        return;
+static void face_hands_box_init(lv_area_t *box)
+{
+    box->x1 = INT32_MAX;
+    box->y1 = INT32_MAX;
+    box->x2 = INT32_MIN;
+    box->y2 = INT32_MIN;
+}
+
+static void face_hands_box_points(lv_area_t *box, const lv_point_precise_t *points, size_t count)
+{
+    for (size_t i = 0; i < count; ++i) {
+        int32_t x = (int32_t)floorf((float)points[i].x);
+        int32_t y = (int32_t)floorf((float)points[i].y);
+
+        box->x1 = LV_MIN(box->x1, x);
+        box->y1 = LV_MIN(box->y1, y);
+        box->x2 = LV_MAX(box->x2, x + 1);
+        box->y2 = LV_MAX(box->y2, y + 1);
+    }
+}
+
+static void face_hands_box_area(lv_area_t *box, const lv_area_t *area)
+{
+    box->x1 = LV_MIN(box->x1, area->x1);
+    box->y1 = LV_MIN(box->y1, area->y1);
+    box->x2 = LV_MAX(box->x2, area->x2);
+    box->y2 = LV_MAX(box->y2, area->y2);
+}
+
+/* Starts a tick: `box` holds every point drawn, before shadow offsets (up to shadow_dx,
+ * shadow_dy, both down and right). Restores the dial under the old and new hands and sets
+ * the layer to draw only there. False when there is nothing to draw on. */
+static bool face_hands_begin(ui_face_hands_t *hands, const lv_draw_buf_t *dial, lv_area_t box, int32_t offset,
+                             int32_t shadow_dx, int32_t shadow_dy, lv_layer_t *layer, lv_area_t *dirty)
+{
+    lv_area_t buf_area = {-offset, -offset, SCREEN_SIZE - 1 - offset, SCREEN_SIZE - 1 - offset};
+    int32_t ext;
+    int32_t width;
+
+    if (hands->canvas == NULL || hands->buf == NULL || dial == NULL || dial->header.cf != LV_COLOR_FORMAT_RGB565 ||
+        dial->header.w < SCREEN_SIZE || dial->header.h < SCREEN_SIZE) {
+        return false;
+    }
+    box.x1 -= FACE_HANDS_PAD;
+    box.y1 -= FACE_HANDS_PAD;
+    box.x2 += shadow_dx + FACE_HANDS_PAD;
+    box.y2 += shadow_dy + FACE_HANDS_PAD;
+    if (hands->valid) {
+        lv_area_join(dirty, &hands->drawn, &box);
+    } else {
+        *dirty = buf_area;
+    }
+    hands->drawn = box;
+    if (!lv_area_intersect(dirty, dirty, &buf_area)) {
+        return false;
     }
 
-    tile = ctx->tiles[face];
-    if (tile == NULL) {
-        return;
+    /* The dial snapshot may carry an extended draw margin round the screen. */
+    ext = ((int32_t)dial->header.w - SCREEN_SIZE) / 2;
+    width = lv_area_get_width(dirty);
+    for (int32_t y = dirty->y1; y <= dirty->y2; ++y) {
+        uint8_t *dst = hands->buf->data + (size_t)(y + offset) * hands->buf->header.stride +
+                       (size_t)(dirty->x1 + offset) * sizeof(uint16_t);
+        const uint8_t *src = dial->data + (size_t)(y + offset + ext) * dial->header.stride +
+                             (size_t)(dirty->x1 + offset + ext) * sizeof(uint16_t);
+
+        memcpy(dst, src, (size_t)width * sizeof(uint16_t));
     }
 
-    lv_obj_clear_flag(snapshot_img, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(hands_canvas, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(composite_img, LV_OBJ_FLAG_HIDDEN);
+    lv_canvas_init_layer(hands->canvas, layer);
+    layer->buf_area = buf_area;
+    layer->_clip_area = *dirty;
+    layer->phy_clip_area = *dirty;
+    return true;
+}
 
-    if (*composite_buf == NULL) {
-        *composite_buf = lv_snapshot_create_draw_buf(tile, LV_COLOR_FORMAT_RGB565);
-        if (*composite_buf == NULL) {
-            return;
+/* Finishes the drawing and shows it: the whole face the first time (in place of the dial
+ * snapshot), afterwards only the repainted area. */
+static void face_hands_finish(ui_face_hands_t *hands, lv_obj_t *dial_img, lv_layer_t *layer, lv_area_t dirty,
+                              int32_t offset)
+{
+    lv_area_t coords;
+
+    while (layer->draw_task_head != NULL) {
+        lv_draw_dispatch_wait_for_request();
+        if (!lv_draw_dispatch_layer(lv_obj_get_display(hands->canvas), layer)) {
+            lv_draw_wait_for_finish();
+            lv_draw_dispatch_request();
         }
     }
-
-    if (lv_snapshot_take_to_draw_buf(tile, LV_COLOR_FORMAT_RGB565, *composite_buf) != LV_RESULT_OK) {
+    if (!hands->valid) {
+        hands->valid = true;
+        lv_obj_clear_flag(hands->canvas, LV_OBJ_FLAG_HIDDEN);
+        if (dial_img != NULL) {
+            lv_obj_add_flag(dial_img, LV_OBJ_FLAG_HIDDEN);
+        }
+        lv_obj_invalidate(hands->canvas);
         return;
     }
-
-    lv_image_set_src(composite_img, *composite_buf);
-    lv_obj_clear_flag(composite_img, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(snapshot_img, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(hands_canvas, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_get_coords(hands->canvas, &coords);
+    lv_area_move(&dirty, coords.x1 + offset, coords.y1 + offset);
+    lv_obj_invalidate_area(hands->canvas, &dirty);
 }
 
 static void face_set_label_text_if_changed(lv_obj_t *label, const char *text)
@@ -853,14 +949,11 @@ const void *ui_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face
     case CLOCK_FACE_WHARTON:
         return (ctx->faces.wharton_face_obj != NULL) ? lv_canvas_get_draw_buf(ctx->faces.wharton_face_obj) : NULL;
     case CLOCK_FACE_STERNGLAS:
-        return (ctx->faces.sternglas_composite_buf != NULL) ? ctx->faces.sternglas_composite_buf
-                                                            : ctx->faces.sternglas_snapshot_buf;
+        return (ctx->faces.sternglas_hands.valid) ? ctx->faces.sternglas_hands.buf : ctx->faces.sternglas_snapshot_buf;
     case CLOCK_FACE_AVENIR:
-        return (ctx->faces.avenir_composite_buf != NULL) ? ctx->faces.avenir_composite_buf
-                                                         : ctx->faces.avenir_snapshot_buf;
+        return (ctx->faces.avenir_hands.valid) ? ctx->faces.avenir_hands.buf : ctx->faces.avenir_snapshot_buf;
     case CLOCK_FACE_MODERN_SILVER:
-        return (ctx->faces.modern_silver_composite_buf != NULL) ? ctx->faces.modern_silver_composite_buf
-                                                                : ctx->faces.modern_silver_snapshot_buf;
+        return (ctx->faces.modern_silver_hands.valid) ? ctx->faces.modern_silver_hands.buf : ctx->faces.modern_silver_snapshot_buf;
     default:
         return ctx->faces.digital_snapshot_buf;
     }
@@ -1585,6 +1678,7 @@ static void rebuild_sternglas_snapshot(clock_ui_context_t *ctx)
     snapshot_obj_to_image(root, ctx->faces.sternglas_snapshot_img, &ctx->faces.sternglas_snapshot_buf);
     lv_obj_delete(root);
     ctx->faces.sternglas_snapshot_theme = face_theme_value(ctx, CLOCK_FACE_STERNGLAS);
+    ctx->faces.sternglas_hands.valid = false;
 }
 
 void create_sternglas_face(clock_ui_context_t *ctx, lv_obj_t *parent)
@@ -1599,26 +1693,7 @@ void create_sternglas_face(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_clear_flag(ctx->faces.sternglas_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
     rebuild_sternglas_snapshot(ctx);
 
-    if (ctx->faces.sternglas_hands_buf == NULL) {
-        ctx->faces.sternglas_hands_buf = heap_caps_malloc(STERNGLAS_HANDS_CANVAS_SIZE * STERNGLAS_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
-                                                          MALLOC_CAP_SPIRAM);
-    }
-    ctx->faces.sternglas_hands_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(ctx->faces.sternglas_hands_canvas,
-                         ctx->faces.sternglas_hands_buf,
-                         STERNGLAS_HANDS_CANVAS_SIZE,
-                         STERNGLAS_HANDS_CANVAS_SIZE,
-                         LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_style_bg_opa(ctx->faces.sternglas_hands_canvas, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.sternglas_hands_canvas, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.sternglas_hands_canvas, 0, 0);
-    lv_obj_center(ctx->faces.sternglas_hands_canvas);
-    ctx->faces.sternglas_composite_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(ctx->faces.sternglas_composite_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.sternglas_composite_img, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.sternglas_composite_img, 0, 0);
-    lv_obj_clear_flag(ctx->faces.sternglas_composite_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->faces.sternglas_composite_img, LV_OBJ_FLAG_HIDDEN);
+    face_hands_create(&ctx->faces.sternglas_hands, parent);
 }
 
 static void sternglas_transform_point(float x,
@@ -1713,8 +1788,10 @@ static void update_sternglas_face(clock_ui_context_t *ctx)
     lv_point_precise_t min_pts[5];
     lv_point_precise_t hour_pts[5];
     lv_point_precise_t shadow_pts[5];
+    lv_area_t box;
+    lv_area_t dirty;
 
-    if (ctx->faces.sternglas_hands_canvas == NULL) {
+    if (ctx->faces.sternglas_hands.canvas == NULL) {
         return;
     }
 
@@ -1729,8 +1806,15 @@ static void update_sternglas_face(clock_ui_context_t *ctx)
     translate_precise_points(min_pts, 5, -STERNGLAS_HANDS_CANVAS_OFFSET, -STERNGLAS_HANDS_CANVAS_OFFSET);
     translate_precise_points(hour_pts, 5, -STERNGLAS_HANDS_CANVAS_OFFSET, -STERNGLAS_HANDS_CANVAS_OFFSET);
 
-    lv_canvas_fill_bg(ctx->faces.sternglas_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
-    lv_canvas_init_layer(ctx->faces.sternglas_hands_canvas, &layer);
+    face_hands_box_init(&box);
+    face_hands_box_points(&box, min_pts, 5);
+    face_hands_box_points(&box, hour_pts, 5);
+    face_hands_box_area(&box, &(lv_area_t){STERNGLAS_HANDS_CENTER_X - 12, STERNGLAS_HANDS_CENTER_Y - 12,
+                                           STERNGLAS_HANDS_CENTER_X + 11, STERNGLAS_HANDS_CENTER_Y + 11});
+    if (!face_hands_begin(&ctx->faces.sternglas_hands, ctx->faces.sternglas_snapshot_buf, box,
+                          STERNGLAS_HANDS_CANVAS_OFFSET, 3, 5, &layer, &dirty)) {
+        return;
+    }
 
     for (int layer_idx = 0; layer_idx < 3; ++layer_idx) {
         for (int i = 0; i < 5; ++i) {
@@ -1781,12 +1865,8 @@ static void update_sternglas_face(clock_ui_context_t *ctx)
                             .x2 = STERNGLAS_HANDS_CENTER_X + 4, .y2 = STERNGLAS_HANDS_CENTER_Y + 4};
     lv_draw_rect(&layer, &dot_dsc, &inner_area);
 
-    lv_canvas_finish_layer(ctx->faces.sternglas_hands_canvas, &layer);
-    refresh_face_composite_snapshot(ctx, CLOCK_FACE_STERNGLAS,
-                                    ctx->faces.sternglas_snapshot_img,
-                                    ctx->faces.sternglas_hands_canvas,
-                                    ctx->faces.sternglas_composite_img,
-                                    &ctx->faces.sternglas_composite_buf);
+    face_hands_finish(&ctx->faces.sternglas_hands, ctx->faces.sternglas_snapshot_img, &layer, dirty,
+                      STERNGLAS_HANDS_CANVAS_OFFSET);
 }
 
 static void avenir_transform_point(float x,
@@ -1936,6 +2016,7 @@ static void rebuild_avenir_snapshot(clock_ui_context_t *ctx)
     snapshot_obj_to_image(root, ctx->faces.avenir_snapshot_img, &ctx->faces.avenir_snapshot_buf);
     lv_obj_delete(root);
     ctx->faces.avenir_snapshot_theme = face_theme_value(ctx, CLOCK_FACE_AVENIR);
+    ctx->faces.avenir_hands.valid = false;
 }
 
 void create_avenir_face(clock_ui_context_t *ctx, lv_obj_t *parent)
@@ -1950,26 +2031,7 @@ void create_avenir_face(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_clear_flag(ctx->faces.avenir_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
     rebuild_avenir_snapshot(ctx);
 
-    if (ctx->faces.avenir_hands_buf == NULL) {
-        ctx->faces.avenir_hands_buf = heap_caps_malloc(AVENIR_HANDS_CANVAS_SIZE * AVENIR_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
-                                                       MALLOC_CAP_SPIRAM);
-    }
-    ctx->faces.avenir_hands_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(ctx->faces.avenir_hands_canvas,
-                         ctx->faces.avenir_hands_buf,
-                         AVENIR_HANDS_CANVAS_SIZE,
-                         AVENIR_HANDS_CANVAS_SIZE,
-                         LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_style_bg_opa(ctx->faces.avenir_hands_canvas, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.avenir_hands_canvas, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.avenir_hands_canvas, 0, 0);
-    lv_obj_center(ctx->faces.avenir_hands_canvas);
-    ctx->faces.avenir_composite_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(ctx->faces.avenir_composite_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.avenir_composite_img, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.avenir_composite_img, 0, 0);
-    lv_obj_clear_flag(ctx->faces.avenir_composite_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->faces.avenir_composite_img, LV_OBJ_FLAG_HIDDEN);
+    face_hands_create(&ctx->faces.avenir_hands, parent);
 }
 
 static void update_avenir_face(clock_ui_context_t *ctx)
@@ -2005,8 +2067,10 @@ static void update_avenir_face(clock_ui_context_t *ctx)
     lv_point_precise_t second_pts[2];
     lv_point_precise_t shadow_tri[3];
     lv_point_precise_t second_shadow_pts[2];
+    lv_area_t box;
+    lv_area_t dirty;
 
-    if (ctx->faces.avenir_hands_canvas == NULL) {
+    if (ctx->faces.avenir_hands.canvas == NULL) {
         return;
     }
 
@@ -2024,8 +2088,16 @@ static void update_avenir_face(clock_ui_context_t *ctx)
     translate_precise_points(minute_pts, 3, -AVENIR_HANDS_CANVAS_OFFSET, -AVENIR_HANDS_CANVAS_OFFSET);
     translate_precise_points(second_pts, 2, -AVENIR_HANDS_CANVAS_OFFSET, -AVENIR_HANDS_CANVAS_OFFSET);
 
-    lv_canvas_fill_bg(ctx->faces.avenir_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
-    lv_canvas_init_layer(ctx->faces.avenir_hands_canvas, &layer);
+    face_hands_box_init(&box);
+    face_hands_box_points(&box, hour_pts, 3);
+    face_hands_box_points(&box, minute_pts, 3);
+    face_hands_box_points(&box, second_pts, 2);
+    face_hands_box_area(&box, &(lv_area_t){AVENIR_HANDS_CENTER_X - avenir_size(7.0f), AVENIR_HANDS_CENTER_Y - avenir_size(7.0f),
+                                           AVENIR_HANDS_CENTER_X + avenir_size(7.0f), AVENIR_HANDS_CENTER_Y + avenir_size(7.0f)});
+    if (!face_hands_begin(&ctx->faces.avenir_hands, ctx->faces.avenir_snapshot_buf, box, AVENIR_HANDS_CANVAS_OFFSET,
+                          2, 3, &layer, &dirty)) {
+        return;
+    }
 
     for (int layer_idx = 0; layer_idx < 2; ++layer_idx) {
         for (int i = 0; i < 3; ++i) {
@@ -2092,12 +2164,8 @@ static void update_avenir_face(clock_ui_context_t *ctx)
     };
     lv_draw_rect(&layer, &dot_dsc, &pivot_area);
 
-    lv_canvas_finish_layer(ctx->faces.avenir_hands_canvas, &layer);
-    refresh_face_composite_snapshot(ctx, CLOCK_FACE_AVENIR,
-                                    ctx->faces.avenir_snapshot_img,
-                                    ctx->faces.avenir_hands_canvas,
-                                    ctx->faces.avenir_composite_img,
-                                    &ctx->faces.avenir_composite_buf);
+    face_hands_finish(&ctx->faces.avenir_hands, ctx->faces.avenir_snapshot_img, &layer, dirty,
+                      AVENIR_HANDS_CANVAS_OFFSET);
 }
 
 static void modern_transform_point(float x,
@@ -2195,6 +2263,7 @@ static void rebuild_modern_silver_snapshot(clock_ui_context_t *ctx)
     snapshot_obj_to_image(root, ctx->faces.modern_silver_snapshot_img, &ctx->faces.modern_silver_snapshot_buf);
     lv_obj_delete(root);
     ctx->faces.modern_silver_snapshot_theme = face_theme_value(ctx, CLOCK_FACE_MODERN_SILVER);
+    ctx->faces.modern_silver_hands.valid = false;
 }
 
 void create_modern_silver_face(clock_ui_context_t *ctx, lv_obj_t *parent)
@@ -2209,26 +2278,7 @@ void create_modern_silver_face(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_clear_flag(ctx->faces.modern_silver_snapshot_img, LV_OBJ_FLAG_SCROLLABLE);
     rebuild_modern_silver_snapshot(ctx);
 
-    if (ctx->faces.modern_silver_hands_buf == NULL) {
-        ctx->faces.modern_silver_hands_buf = heap_caps_malloc(MODERN_HANDS_CANVAS_SIZE * MODERN_HANDS_CANVAS_SIZE * sizeof(lv_color32_t),
-                                                              MALLOC_CAP_SPIRAM);
-    }
-    ctx->faces.modern_silver_hands_canvas = lv_canvas_create(parent);
-    lv_canvas_set_buffer(ctx->faces.modern_silver_hands_canvas,
-                         ctx->faces.modern_silver_hands_buf,
-                         MODERN_HANDS_CANVAS_SIZE,
-                         MODERN_HANDS_CANVAS_SIZE,
-                         LV_COLOR_FORMAT_ARGB8888);
-    lv_obj_set_style_bg_opa(ctx->faces.modern_silver_hands_canvas, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.modern_silver_hands_canvas, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.modern_silver_hands_canvas, 0, 0);
-    lv_obj_center(ctx->faces.modern_silver_hands_canvas);
-    ctx->faces.modern_silver_composite_img = lv_image_create(parent);
-    lv_obj_set_style_bg_opa(ctx->faces.modern_silver_composite_img, LV_OPA_TRANSP, 0);
-    lv_obj_set_style_border_width(ctx->faces.modern_silver_composite_img, 0, 0);
-    lv_obj_set_style_pad_all(ctx->faces.modern_silver_composite_img, 0, 0);
-    lv_obj_clear_flag(ctx->faces.modern_silver_composite_img, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_add_flag(ctx->faces.modern_silver_composite_img, LV_OBJ_FLAG_HIDDEN);
+    face_hands_create(&ctx->faces.modern_silver_hands, parent);
 }
 
 static void update_modern_silver_face(clock_ui_context_t *ctx)
@@ -2266,8 +2316,10 @@ static void update_modern_silver_face(clock_ui_context_t *ctx)
     lv_point_precise_t second_pts[2];
     lv_point_precise_t shadow_quad[4];
     lv_point_precise_t second_shadow_pts[2];
+    lv_area_t box;
+    lv_area_t dirty;
 
-    if (ctx->faces.modern_silver_hands_canvas == NULL) {
+    if (ctx->faces.modern_silver_hands.canvas == NULL) {
         return;
     }
 
@@ -2285,8 +2337,16 @@ static void update_modern_silver_face(clock_ui_context_t *ctx)
     translate_precise_points(minute_pts, 4, -MODERN_HANDS_CANVAS_OFFSET, -MODERN_HANDS_CANVAS_OFFSET);
     translate_precise_points(second_pts, 2, -MODERN_HANDS_CANVAS_OFFSET, -MODERN_HANDS_CANVAS_OFFSET);
 
-    lv_canvas_fill_bg(ctx->faces.modern_silver_hands_canvas, lv_color_black(), LV_OPA_TRANSP);
-    lv_canvas_init_layer(ctx->faces.modern_silver_hands_canvas, &layer);
+    face_hands_box_init(&box);
+    face_hands_box_points(&box, hour_pts, 4);
+    face_hands_box_points(&box, minute_pts, 4);
+    face_hands_box_points(&box, second_pts, 2);
+    face_hands_box_area(&box, &(lv_area_t){MODERN_HANDS_CENTER_X - modern_size(11.0f), MODERN_HANDS_CENTER_Y - modern_size(11.0f),
+                                           MODERN_HANDS_CENTER_X + modern_size(11.0f), MODERN_HANDS_CENTER_Y + modern_size(11.0f)});
+    if (!face_hands_begin(&ctx->faces.modern_silver_hands, ctx->faces.modern_silver_snapshot_buf, box,
+                          MODERN_HANDS_CANVAS_OFFSET, 2, 3, &layer, &dirty)) {
+        return;
+    }
 
     for (int layer_idx = 0; layer_idx < 2; ++layer_idx) {
         for (int i = 0; i < 4; ++i) {
@@ -2354,10 +2414,6 @@ static void update_modern_silver_face(clock_ui_context_t *ctx)
     };
     lv_draw_rect(&layer, &dot_dsc, &pivot_area);
 
-    lv_canvas_finish_layer(ctx->faces.modern_silver_hands_canvas, &layer);
-    refresh_face_composite_snapshot(ctx, CLOCK_FACE_MODERN_SILVER,
-                                    ctx->faces.modern_silver_snapshot_img,
-                                    ctx->faces.modern_silver_hands_canvas,
-                                    ctx->faces.modern_silver_composite_img,
-                                    &ctx->faces.modern_silver_composite_buf);
+    face_hands_finish(&ctx->faces.modern_silver_hands, ctx->faces.modern_silver_snapshot_img, &layer, dirty,
+                      MODERN_HANDS_CANVAS_OFFSET);
 }
