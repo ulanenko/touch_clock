@@ -30,7 +30,7 @@
 #endif
 
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLES
-static const char *const s_style_names[CLOCK_UI_STYLE_COUNT] = {"instrument", "orbit", "atelier"};
+static const char *const s_style_names[CLOCK_UI_STYLE_COUNT] = {"instrument", "orbit", "atelier", "glass"};
 #define PERF_STYLE_SETTLE_MS 2500
 #endif
 

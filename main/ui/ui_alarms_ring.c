@@ -21,6 +21,7 @@
 #include "assets/skin_fonts/skin_fonts.h"
 #include "assets/ui_assets/alarms_assets.h"
 #include "esp_heap_caps.h"
+#include "ui/kit/ui_glass.h"
 
 #define MATH_MAX_INPUT 2U
 #define HOLD_MS 1500
@@ -236,6 +237,43 @@ static void render_orbit_bg(clock_ui_context_t *ctx)
     lv_canvas_finish_layer(ctx->alarms.ring_bg, &layer);
 }
 
+/* Liquid Glass: the face frosted behind, a warm glow rising from six o'clock, and the slide as
+ * a glass tube along the knob's path with "slide to stop" set inside it. */
+static void render_glass_bg(clock_ui_context_t *ctx)
+{
+    const ui_skin_t *sk = ui_skin();
+    lv_draw_buf_t *buf = lv_canvas_get_draw_buf(ctx->alarms.ring_bg);
+    lv_layer_t layer;
+
+    ui_glass_frost_blit(buf, 0, 0);
+    for (int32_t y = 0; y < KIT_SCREEN; y++) {
+        uint16_t *row = (uint16_t *)(buf->data + (size_t)y * buf->header.stride);
+
+        for (int32_t x = 0; x < KIT_SCREEN; x++) {
+            float dx = ((float)x - 360.0f) / 620.0f;
+            float dy = ((float)y - 760.0f) / 470.0f;
+            float g = LV_MAX(0.0f, 1.0f - sqrtf(dx * dx + dy * dy));
+            uint16_t v = row[x];
+            float r = (float)((v >> 11) & 0x1F) * (255.0f / 31.0f);
+            float gr = (float)((v >> 5) & 0x3F) * (255.0f / 63.0f);
+            float b = (float)(v & 0x1F) * (255.0f / 31.0f);
+
+            g = g * g * (3.0f - 2.0f * g);
+            r = r * (1.0f - 0.55f * g) + 236.0f * 0.75f * g;
+            gr = gr * (1.0f - 0.55f * g) + 112.0f * 0.75f * g;
+            b = b * (1.0f - 0.55f * g) + 28.0f * 0.75f * g;
+            row[x] = rgb565_dither(r, gr, b, x, y);
+        }
+    }
+    /* The tube spans exactly the knob's travel (O_SLIDE_END..O_SLIDE_START, as LVGL angles). */
+    ui_glass_arc_blend(buf, 0, 0, KIT_CENTER, KIT_CENTER, O_SLIDE_R, 76, O_SLIDE_END / 10 - 90, O_SLIDE_START / 10 - 90,
+                       UI_GLASS_CLEAR, lv_color_black());
+    lv_canvas_init_layer(ctx->alarms.ring_bg, &layer);
+    draw_curved_text(&layer, alm_str(ctx, &alm_s_slide_to_stop), &or_medium_22, sk->text_2, KIT_CENTER, KIT_CENTER,
+                     O_SLIDE_R, 1);
+    lv_canvas_finish_layer(ctx->alarms.ring_bg, &layer);
+}
+
 static void render_atelier_bg(clock_ui_context_t *ctx)
 {
     const ui_skin_t *sk = ui_skin();
@@ -299,6 +337,24 @@ static void ensure_background(clock_ui_context_t *ctx)
     clock_ui_alarm_state_t *a = &ctx->alarms;
 
     if (ALM_IS_INSTRUMENT()) {
+        return;
+    }
+    if (ui_skin_is_glass()) {
+        /* A full-screen canvas, baked again when the face behind or the language changed. */
+        if (a->ring_bg == NULL) {
+            a->ring_bg = alm_canvas(a->ring_main, KIT_SCREEN, KIT_SCREEN, &a->ring_bg_buf);
+            if (a->ring_bg == NULL) {
+                return;
+            }
+            lv_obj_set_pos(a->ring_bg, 0, 0);
+            lv_obj_move_to_index(a->ring_bg, 0);
+        }
+        if (a->ring_bg_glass != ui_glass_backdrop_generation() || a->ring_bg_language != ctx->settings->language + 1) {
+            a->ring_bg_glass = ui_glass_backdrop_generation();
+            a->ring_bg_language = (uint8_t)(ctx->settings->language + 1);
+            render_glass_bg(ctx);
+            lv_obj_invalidate(a->ring_bg);
+        }
         return;
     }
     if (a->ring_bg != NULL) {
@@ -1209,6 +1265,7 @@ void alm_ring_sync(clock_ui_context_t *ctx, time_t now)
         return;
     }
     if (!shown) {
+        face_glass_capture(ctx, 1 /* UI_GLASS_PAGE */);
         ensure_background(ctx);
         reset_stop_controls(ctx);
         math_set_visible(ctx, false);

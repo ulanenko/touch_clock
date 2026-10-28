@@ -9,6 +9,7 @@
  * - At rest the panel is live over the live face under a translucent overlay, so the face
  *   keeps ticking (and a theme picked in the sheet shows at once below it).
  */
+#include "ui/kit/ui_glass.h"
 #include "ui/ui_face_chrome.h"
 #include "ui/ui_areas.h"
 
@@ -82,6 +83,8 @@ static face_sheet_t *s_snapshot_owner;
 static bool sheet_take_snapshot(face_sheet_t *s)
 {
     lv_draw_buf_t **buf = &s_snapshot_pool;
+    int32_t y_was = LV_COORD_MAX;
+    bool ok;
 
     if (s_snapshot_owner != s && s_snapshot_owner != NULL) {
         if (s_snapshot_owner->snapshot_visible) {
@@ -92,19 +95,32 @@ static bool sheet_take_snapshot(face_sheet_t *s)
     }
     s_snapshot_owner = s;
     s->snapshot_buf = NULL;
+    /* Liquid Glass: the glass refracts what is behind it where the sheet comes to rest, so the
+     * snapshot is taken there (a closed sheet sits off the screen, with nothing behind it). */
+    if (ui_skin_is_glass()) {
+        y_was = lv_obj_get_y(s->panel);
+        lv_obj_set_y(s->panel, s->open_y);
+    }
     lv_obj_update_layout(s->panel);
+    ok = true;
     if (*buf == NULL || lv_snapshot_reshape_draw_buf(s->panel, *buf) != LV_RESULT_OK) {
         if (*buf != NULL) {
             lv_draw_buf_destroy(*buf);
         }
         *buf = lv_snapshot_create_draw_buf(s->panel, LV_COLOR_FORMAT_RGB565);
-        if (*buf == NULL) {
-            return false;
-        }
+        ok = *buf != NULL;
     }
-    if (lv_snapshot_take_to_draw_buf(s->panel, LV_COLOR_FORMAT_RGB565, *buf) != LV_RESULT_OK) {
+    if (ok && lv_snapshot_take_to_draw_buf(s->panel, LV_COLOR_FORMAT_RGB565, *buf) != LV_RESULT_OK) {
+        ok = false;
+    }
+    if (y_was != LV_COORD_MAX) {
+        lv_obj_set_y(s->panel, y_was);
+        lv_obj_update_layout(s->panel);
+    }
+    if (!ok) {
         return false;
     }
+    s->snapshot_glass = ui_glass_backdrop_generation();
     s->snapshot_buf = *buf;
     lv_image_set_src(s->snapshot_img, *buf);
     lv_obj_invalidate(s->snapshot_img);
@@ -120,7 +136,8 @@ static void sheet_set_snapshot_visible(face_sheet_t *s, bool visible)
     }
     y = sheet_current_y(s);
     if (visible) {
-        if (s->snapshot_dirty || s->snapshot_buf == NULL) {
+        if (s->snapshot_dirty || s->snapshot_buf == NULL ||
+            (ui_skin_is_glass() && s->snapshot_glass != ui_glass_backdrop_generation())) {
             if (!sheet_take_snapshot(s)) {
                 return; /* no memory: the live panel moves instead */
             }

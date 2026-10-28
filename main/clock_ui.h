@@ -30,6 +30,7 @@ typedef struct {
     void (*on_set_ui_style)(void *user_ctx, clock_ui_style_t style);
     void (*on_set_default_alarm_sound)(void *user_ctx, uint8_t sound);
     void (*on_set_night_mode_enabled)(void *user_ctx, bool enabled);
+    void (*on_set_night_now)(void *user_ctx, bool night);
     void (*on_set_night_schedule)(void *user_ctx,
                                   uint8_t start_hour,
                                   uint8_t start_minute,

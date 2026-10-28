@@ -16,7 +16,8 @@
 #include "lvgl.h"
 
 typedef struct {
-    clock_ui_style_t style;
+    clock_ui_style_t style; /* the layout family: Liquid Glass lays out as Orbit */
+    bool glass;             /* surfaces are glass over the face (ui_glass.h) */
 
     /* Surfaces, from the deepest to the most raised. */
     lv_color_t bg;          /* screen ground of full pages */
@@ -95,6 +96,8 @@ typedef struct {
 
 const ui_skin_t *ui_skin(void);
 clock_ui_style_t ui_skin_style(void);
+/* Liquid Glass: Orbit's layouts (ui_skin_style() is ORBIT) with glass surfaces. */
+bool ui_skin_is_glass(void);
 void ui_skin_set_style(clock_ui_style_t style);
 
 /* Localised display name of a style, for the style picker. */

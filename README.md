@@ -49,6 +49,13 @@ Recent work focused heavily on:
 - **Nocturne**: serif time under a night sky, with today's moon (its real phase, maria and craters) over a dark hill (themes Indigo, Candle, Sea glass)
 - **Filament**: nixie-style tubes with ghost digits behind the lit one (themes Amber, Argon, Mercury)
 
+### Interface Styles
+
+- **Instrument**: graphite keys with one orange signal
+- **Orbit**: round, bright and colourful
+- **Atelier**: ink and gilt, like a fine watch
+- **Liquid Glass**: Orbit's layouts in glass over the face; each glass shape refracts what is behind it through a convex bezel (Snell's law, with dispersion), frosted, tinted and lit at its rim
+
 ### Main Interactions
 
 - drag left/right to slide between faces: the faces follow the finger as two discs and settle on release (a quarter of the way or a flick goes on to the next one)
@@ -60,6 +67,8 @@ Recent work focused heavily on:
 
 - alarms
 - settings / Wi-Fi
+- night now / day now
+- touch sound
 - brightness
 
 The sheet is a draggable pull-up/pull-down surface, not a simple pop-in menu.
@@ -104,13 +113,8 @@ These points matter because they differ from some earlier documentation and earl
 - alarms are no longer embedded inside settings
 - settings are no longer built around the old tabbed form
 - the quick-actions sheet includes manual brightness again
-- dynamic runtime brightness modulation is currently **not** active
-
-That last point is intentional for now:
-
-- the display uses the manual base brightness setting
-- sunrise brightness ramp is not currently applied to the physical panel
-- night mode still exists as a scheduling/config surface, but display brightness is currently pinned to manual brightness until a cleaner brightness path is reintroduced
+- brightness follows the runtime policy: base brightness by day, night brightness inside the night window (or after the Night key), a sunrise ramp before alarms, full brightness while ringing
+- the quick sheet's Night key switches night mode on or off now, until the night window next ends; the schedule itself is set in Settings › Night
 
 ## Architecture
 

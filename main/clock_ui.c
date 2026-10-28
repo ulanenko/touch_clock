@@ -420,6 +420,13 @@ void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled)
     }
 }
 
+void request_set_night_now(clock_ui_context_t *ctx, bool night)
+{
+    if (ctx->callbacks.on_set_night_now != NULL) {
+        ctx->callbacks.on_set_night_now(ctx->user_ctx, night);
+    }
+}
+
 void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t start_hour,
                                 uint8_t start_minute,

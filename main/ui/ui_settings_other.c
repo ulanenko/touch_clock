@@ -26,6 +26,9 @@ static const ui_l10n_str_t s_style_desc[CLOCK_UI_STYLE_COUNT] = {
     [CLOCK_UI_STYLE_ATELIER] = UI_L10N_STR("Ink and gilt, like a fine watch", "Atrament i złoto jak w zegarku",
                                            "Чорнило й позолота, як годинник", "Чернила и позолота, как часы",
                                            "Inkt en goud, als een fijn horloge"),
+    [CLOCK_UI_STYLE_GLASS] = UI_L10N_STR("Glass that bends the face beneath", "Szkło, które załamuje tarczę",
+                                         "Скло, що заломлює циферблат", "Стекло, преломляющее циферблат",
+                                         "Glas dat de wijzerplaat buigt"),
 };
 static const ui_l10n_str_t s_available = UI_L10N_STR("%s available", "Dostępna %s", "Доступна %s", "Доступна %s",
                                                      "%s beschikbaar");
@@ -557,11 +560,12 @@ static void style_pick_cb(lv_event_t *e)
 void st_style_build(clock_ui_context_t *ctx)
 {
     static const clock_ui_style_t order[CLOCK_UI_STYLE_COUNT] = {CLOCK_UI_STYLE_INSTRUMENT, CLOCK_UI_STYLE_ORBIT,
-                                                                 CLOCK_UI_STYLE_ATELIER};
+                                                                 CLOCK_UI_STYLE_ATELIER, CLOCK_UI_STYLE_GLASS};
     static const lv_image_dsc_t *const previews[CLOCK_UI_STYLE_COUNT] = {
         [CLOCK_UI_STYLE_INSTRUMENT] = &ui_settings_style_instrument,
         [CLOCK_UI_STYLE_ORBIT] = &ui_settings_style_orbit,
         [CLOCK_UI_STYLE_ATELIER] = &ui_settings_style_atelier,
+        [CLOCK_UI_STYLE_GLASS] = &ui_settings_style_glass,
     };
     const ui_skin_t *sk = ui_skin();
     clock_ui_settings_state_t *st = ST(ctx);

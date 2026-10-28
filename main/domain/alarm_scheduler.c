@@ -171,8 +171,14 @@ bool alarm_scheduler_tick(app_runtime_state_t *runtime, app_settings_t *settings
     int trigger_alarm_index = -1;
 
     localtime_r(&now, &now_tm);
-    runtime->in_night_mode = settings->night_mode.enabled &&
-                             is_in_night_window(&settings->night_mode, &now_tm);
+    if (runtime->night_now != 0 && now >= runtime->night_now_until) {
+        runtime->night_now = 0;
+    }
+    if (runtime->night_now != 0) {
+        runtime->in_night_mode = runtime->night_now > 0;
+    } else {
+        runtime->in_night_mode = settings->night_mode.enabled && is_in_night_window(&settings->night_mode, &now_tm);
+    }
     if (!runtime->in_night_mode && was_in_night_mode) {
         runtime->night_brightness_override_active = false;
         runtime->night_brightness_override = settings->night_mode.brightness;

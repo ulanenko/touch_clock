@@ -239,6 +239,15 @@ static void on_set_night_mode_enabled(void *user_ctx, bool enabled)
     app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
+static void on_set_night_now(void *user_ctx, bool night)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    time_t now = app->core.config.clock_service->now();
+    app_action_result_t result = app_action_set_night_now(&app->core.state, night, now);
+
+    app_controller_core_apply_action_result(&app->core, &result, now);
+}
+
 static void on_set_night_schedule(void *user_ctx,
                                   uint8_t start_hour,
                                   uint8_t start_minute,
@@ -419,6 +428,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_set_ui_style = on_set_ui_style,
         .on_set_default_alarm_sound = on_set_default_alarm_sound,
         .on_set_night_mode_enabled = on_set_night_mode_enabled,
+        .on_set_night_now = on_set_night_now,
         .on_set_night_schedule = on_set_night_schedule,
         .on_set_night_brightness = on_set_night_brightness,
         .on_set_night_sunrise_brightness_enabled = on_set_night_sunrise_brightness_enabled,

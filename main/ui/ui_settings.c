@@ -984,6 +984,13 @@ static void sync_page(clock_ui_context_t *ctx, ui_st_page_t id, bool force)
 static void present(clock_ui_context_t *ctx, ui_st_page_t id, bool reset_scroll)
 {
     clock_ui_settings_state_t *st = ST(ctx);
+    bool from_face = true;
+
+    for (int i = 0; i < UI_ST_PAGE_COUNT; i++) {
+        if (st->built[i] && !lv_obj_has_flag(st->pages[i].root, LV_OBJ_FLAG_HIDDEN)) {
+            from_face = false; /* another page was up */
+        }
+    }
 
     if (!st->built[id]) {
         build_page(ctx, id);
@@ -1006,6 +1013,7 @@ static void present(clock_ui_context_t *ctx, ui_st_page_t id, bool reset_scroll)
     }
     st_show(st->pages[id].root, true);
     lv_obj_move_foreground(st->pages[id].root);
+    kit_page_glass_enter(&st->pages[id], from_face);
 }
 
 void st_show_page(clock_ui_context_t *ctx, ui_st_page_t id)
@@ -1293,6 +1301,7 @@ void ui_settings_open_page(clock_ui_context_t *ctx, ui_settings_page_t page)
     if ((unsigned)page > UI_SETTINGS_PAGE_OTHER) {
         page = UI_SETTINGS_PAGE_HOME;
     }
+    face_glass_capture(ctx, 1 /* UI_GLASS_PAGE */);
     open_surface(ctx);
     if (!ST(ctx)->built[UI_ST_HOME]) {
         build_page(ctx, UI_ST_HOME);

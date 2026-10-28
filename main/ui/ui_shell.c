@@ -11,6 +11,7 @@
 #include "ui/clock_ui_private.h"
 #include "ui/ui_areas.h"
 #include "ui/ui_face_chrome.h"
+#include "ui/kit/ui_glass.h"
 
 #include <math.h>
 #include <string.h>
@@ -253,6 +254,43 @@ static void face_slide_prepare_side(clock_ui_context_t *ctx, int32_t offset)
     ctx->faces.face_slide_to = to;
 }
 
+/* Liquid Glass: snapshots the face and builds the glass backdrop for mode, unless it already
+ * shows this face as it is now. */
+void face_glass_capture(clock_ui_context_t *ctx, int mode_in)
+{
+    static clock_face_id_t s_face = CLOCK_FACE_COUNT;
+    static long s_minute = -1;
+    static uint8_t s_theme;
+    ui_glass_mode_t mode = (ui_glass_mode_t)mode_in;
+    clock_face_id_t face;
+    long minute = (long)(face_now() / 60);
+    bool same_face;
+
+    if (!ui_skin_is_glass() || ctx->faces.face_slide_active) {
+        return;
+    }
+    face = face_slide_current(ctx);
+    same_face = ui_glass_backdrop_ready() && face == s_face && minute == s_minute &&
+                ctx->settings->face_themes[face] == s_theme;
+    if (same_face && ui_glass_backdrop_mode() == mode) {
+        return;
+    }
+    /* The frost (the slow part) is only rebuilt for a new face or minute; going from the face
+     * to a page only dims what the glass refracts. */
+    if (same_face && mode == UI_GLASS_PAGE && ui_glass_backdrop_to_page(screen_scratch(ctx))) {
+        ctx->faces.face_slide_shots[0].face = CLOCK_FACE_COUNT;
+        return;
+    }
+    if (!face_slide_snapshot(ctx, face, 0)) {
+        return;
+    }
+    ui_glass_backdrop_identity((uint32_t)face | (uint32_t)ctx->settings->face_themes[face] << 8);
+    ui_glass_backdrop_build(ctx->faces.face_slide_bufs[0], mode, !same_face);
+    s_face = face;
+    s_minute = minute;
+    s_theme = ctx->settings->face_themes[face];
+}
+
 /* While the face sits idle, snapshots its neighbours ahead of a slide, one per call: again
  * when a minute turns, and every few seconds for a face showing seconds. Snapshotting a face
  * can draw into buffers the shown face shares (the hand-drawn faces), so the shown face is
@@ -286,6 +324,10 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         face_slide_snapshot(ctx, face, slot);
         update_face(ctx, current);
         return;
+    }
+    /* Liquid Glass: keep the face's glass ready, so the controls come up at once. */
+    if (!face_controls_visible(ctx)) {
+        face_glass_capture(ctx, UI_GLASS_FACE);
     }
 }
 

@@ -41,7 +41,8 @@
     bool drag_from_closed;                                                                     \
     bool target_open;                                                                          \
     bool snapshot_visible;                                                                     \
-    bool snapshot_dirty;
+    bool snapshot_dirty;                                                                       \
+    uint32_t snapshot_glass; /* Liquid Glass: the backdrop generation the snapshot shows */
 
 typedef struct {
     FACE_SHEET_FIELDS
@@ -154,4 +155,5 @@ typedef struct {
     bool night_visible;
     lv_draw_buf_t *rim_band[2]; /* Instrument tabs / Orbit bands at 12 and 6, built on first show */
     lv_area_t rim_band_area[2];
+    uint32_t rim_band_glass;   /* Liquid Glass: the backdrop generation the bands were baked from */
 } clock_ui_face_chrome_state_t;

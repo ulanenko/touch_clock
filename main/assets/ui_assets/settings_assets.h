@@ -7,5 +7,6 @@
 LV_IMAGE_DECLARE(ui_settings_arrow_24); /* 24x24 A8 */
 LV_IMAGE_DECLARE(ui_settings_arrow_36); /* 36x36 A8 */
 LV_IMAGE_DECLARE(ui_settings_style_atelier); /* 96x96 RGB565A8 */
+LV_IMAGE_DECLARE(ui_settings_style_glass); /* 96x96 RGB565A8 */
 LV_IMAGE_DECLARE(ui_settings_style_instrument); /* 96x96 RGB565A8 */
 LV_IMAGE_DECLARE(ui_settings_style_orbit); /* 96x96 RGB565A8 */

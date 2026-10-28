@@ -474,6 +474,7 @@ void alm_list_open(clock_ui_context_t *ctx)
     }
     alm_sync_all(ctx);
     page_show(ctx->alarms.list_page.root, true);
+    kit_page_glass_enter(&ctx->alarms.list_page, true);
     alm_auto_close_reset(ctx);
 }
 
@@ -850,6 +851,7 @@ bool ui_alarms_banner_shown(const clock_ui_context_t *ctx, time_t now)
 
 void ui_alarms_open(clock_ui_context_t *ctx)
 {
+    face_glass_capture(ctx, 1 /* UI_GLASS_PAGE */);
     alm_list_open(ctx);
 }
 

@@ -66,6 +66,8 @@ app_action_result_t app_action_set_timezone(app_state_t *state, uint8_t timezone
 app_action_result_t app_action_set_time_sync_mode(app_state_t *state, time_sync_mode_t mode, time_t now);
 app_action_result_t app_action_set_manual_time(app_state_t *state, time_t epoch);
 app_action_result_t app_action_set_night_mode_enabled(app_state_t *state, bool enabled, time_t now);
+/* Night mode on or off now, whatever the schedule says, until the night window next ends. */
+app_action_result_t app_action_set_night_now(app_state_t *state, bool night, time_t now);
 app_action_result_t app_action_set_night_schedule(app_state_t *state,
                                                   uint8_t start_hour,
                                                   uint8_t start_minute,

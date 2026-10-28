@@ -11,6 +11,7 @@
 
 #include "assets/ui_assets/kit_assets.h"
 #include "ui/kit/ui_kit_internal.h"
+#include "ui/kit/ui_glass.h"
 #include "ui/ui_controls.h"
 
 /* --- Geometry ------------------------------------------------------------------------- */
@@ -1445,4 +1446,26 @@ lv_obj_t *kit_dialog(lv_obj_t *parent, int32_t width)
         lv_obj_set_style_shadow_offset_y(card, 10, 0);
     }
     return card;
+}
+
+void kit_page_glass_enter(const kit_page_t *page, bool from_face)
+{
+    lv_obj_t *targets[24];
+    int n = 0;
+
+    if (!ui_skin_is_glass() || page == NULL || page->root == NULL) {
+        return;
+    }
+    targets[n++] = page->nav;
+    targets[n++] = page->action;
+    targets[n++] = page->eyebrow;
+    targets[n++] = page->title;
+    if (page->content != NULL) {
+        uint32_t count = lv_obj_get_child_count(page->content);
+
+        for (uint32_t i = 0; i < count && n < 24; i++) {
+            targets[n++] = lv_obj_get_child(page->content, (int32_t)i);
+        }
+    }
+    ui_glass_page_enter(page->root, targets, n, from_face);
 }

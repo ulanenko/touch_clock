@@ -141,6 +141,79 @@ static const ui_skin_t s_orbit = {
     .icon = 28,
     .tap_min = 72,
 };
+/* Liquid Glass: Orbit's metrics and fonts. The surface tokens are markers, not colours: the
+ * glass pass (ui_glass.c) draws every surface painted with one as glass of that kind, over the
+ * face behind it. They are colours nothing else uses. */
+static const ui_skin_t s_glass = {
+    .style = CLOCK_UI_STYLE_ORBIT,
+    .glass = true,
+    .bg = LV_COLOR_MAKE(0x00, 0x00, 0x08),
+    .well = LV_COLOR_MAKE(0x08, 0x00, 0x08),
+    .surface = LV_COLOR_MAKE(0x08, 0x08, 0x00),
+    .sheet = LV_COLOR_MAKE(0x00, 0x08, 0x00),
+    .raised = LV_COLOR_MAKE(0x08, 0x08, 0x08),
+    .line = LV_COLOR_MAKE(0x40, 0x44, 0x48),
+    .line_strong = LV_COLOR_MAKE(0x58, 0x5C, 0x60),
+    .text = LV_COLOR_MAKE(0xF8, 0xFC, 0xF8),
+    .text_2 = LV_COLOR_MAKE(0xC0, 0xC4, 0xC8),
+    .text_3 = LV_COLOR_MAKE(0x88, 0x8C, 0x90),
+    .label = LV_COLOR_MAKE(0xC0, 0xC4, 0xC8),
+    .value = LV_COLOR_MAKE(0xF8, 0xFC, 0xF8),
+    .icon_fg = LV_COLOR_MAKE(0xF8, 0xFC, 0xF8),
+    .accent = LV_COLOR_MAKE(0x08, 0x84, 0xF8),
+    .accent_text = LV_COLOR_MAKE(0xF8, 0xFC, 0xF8),
+    .accent_soft = LV_COLOR_MAKE(0x10, 0x38, 0x60),
+    .accent_deep = LV_COLOR_MAKE(0x00, 0x5C, 0xB8),
+    .danger = LV_COLOR_MAKE(0xF8, 0x44, 0x38),
+    .danger_text = LV_COLOR_MAKE(0xF8, 0x44, 0x38),
+    .danger_soft = LV_COLOR_MAKE(0x48, 0x24, 0x20),
+    .night = LV_COLOR_MAKE(0x88, 0x84, 0xD8),
+    .tint_wifi = LV_COLOR_MAKE(0x08, 0x84, 0xF8),
+    .tint_night = LV_COLOR_MAKE(0x58, 0x5C, 0xE0),
+    .tint_alarms = LV_COLOR_MAKE(0xF8, 0x9C, 0x08),
+    .tint_other = LV_COLOR_MAKE(0x60, 0x64, 0x68),
+    .tint_themes = LV_COLOR_MAKE(0xB8, 0x58, 0xF0),
+    .tint_brightness = LV_COLOR_MAKE(0xF8, 0xD4, 0x08),
+    .tint_sound = LV_COLOR_MAKE(0xF8, 0x34, 0x58),
+    .sheet_dim_opa = LV_OPA_70,
+    .font_display = &or_semibold_168,
+    .font_time_l = &or_semibold_112,
+    .font_time_m = &or_semibold_56,
+    .font_title = &or_bold_40,
+    .font_value = &or_medium_22,
+    .font_heading = &or_semibold_26,
+    .font_body = &or_regular_22,
+    .font_button = &or_semibold_26,
+    .font_label = &or_semibold_18,
+    .font_caption = &or_semibold_18,
+    .label_caps = false,
+    .button_caps = false,
+    .label_letter_space = 0,
+    .button_letter_space = 0,
+    .content_x = 110,
+    .content_w = 500,
+    .page_top = 24,
+    .nav_x = 328,
+    .title_y = 99,
+    .eyebrow_y = 148,
+    .content_top = 172,
+    .row_h = 88,
+    .row_h_2 = 104,
+    .radius_s = 32,
+    .radius_m = 44,
+    .radius_l = 64,
+    .gap_xs = 8,
+    .gap_s = 12,
+    .gap_m = 20,
+    .gap_l = 28,
+    .gap_xl = 40,
+    .button_h = 64,
+    .round_button = 64,
+    .switch_w = 76,
+    .switch_h = 44,
+    .icon = 28,
+    .tap_min = 72,
+};
 
 static const ui_skin_t s_atelier = {
     .style = CLOCK_UI_STYLE_ATELIER,
@@ -224,6 +297,11 @@ clock_ui_style_t ui_skin_style(void)
     return s_skin->style;
 }
 
+bool ui_skin_is_glass(void)
+{
+    return s_skin->glass;
+}
+
 void ui_skin_set_style(clock_ui_style_t style)
 {
     switch (style) {
@@ -232,6 +310,9 @@ void ui_skin_set_style(clock_ui_style_t style)
         break;
     case CLOCK_UI_STYLE_ATELIER:
         s_skin = &s_atelier;
+        break;
+    case CLOCK_UI_STYLE_GLASS:
+        s_skin = &s_glass;
         break;
     case CLOCK_UI_STYLE_ORBIT:
     default:
@@ -248,6 +329,8 @@ const char *ui_skin_style_name(clock_ui_style_t style)
         return "Instrument";
     case CLOCK_UI_STYLE_ATELIER:
         return "Atelier";
+    case CLOCK_UI_STYLE_GLASS:
+        return "Liquid Glass";
     case CLOCK_UI_STYLE_ORBIT:
     default:
         return "Orbit";

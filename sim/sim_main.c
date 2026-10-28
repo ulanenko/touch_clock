@@ -169,6 +169,7 @@ static void cb_alarm_test(void *u, uint8_t s)
     mark_refresh();
 }
 static void cb_night_enabled(void *u, bool e) { (void)u; s_settings.night_mode.enabled = e; mark_refresh(); }
+static void cb_night_now(void *u, bool n) { (void)u; s_runtime.in_night_mode = n; mark_refresh(); }
 static void cb_night_schedule(void *u, uint8_t sh, uint8_t sm, uint8_t eh, uint8_t em)
 {
     (void)u;
@@ -212,6 +213,7 @@ static const clock_ui_callbacks_t s_callbacks = {
     .on_set_ui_style = cb_ui_style,
     .on_set_default_alarm_sound = cb_default_sound,
     .on_set_night_mode_enabled = cb_night_enabled,
+    .on_set_night_now = cb_night_now,
     .on_set_night_schedule = cb_night_schedule,
     .on_set_night_brightness = cb_night_brightness,
     .on_set_night_sunrise_brightness_enabled = cb_sunrise,

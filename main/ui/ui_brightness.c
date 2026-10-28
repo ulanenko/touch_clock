@@ -276,7 +276,7 @@ static void set_key_texts(clock_ui_context_t *ctx)
     clock_ui_brightness_state_t *q = &ctx->brightness;
     clock_ui_style_t style = ui_skin_style();
     quick_layout_t l = quick_layout();
-    bool night = ctx->settings->night_mode.enabled;
+    bool night = ctx->runtime != NULL && ctx->runtime->in_night_mode;
     bool sound = ctx->settings->ui_click_sound_enabled;
     int32_t letter_space = style == CLOCK_UI_STYLE_ORBIT ? 0 : (style == CLOCK_UI_STYLE_ATELIER ? 2 : ui_skin()->label_letter_space);
 
@@ -298,7 +298,7 @@ static void set_key_texts(clock_ui_context_t *ctx)
 static void sync_keys(clock_ui_context_t *ctx, bool force)
 {
     clock_ui_brightness_state_t *q = &ctx->brightness;
-    bool night = ctx->settings->night_mode.enabled;
+    bool night = ctx->runtime != NULL && ctx->runtime->in_night_mode;
     bool sound = ctx->settings->ui_click_sound_enabled;
 
     if (q->keys[QUICK_KEY_NIGHT] == NULL) {
@@ -333,7 +333,8 @@ static void key_click_cb(lv_event_t *e)
     } else if (btn == q->keys[QUICK_KEY_SETTINGS]) {
         ui_settings_open(ctx);
     } else if (btn == q->keys[QUICK_KEY_NIGHT]) {
-        request_set_night_mode_enabled(ctx, !ctx->settings->night_mode.enabled);
+        /* Night now (or day now), not the schedule: that is Settings › Night. */
+        request_set_night_now(ctx, !(ctx->runtime != NULL && ctx->runtime->in_night_mode));
         face_sheet_activity(&q->sheet);
     } else if (btn == q->keys[QUICK_KEY_SOUND]) {
         request_set_ui_click_sound_enabled(ctx, !ctx->settings->ui_click_sound_enabled);
@@ -604,6 +605,7 @@ void face_quick_open(clock_ui_context_t *ctx)
     if (ctx->brightness.panel == NULL) {
         return;
     }
+    face_glass_capture(ctx, 0 /* UI_GLASS_FACE: sheets are over the face */);
     face_quick_sync(ctx);
     face_sheet_open(&ctx->brightness.sheet, true);
 }
@@ -656,6 +658,7 @@ static void edge_event_cb(lv_event_t *e)
                 return;
             }
             q->edge_pulling = true;
+            face_glass_capture(ctx, 0 /* UI_GLASS_FACE: sheets are over the face */);
             face_quick_sync(ctx);
             face_sheet_drag_begin(&q->sheet, q->edge_start_point, true);
         }

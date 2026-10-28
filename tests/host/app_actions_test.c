@@ -2,6 +2,7 @@
 
 #include "app/app_actions.h"
 #include "domain/alarm_scheduler.h"
+#include "domain/brightness_policy.h"
 #include "domain/settings_policy.h"
 #include "test_support.h"
 
@@ -125,6 +126,53 @@ static int test_alarm_stop_fades_brightness(void)
     return 0;
 }
 
+/* The quick Night key: night now outside the window until the morning end, then the
+ * schedule again; day now inside the window until the window ends. */
+static int test_night_now_overrides_the_schedule(void)
+{
+    app_state_t state = make_state();
+    app_action_result_t result;
+    time_t evening = make_utc_time(2026, 3, 12, 19, 40, 0);
+
+    state.settings.night_mode.enabled = true;
+    state.settings.night_mode.start_hour = 22;
+    state.settings.night_mode.start_minute = 0;
+    state.settings.night_mode.end_hour = 7;
+    state.settings.night_mode.end_minute = 0;
+    state.settings.night_mode.brightness = 12;
+    state.settings.base_brightness = 100;
+    alarm_scheduler_tick(&state.runtime, &state.settings, evening);
+    EXPECT_FALSE(state.runtime.in_night_mode);
+
+    result = app_action_set_night_now(&state, true, evening);
+    EXPECT_TRUE(state.runtime.in_night_mode);
+    EXPECT_EQ_INT(12, state.runtime.effective_brightness);
+    EXPECT_TRUE(app_action_has_effect(&result, APP_EFFECT_BRIGHTNESS_APPLY));
+
+    /* Still night through the scheduled window, and back to the schedule at 07:00. */
+    alarm_scheduler_tick(&state.runtime, &state.settings, make_utc_time(2026, 3, 13, 2, 0, 0));
+    EXPECT_TRUE(state.runtime.in_night_mode);
+    alarm_scheduler_tick(&state.runtime, &state.settings, make_utc_time(2026, 3, 13, 7, 0, 0));
+    EXPECT_FALSE(state.runtime.in_night_mode);
+    EXPECT_EQ_INT(0, state.runtime.night_now);
+
+    /* Day now inside the window: full brightness, the override dropped, night again at 22:00. */
+    alarm_scheduler_tick(&state.runtime, &state.settings, make_utc_time(2026, 3, 13, 23, 0, 0));
+    EXPECT_TRUE(state.runtime.in_night_mode);
+    state.runtime.night_brightness_override_active = true;
+    state.runtime.night_brightness_override = 80;
+    app_action_set_night_now(&state, false, make_utc_time(2026, 3, 13, 23, 0, 0));
+    EXPECT_FALSE(state.runtime.in_night_mode);
+    EXPECT_EQ_INT(100, state.runtime.effective_brightness);
+    EXPECT_FALSE(state.runtime.night_brightness_override_active);
+    alarm_scheduler_tick(&state.runtime, &state.settings, make_utc_time(2026, 3, 14, 6, 59, 0));
+    EXPECT_FALSE(state.runtime.in_night_mode);
+    alarm_scheduler_tick(&state.runtime, &state.settings, make_utc_time(2026, 3, 14, 22, 0, 0));
+    EXPECT_TRUE(state.runtime.in_night_mode);
+    EXPECT_EQ_INT(12, brightness_policy_get_target(&state.runtime, &state.settings, make_utc_time(2026, 3, 14, 22, 0, 0)));
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -132,6 +180,11 @@ int main(void)
     test_use_utc();
 
     status = test_face_and_wifi_actions();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_night_now_overrides_the_schedule();
     if (status != 0) {
         return status;
     }

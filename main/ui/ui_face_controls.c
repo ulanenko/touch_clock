@@ -20,6 +20,7 @@
 #include "ui/ui_areas.h"
 #include "ui/ui_face_chrome.h"
 #include "ui/ui_format.h"
+#include "ui/kit/ui_glass.h"
 
 #define CONTROLS_VISIBLE_MS 4000
 #define CONTROLS_SWEEP_MS 240 /* the entrance passes round the dial in this time */
@@ -356,9 +357,23 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
 {
     lv_draw_image_dsc_t img;
 
-    /* Pre-rendered once: wide round-capped arcs cost a per-row angle mask every frame. */
+    /* Pre-rendered once: wide round-capped arcs cost a per-row angle mask every frame. Glass
+     * bands refract the face, so they are baked again when the glass backdrop changes. */
+    if (ui_skin_is_glass() && fc->rim_band_glass != ui_glass_backdrop_generation()) {
+        for (int i = 0; i < 2; i++) {
+            ui_glass_image_free(fc->rim_band[i]);
+            fc->rim_band[i] = NULL;
+        }
+        fc->rim_band_glass = ui_glass_backdrop_generation();
+    }
     for (int i = 0; i < 2; i++) {
-        if (fc->rim_band[i] == NULL) {
+        if (fc->rim_band[i] == NULL && ui_skin_is_glass()) {
+            float mid = i == 0 ? 270.0f : 90.0f;
+
+            fc->rim_band[i] = ui_glass_arc_image(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
+                                                 UI_GLASS_RAISED, lv_color_black(), &fc->rim_band_area[i]);
+        }
+        if (fc->rim_band[i] == NULL && !ui_skin_is_glass()) {
             float mid = i == 0 ? 270.0f : 90.0f;
 
             fc->rim_band[i] = kit_arc_band_image(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
@@ -390,6 +405,9 @@ static lv_color_t orbit_float_bg(void)
 {
     const ui_skin_t *sk = ui_skin();
 
+    if (sk->glass) {
+        return sk->raised; /* raised glass */
+    }
     return lv_color_mix(sk->raised, sk->surface, 128);
 }
 
@@ -990,12 +1008,61 @@ static void reveal_start(clock_ui_context_t *ctx, uint8_t mode)
     lv_anim_start(&anim);
 }
 
+/* Liquid Glass over a light face: the controls' text and plain icons in dark ink, and back
+ * to light over a dark one. Coloured icons keep their colour. */
+static void glass_ink_tree(lv_obj_t *obj, lv_color_t from1, lv_color_t to1, lv_color_t from2, lv_color_t to2)
+{
+    uint32_t n = lv_obj_get_child_count(obj);
+
+    if (lv_obj_check_type(obj, &lv_label_class)) {
+        lv_color_t c = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
+
+        if (lv_color_eq(c, from1)) {
+            lv_obj_set_style_text_color(obj, to1, 0);
+        } else if (lv_color_eq(c, from2)) {
+            lv_obj_set_style_text_color(obj, to2, 0);
+        }
+    } else if (lv_obj_check_type(obj, &lv_image_class)) {
+        lv_color_t c = lv_obj_get_style_image_recolor(obj, LV_PART_MAIN);
+
+        if (lv_color_eq(c, from1)) {
+            lv_obj_set_style_image_recolor(obj, to1, 0);
+        } else if (lv_color_eq(c, from2)) {
+            lv_obj_set_style_image_recolor(obj, to2, 0);
+        }
+    }
+    for (uint32_t i = 0; i < n; i++) {
+        glass_ink_tree(lv_obj_get_child(obj, (int32_t)i), from1, to1, from2, to2);
+    }
+}
+
+static void glass_ink(clock_ui_context_t *ctx)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
+    lv_color_t dark = lv_color_hex(0x1C1C1E);
+    lv_color_t dark_2 = lv_color_hex(0x48484A);
+
+    if (!sk->glass || fc->layer == NULL) {
+        return;
+    }
+    if (ui_glass_backdrop_light()) {
+        glass_ink_tree(fc->layer, sk->text, dark, sk->text_2, dark_2);
+    } else {
+        glass_ink_tree(fc->layer, dark, sk->text, dark_2, sk->text_2);
+    }
+}
+
 void face_controls_show(clock_ui_context_t *ctx)
 {
     clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
 
     if (!controls_allowed(ctx)) {
         return;
+    }
+    if (!fc->visible) {
+        face_glass_capture(ctx, 0 /* UI_GLASS_FACE */);
+        glass_ink(ctx);
     }
     face_controls_sync(ctx, face_now(), !fc->visible);
     if (!fc->visible) {

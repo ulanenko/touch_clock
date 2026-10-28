@@ -495,6 +495,7 @@ void face_themes_destroy(clock_ui_context_t *ctx)
 
 void face_themes_prepare(clock_ui_context_t *ctx)
 {
+    face_glass_capture(ctx, 0 /* UI_GLASS_FACE: sheets are over the face */);
     ctx->face_theme.picker_face = face_shell_active_face(ctx);
     face_themes_sync(ctx);
 }

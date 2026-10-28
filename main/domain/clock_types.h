@@ -51,7 +51,8 @@ typedef enum {
     CLOCK_UI_STYLE_INSTRUMENT = 0,
     CLOCK_UI_STYLE_ORBIT = 1,
     CLOCK_UI_STYLE_ATELIER = 2,
-    CLOCK_UI_STYLE_COUNT = 3,
+    CLOCK_UI_STYLE_GLASS = 3, /* Liquid Glass: Orbit's layouts in glass over the face */
+    CLOCK_UI_STYLE_COUNT = 4,
 } clock_ui_style_t;
 
 #define CLOCK_UI_STYLE_DEFAULT CLOCK_UI_STYLE_ORBIT
@@ -124,6 +125,10 @@ typedef struct {
     clock_wifi_scan_result_t wifi_scan_results[CLOCK_WIFI_SCAN_RESULT_MAX];
     bool sunrise_active;
     bool in_night_mode;
+    /* The quick Night key overrides the schedule until the night window next ends: 1 night
+     * now, -1 day now, 0 the schedule decides. */
+    int8_t night_now;
+    time_t night_now_until;
     bool night_brightness_override_active;
     uint8_t effective_brightness;
     uint8_t night_brightness_override;

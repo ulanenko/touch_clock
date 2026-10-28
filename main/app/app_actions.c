@@ -356,6 +356,30 @@ app_action_result_t app_action_set_night_mode_enabled(app_state_t *state, bool e
     return result;
 }
 
+app_action_result_t app_action_set_night_now(app_state_t *state, bool night, time_t now)
+{
+    app_action_result_t result;
+    struct tm until_tm;
+    time_t until;
+
+    app_action_result_init(&result);
+    localtime_r(&now, &until_tm);
+    until_tm.tm_hour = state->settings.night_mode.end_hour;
+    until_tm.tm_min = state->settings.night_mode.end_minute;
+    until_tm.tm_sec = 0;
+    until_tm.tm_isdst = -1;
+    until = mktime(&until_tm);
+    if (until <= now) {
+        until_tm.tm_mday += 1;
+        until_tm.tm_isdst = -1;
+        until = mktime(&until_tm);
+    }
+    state->runtime.night_now = night ? 1 : -1;
+    state->runtime.night_now_until = until;
+    refresh_runtime_after_runtime_change(state, &result, now);
+    return result;
+}
+
 app_action_result_t app_action_set_night_schedule(app_state_t *state,
                                                   uint8_t start_hour,
                                                   uint8_t start_minute,

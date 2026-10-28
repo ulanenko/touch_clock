@@ -1,3 +1,4 @@
+#include "ui/kit/ui_glass.h"
 #include "ui/ui_areas.h"
 
 #include <string.h>
@@ -45,6 +46,11 @@ void ui_chrome_build(clock_ui_context_t *ctx)
     lv_obj_remove_style_all(ctx->chrome_root);
     lv_obj_set_size(ctx->chrome_root, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_remove_flag(ctx->chrome_root, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    if (ui_skin_is_glass()) {
+        ui_glass_attach(ctx->chrome_root);
+    } else {
+        ui_glass_release();
+    }
 
     ui_face_chrome_create(ctx);
     ui_alarms_create(ctx);

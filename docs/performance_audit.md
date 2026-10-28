@@ -141,6 +141,18 @@ Not usable on this board: the adapter's `DOUBLE_FULL` and `DOUBLE_DIRECT` modes 
 - **Evening faces.** `ev_fill` filled the 720x720 base through the per-pixel blend (three divides a pixel): Ember's base took 150-180 ms, now about 45 ms. Nocturne's moon (a shaded sphere with maria and craters, about 30k samples) is cached per theme and day, so retaking the shared base copies it.
 - **Face controls** come in as a sprung sweep round the dial (about 580 ms, only the moving controls and the rim redraw) and fade out in 230 ms.
 
+## Liquid Glass (2026-10-28, in progress)
+
+The fourth style draws chrome surfaces as glass (`main/ui/kit/ui_glass.c`). Each shape is baked once at its place into an RGB565 image: the face behind it refracted through a convex squircle bezel (Snell's law, n = 1.5, the three channels bent slightly differently), mixed with a half-resolution frost, tinted and lit at the rim. A frame then draws one image per shape; rows not inside other glass bake their corners against the page ground and skip LVGL's per-pixel corner mask.
+
+Measured on the clock (glass tour):
+
+- Frames: face 15 ms, face slide 20-22 ms, settings scrolling 23-29 ms (Orbit 11-15 ms).
+- Backdrop: about 138 ms (downsample 13, blur 70, upscale 40, back 15). The frost is rebuilt only when the face, its minute or its theme changes (idle time); going from the face to a page only dims the back image in place.
+- Bakes: about 0.4-0.9 us a pixel: a page's rows about 200 ms the first time a page opens for a face, the theme sheet panel about 270 ms. Bakes on pages and large panels stay valid while the face and theme are the same.
+
+Still to do: move the frost build and bakes off the UI thread, and cut the blur's memory traffic.
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High

@@ -197,4 +197,5 @@ typedef struct {
     void *dial_buf;             /* Atelier editor dial */
     void *ring_bg_buf;          /* Orbit glow / Atelier sunray */
     uint8_t ring_bg_language;   /* language + 1 the curved Orbit label was set in */
+    uint32_t ring_bg_glass;     /* Liquid Glass: the backdrop generation the background was baked from */
 } clock_ui_alarm_state_t;

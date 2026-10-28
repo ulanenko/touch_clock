@@ -237,6 +237,9 @@ void kit_page_set_title(kit_page_t *page, const char *title);
  * their own rim (the night page's 24 h ring). No effect in the other styles. */
 void kit_page_set_rim(kit_page_t *page, bool on);
 void kit_page_set_eyebrow(kit_page_t *page, const char *eyebrow);
+/* Liquid Glass: the page's controls rise into place as it comes up (from_face: and its ground
+ * fades in over the face). Nothing in the other styles. */
+void kit_page_glass_enter(const kit_page_t *page, bool from_face);
 
 /* --- Groups and rows ------------------------------------------------------------------ */
 
