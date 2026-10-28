@@ -37,6 +37,7 @@
 #include <stdint.h>
 #include <malloc/malloc.h>
 #include <stdio.h>
+#include "ui/ui_microbench.h"
 #include <unistd.h>
 #include <stdlib.h>
 #include <string.h>
@@ -750,6 +751,233 @@ static int cmp_drawcost(const void *a, const void *b)
     return x->weighted < y->weighted ? 1 : (x->weighted > y->weighted ? -1 : 0);
 }
 
+/* --- Device cost model ------------------------------------------------------------------
+ * Every draw task of a frame falls in a class by what the clock does with it (the PPA for
+ * full-width opaque blits, the sparse blender for registered ARGB tiles, LVGL's CPU paths for
+ * the rest); a frame's device time is estimated as c0 + ctask x tasks + sum(c_k x pixels_k),
+ * with coefficients fitted from microbenchmarks timed on the clock (sim/cost_fit.py, written to
+ * sim/cost_model.txt). */
+enum {
+    CC_FILL, CC_FILL_PPA, CC_FILL_ROUND, CC_FILL_OPA, CC_BORDER, CC_SHADOW, CC_LABEL, CC_IMG565,
+    CC_IMG565_PPA, CC_IMG565_CLIP, CC_IMG565_OPA, CC_ARGB, CC_ARGB_SPARSE, CC_TRANSFORM, CC_LAYER,
+    CC_LINE, CC_ARC, CC_OTHER, CC_COUNT
+};
+static const char *const s_cc_names[CC_COUNT] = {
+    "fill", "fill_ppa", "fill_round", "fill_opa", "border", "shadow", "label", "img565",
+    "img565_ppa", "img565_clip", "img565_opa", "argb", "argb_sparse", "transform", "layer",
+    "line", "arc", "other",
+};
+typedef struct {
+    uint32_t tasks;
+    double px[CC_COUNT];
+} costfeat_t;
+static costfeat_t s_feat;
+
+static int cost_class(lv_draw_task_t *t, const lv_area_t *a)
+{
+    int32_t w = lv_area_get_width(a);
+    int32_t h = lv_area_get_height(a);
+
+    switch (lv_draw_task_get_type(t)) {
+    case LV_DRAW_TASK_TYPE_FILL: {
+        const lv_draw_fill_dsc_t *d = t->draw_dsc;
+
+        if (d->opa < LV_OPA_MAX || d->grad.dir != LV_GRAD_DIR_NONE) {
+            return CC_FILL_OPA;
+        }
+        if (d->radius > 0) {
+            return CC_FILL_ROUND;
+        }
+        return w >= 700 && h >= 16 ? CC_FILL_PPA : CC_FILL;
+    }
+    case LV_DRAW_TASK_TYPE_BORDER:
+        return CC_BORDER;
+    case LV_DRAW_TASK_TYPE_BOX_SHADOW:
+        return CC_SHADOW;
+    case LV_DRAW_TASK_TYPE_LABEL:
+    case LV_DRAW_TASK_TYPE_LETTER:
+        return CC_LABEL;
+    case LV_DRAW_TASK_TYPE_LAYER: {
+        const lv_draw_image_dsc_t *d = t->draw_dsc;
+
+        return d->scale_x != LV_SCALE_NONE || d->scale_y != LV_SCALE_NONE || d->rotation != 0 ? CC_TRANSFORM
+                                                                                                 : CC_LAYER;
+    }
+    case LV_DRAW_TASK_TYPE_LINE:
+    case LV_DRAW_TASK_TYPE_TRIANGLE:
+        return CC_LINE;
+    case LV_DRAW_TASK_TYPE_ARC:
+        return CC_ARC;
+    case LV_DRAW_TASK_TYPE_IMAGE: {
+        const lv_draw_image_dsc_t *d = t->draw_dsc;
+        const lv_image_header_t *hd = (const lv_image_header_t *)d->src;
+        const void *data = NULL;
+        lv_color_format_t cf = LV_COLOR_FORMAT_UNKNOWN;
+
+        if (lv_image_src_get_type(d->src) == LV_IMAGE_SRC_VARIABLE) {
+            /* An lv_draw_buf_t and an lv_image_dsc_t both start with the header. */
+            cf = (lv_color_format_t)hd->cf;
+            data = hd->magic == LV_IMAGE_HEADER_MAGIC ? ((const lv_draw_buf_t *)d->src)->data : NULL;
+        }
+        if (d->scale_x != LV_SCALE_NONE || d->scale_y != LV_SCALE_NONE || d->rotation != 0) {
+            return CC_TRANSFORM;
+        }
+        if (cf == LV_COLOR_FORMAT_ARGB8888) {
+            return data != NULL && ui_sparse_image_known(data) ? CC_ARGB_SPARSE : CC_ARGB;
+        }
+        if (d->clip_radius > 0) {
+            return CC_IMG565_CLIP;
+        }
+        if (d->opa < LV_OPA_MAX) {
+            return CC_IMG565_OPA;
+        }
+        return w >= 700 && h >= 16 ? CC_IMG565_PPA : CC_IMG565;
+    }
+    default:
+        return CC_OTHER;
+    }
+}
+
+/* A draw unit that takes no tasks: its evaluate hook sees every task LVGL creates (those of
+ * draw callbacks and layers too), which is where the features are counted. */
+static bool s_feat_on;
+
+static int32_t cost_unit_evaluate(lv_draw_unit_t *u, lv_draw_task_t *t)
+{
+    lv_area_t a;
+
+    LV_UNUSED(u);
+    if (!s_feat_on || !lv_area_intersect(&a, &t->area, &t->clip_area)) {
+        return 0;
+    }
+    s_feat.tasks++;
+    s_feat.px[cost_class(t, &a)] += (double)lv_area_get_size(&a);
+    return 0;
+}
+
+static int32_t cost_unit_dispatch(lv_draw_unit_t *u, lv_layer_t *layer)
+{
+    LV_UNUSED(u);
+    LV_UNUSED(layer);
+    return LV_DRAW_UNIT_IDLE;
+}
+
+static void cost_unit_install(void)
+{
+    static bool done;
+    lv_draw_unit_t *u;
+
+    if (done) {
+        return;
+    }
+    u = lv_draw_create_unit(sizeof(lv_draw_unit_t));
+    u->evaluate_cb = cost_unit_evaluate;
+    u->dispatch_cb = cost_unit_dispatch;
+    u->name = "cost";
+    done = true;
+}
+
+/* Counts one full redraw of the screen. */
+static void cost_features(costfeat_t *out)
+{
+    cost_unit_install();
+    memset(&s_feat, 0, sizeof(s_feat));
+    lv_obj_invalidate(lv_screen_active());
+    lv_obj_invalidate(lv_layer_top());
+    s_feat_on = true;
+    lv_refr_now(NULL);
+    s_feat_on = false;
+    *out = s_feat;
+}
+
+static void cost_print(FILE *f, const char *name, const costfeat_t *c)
+{
+    fprintf(f, "%s\ttasks=%u", name, c->tasks);
+    for (int k = 0; k < CC_COUNT; k++) {
+        if (c->px[k] > 0) {
+            fprintf(f, "\t%s=%.0f", s_cc_names[k], c->px[k]);
+        }
+    }
+    fprintf(f, "\n");
+}
+
+/* Estimated device render time of one full frame, from sim/cost_model.txt. */
+static void cost_estimate(const char *label)
+{
+    double coef[CC_COUNT] = {0};
+    double c0 = 0;
+    double ctask = 0;
+    double total;
+    char key[64];
+    double value;
+    costfeat_t c;
+    FILE *f = fopen(SIM_COST_MODEL, "r");
+
+    if (f == NULL) {
+        printf("estimate: no %s (run sim/cost_fit.py)\n", SIM_COST_MODEL);
+        return;
+    }
+    while (fscanf(f, "%63s %lf", key, &value) == 2) {
+        if (strcmp(key, "c0") == 0) {
+            c0 = value;
+        } else if (strcmp(key, "task") == 0) {
+            ctask = value;
+        }
+        for (int k = 0; k < CC_COUNT; k++) {
+            if (strcmp(key, s_cc_names[k]) == 0) {
+                coef[k] = value;
+            }
+        }
+    }
+    fclose(f);
+    cost_features(&c);
+    total = c0 + ctask * c.tasks;
+    printf("estimate %s:", label);
+    for (int k = 0; k < CC_COUNT; k++) {
+        double us = coef[k] * c.px[k];
+
+        total += us;
+        if (us >= 300) {
+            printf(" %s %.1f", s_cc_names[k], us / 1000.0);
+        }
+    }
+    printf(" tasks %u %.1f | %.1f ms\n", c.tasks, ctask * c.tasks / 1000.0, total / 1000.0);
+}
+
+static double now_ms(void);
+static int64_t host_us(void)
+{
+    return (int64_t)(now_ms() * 1000.0);
+}
+
+/* The microbenchmark scenes' features (and the CPU loop's host time), for sim/cost_fit.py. */
+static void microbench(const char *path)
+{
+    FILE *f = fopen(path, "w");
+
+    if (f == NULL) {
+        return;
+    }
+    for (int i = 0; i < ui_microbench_count(); i++) {
+        const char *name = ui_microbench_name(i);
+        costfeat_t c;
+
+        if (strcmp(name, "cpu_loop") == 0) {
+            ui_microbench_hide();
+            fprintf(f, "cpu_loop\thost_us=%lld\n", (long long)ui_microbench_cpu_loop(host_us));
+            continue;
+        }
+        ui_microbench_show(i, false);
+        lv_refr_now(NULL);
+        cost_features(&c);
+        cost_print(f, name, &c);
+    }
+    ui_microbench_hide();
+    lv_refr_now(NULL);
+    fclose(f);
+    printf("microbench: %d scenes -> %s\n", ui_microbench_count(), path);
+}
+
 static void draw_costs(int top)
 {
     static lv_obj_t *objs[2048];
@@ -878,6 +1106,33 @@ static int run_scenario(FILE *f)
 
             malloc_zone_statistics(NULL, &stats);
             printf("mem %zu KB %s", stats.size_in_use / 1024, line + 4);
+        } else if (strcmp(cmd, "microbench") == 0 && sscanf(line, "%*s %63s", a) == 1) {
+            microbench(a);
+        } else if (strcmp(cmd, "timecall") == 0 && sscanf(line, "%*s %63s", a) == 1) {
+            /* A debug call's UI-thread time (CPU work: builds, bakes), scaled to the clock by the
+             * cost model's cpu_scale; its first frame is "estimate"'s business. */
+            double scale = 0;
+            double t0;
+            char key[64];
+            double value;
+            FILE *mf = fopen(SIM_COST_MODEL, "r");
+
+            while (mf != NULL && fscanf(mf, "%63s %lf", key, &value) == 2) {
+                if (strcmp(key, "cpu_scale") == 0) {
+                    scale = value;
+                }
+            }
+            if (mf != NULL) {
+                fclose(mf);
+            }
+            t0 = now_ms();
+            ui_debug_call(clock_ui_get_context(), a);
+            printf("timecall %s: host %.2f ms, clock ~%.0f ms\n", a, now_ms() - t0, (now_ms() - t0) * scale);
+        } else if (strcmp(cmd, "estimate") == 0) {
+            if (sscanf(line, "%*s %63s", a) != 1) {
+                strcpy(a, "screen");
+            }
+            cost_estimate(a);
         } else if (strcmp(cmd, "drawcost") == 0) {
             int n = 15;
 

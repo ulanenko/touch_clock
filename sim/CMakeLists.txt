@@ -6,6 +6,7 @@ set(CMAKE_C_STANDARD 17)
 set(CMAKE_C_EXTENSIONS ON)
 
 set(REPO_ROOT ${CMAKE_CURRENT_SOURCE_DIR}/..)
+add_compile_definitions(SIM_COST_MODEL="${CMAKE_CURRENT_SOURCE_DIR}/cost_model.txt")
 set(LVGL_DIR ${REPO_ROOT}/managed_components/lvgl__lvgl CACHE PATH "LVGL 9.3 source (managed component)")
 set(SDKCONFIG ${REPO_ROOT}/sdkconfig CACHE FILEPATH "Project sdkconfig to mirror")
 

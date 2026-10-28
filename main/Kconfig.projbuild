@@ -99,6 +99,11 @@ config TOUCH_CLOCK_PERF_TOUR_SHORT
         depends on TOUCH_CLOCK_PERF_TOUR
         default n
 
+config TOUCH_CLOCK_PERF_TOUR_MICROBENCH
+        bool "Time the cost-model scenes (ui_microbench.c) instead of the tour"
+        depends on TOUCH_CLOCK_PERF_TOUR
+        default n
+
 config TOUCH_CLOCK_PERF_TOUR_FACE_COSTS
         bool "Show every face in turn and time its first frames and its ticks instead of the tour"
         depends on TOUCH_CLOCK_PERF_TOUR

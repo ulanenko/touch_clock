@@ -199,3 +199,26 @@ Then:
   console on USB-Serial-JTAG (the UART console is too slow for thumbnails).
 - It flashes, captures, and writes `perf_reports/<time>-<label>/` (`report.md`,
   `summary.json`, thumbnails). `--restore` flashes the untouched `build/` artifacts back.
+
+## Simulator cost model (estimates without the clock)
+
+The simulator draws what the clock draws, but its timings say nothing about the clock's. The cost
+model estimates them:
+
+- `estimate [label]` in a sim scenario counts one full redraw of the current screen by draw-task
+  class (opaque, full-width and clipped RGB565 images, dense and sparse ARGB, plain, rounded and
+  translucent fills, text, borders, shadows, arcs, lines, layers, transforms) and prints the
+  estimated clock render time with the biggest contributors, e.g.
+  `estimate atelier_settings: border 1.4 label 3.6 argb_sparse 8.5 tasks 48 2.1 | 19.0 ms`.
+- `timecall <debug call>` runs a debug call (opening a page, building something) and scales its
+  host CPU time to the clock (`cpu_scale`, about 20x): the UI-thread stall it would cause.
+- The coefficients (`sim/cost_model.txt`) come from `ui_microbench.c`'s scenes timed on the clock
+  (`CONFIG_TOUCH_CLOCK_PERF_TOUR_MICROBENCH=y`) against the simulator's counts of the same scenes
+  (`microbench <file>`), fitted by `sim/cost_fit.py` (instructions in its header). Refit after
+  changing the blend paths, LVGL or clock speeds.
+
+Accuracy (2026-10-28, Orbit, not fitted on these): image faces 15.0 ms estimated vs 14.3-16.3 ms
+measured; settings and alarm pages within 2-28 %; the Digital face (live widgets) +30 %. Good for
+"is this 15 ms or 40 ms or a 300 ms stall", not for single-millisecond tuning: the perf tour on the
+clock stays the final check.
+
