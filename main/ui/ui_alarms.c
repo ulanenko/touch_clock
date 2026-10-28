@@ -791,6 +791,14 @@ static void debug_banner_feedback(clock_ui_context_t *ctx)
     alm_banner_feedback(ctx, alm_text(ctx, L10N_CANCELLED), true, alm_now());
 }
 
+/* Taps the editor's Sound row: the next sound, previewed. */
+static void debug_sound_next(clock_ui_context_t *ctx)
+{
+    ctx->alarms.editor_draft.sound = (uint8_t)((ctx->alarms.editor_draft.sound + 1) % ALARM_SOUND_COUNT);
+    alm_sound_preview(ctx);
+    alm_editor_sync(ctx);
+}
+
 static void debug_swipe_delete(clock_ui_context_t *ctx)
 {
     alm_list_open(ctx);
@@ -833,6 +841,8 @@ void ui_alarms_create(clock_ui_context_t *ctx)
     ui_debug_register("ringing_math", debug_ringing_math);
     ui_debug_register("ringing_off", debug_ringing_off);
     ui_debug_register("banner_feedback", debug_banner_feedback);
+    ui_debug_register("alarm_sound_next", debug_sound_next);
+    ui_debug_register("alarm_test_stop", alm_test_stop);
 }
 
 void ui_alarms_destroy(clock_ui_context_t *ctx)

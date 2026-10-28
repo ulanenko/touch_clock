@@ -13,13 +13,17 @@
 
 #define ALARM_TONE_SAMPLE_RATE 44100
 
+/* Samples mixed at a time; the mixing buffer is this many floats. */
+#define ALARM_TONE_BLOCK_SAMPLES 2048
+
 /* True for the sounds rendered here (not the recorded Morning Light). */
 bool alarm_tone_is_synth(uint8_t sound);
 
 /* Length of one loop in samples, 0 for a sound that is not synthesised. */
 size_t alarm_tone_loop_samples(uint8_t sound);
 
-/* Renders one loop of `sound` into out (alarm_tone_loop_samples() samples), using scratch
- * (as many floats) as the mixing buffer. Tails that run past the end wrap to the start, so
- * the loop repeats without a seam. Returns false for a sound that is not synthesised. */
-bool alarm_tone_render(uint8_t sound, int16_t *out, float *scratch);
+/* Renders one loop of `sound` into out (alarm_tone_loop_samples() samples), mixing in block
+ * (ALARM_TONE_BLOCK_SAMPLES floats, fastest in internal RAM). Tails that run past the end
+ * wrap to the start, so the loop repeats without a seam. Not reentrant. Returns false for a
+ * sound that is not synthesised. */
+bool alarm_tone_render(uint8_t sound, int16_t *out, float *block);

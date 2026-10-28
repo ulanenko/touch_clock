@@ -1,6 +1,7 @@
 #include "alarm_tones.h"
 
 #include <math.h>
+#include <stdint.h>
 #include <string.h>
 
 #include "domain/clock_types.h"
@@ -158,47 +159,104 @@ size_t alarm_tone_loop_samples(uint8_t sound)
     return def != NULL ? (size_t)(def->loop_s * (float)ALARM_TONE_SAMPLE_RATE) : 0;
 }
 
-/* Adds one damped sine to the loop, wrapping past the end. It stops at -60 dB, faded over
- * the last 30 ms so the cut cannot click; overlapping tails wrap at most twice round. */
-static void add_partial(float *mix, size_t loop, size_t start, double hz, float level, float decay_s, float attack_s)
+/*
+ * Rendering. Every partial of every strike is a voice: a damped sine that starts at the
+ * strike and stops at -60 dB, faded over its last 30 ms so the cut cannot click. A voice
+ * that runs past the end of the loop wraps to the start (at most twice round), so the loop
+ * repeats without a seam.
+ *
+ * The loop is rendered a block at a time into a small mixing buffer (best in internal RAM):
+ * every voice that sounds in the block adds itself there, then the block is scaled and
+ * written out once. Each pass round the loop is a separate run of the voice, with its own
+ * resonator state carried from block to block.
+ */
+
+#define TONE_MAX_VOICES 160
+#define TONE_WRAPS 3 /* a voice lasts at most two loops, so it can touch one position thrice */
+
+typedef struct {
+    size_t start;  /* strike position in the loop */
+    size_t length; /* samples until the cut */
+    size_t attack;
+    size_t fade;
+    double w; /* radians per sample */
+    double r; /* decay per sample */
+    float level;
+    float c1, c2;
+    /* Resonator state per pass round the loop; valid when next_n[k] matches. */
+    float y1[TONE_WRAPS], y2[TONE_WRAPS];
+    size_t next_n[TONE_WRAPS];
+} tone_voice_t;
+
+static tone_voice_t s_voices[TONE_MAX_VOICES];
+
+static size_t add_voice(size_t count, size_t loop, size_t start, double hz, float level, float decay_s, float attack_s)
 {
-    double w = TWO_PI * hz / (double)ALARM_TONE_SAMPLE_RATE;
-    double r = exp(-1.0 / ((double)decay_s * (double)ALARM_TONE_SAMPLE_RATE));
-    /* Resonator y[n] = 2 r cos(w) y[n-1] - r^2 y[n-2], started at zero phase so it
-     * begins without a click. */
-    float c1 = (float)(2.0 * r * cos(w));
-    float c2 = (float)(-(r * r));
-    float y1 = (float)(sin(w) * r) * level;
-    float y2 = 0.0f;
-    size_t attack = (size_t)(attack_s * (float)ALARM_TONE_SAMPLE_RATE);
-    size_t fade = (size_t)(0.03f * (float)ALARM_TONE_SAMPLE_RATE);
+    tone_voice_t *v;
     size_t length = (size_t)(decay_s * 6.9f * (float)ALARM_TONE_SAMPLE_RATE);
-    size_t pos = start % loop;
-    size_t n = 0;
 
-    if (w >= TWO_PI / 2.0) {
-        return; /* above Nyquist */
+    if (count >= TONE_MAX_VOICES) {
+        return count;
     }
-    if (length > loop * 2) {
-        length = loop * 2;
+    v = &s_voices[count];
+    v->w = TWO_PI * hz / (double)ALARM_TONE_SAMPLE_RATE;
+    v->r = exp(-1.0 / ((double)decay_s * (double)ALARM_TONE_SAMPLE_RATE));
+    v->attack = (size_t)(attack_s * (float)ALARM_TONE_SAMPLE_RATE);
+    v->fade = (size_t)(0.03f * (float)ALARM_TONE_SAMPLE_RATE);
+    v->length = length > loop * 2 ? loop * 2 : length;
+    if (v->w >= TWO_PI / 2.0 || v->length < v->attack + v->fade) {
+        return count; /* above Nyquist, or too short to sound */
     }
-    if (length < attack + fade) {
-        return;
+    v->start = start % loop;
+    v->level = level;
+    v->c1 = (float)(2.0 * v->r * cos(v->w));
+    v->c2 = (float)(-(v->r * v->r));
+    /* The float coefficients ring at a slightly different pitch and decay; take those, so a
+     * pass started part-way lines up with one that ran from the strike. */
+    v->r = sqrt(-(double)v->c2);
+    v->w = acos((double)v->c1 / (2.0 * v->r));
+    for (int k = 0; k < TONE_WRAPS; k++) {
+        v->next_n[k] = SIZE_MAX;
     }
-    while (n < length) {
-        /* A run that neither wraps nor crosses the attack or the fade: no branches inside. */
-        size_t phase_end = n < attack ? attack : (n < length - fade ? length - fade : length);
-        size_t run = MIN_SZ(phase_end - n, loop - pos);
-        float *out = &mix[pos];
+    return count + 1;
+}
 
-        if (n < attack || n >= length - fade) {
-            float step = n < attack ? 1.0f / (float)attack : -1.0f / (float)fade;
-            float env = n < attack ? (float)n / (float)attack : (float)(length - n) / (float)fade;
+/* The resonator y[n] = 2 r cos(w) y[n-1] - r^2 y[n-2], started at zero phase (no click),
+ * gives y[n] = level r^(n+1) sin(w (n+1)). Sets the state to sample n directly. */
+static void voice_seek(tone_voice_t *v, int k, size_t n)
+{
+    double rn = pow(v->r, (double)n);
+
+    v->y1[k] = (float)((double)v->level * rn * v->r * sin(v->w * (double)(n + 1)));
+    v->y2[k] = (float)((double)v->level * rn * sin(v->w * (double)n));
+    v->next_n[k] = n;
+}
+
+/* Adds samples n .. n + count of one pass of a voice into mix. */
+static void voice_run(tone_voice_t *v, int k, float *mix, size_t n, size_t count)
+{
+    size_t end = n + count;
+    float y1, y2;
+    const float c1 = v->c1, c2 = v->c2;
+
+    if (v->next_n[k] != n) {
+        voice_seek(v, k, n);
+    }
+    y1 = v->y1[k];
+    y2 = v->y2[k];
+    while (n < end) {
+        /* A run that crosses neither the attack nor the fade: no branches inside. */
+        size_t phase_end = n < v->attack ? v->attack : (n < v->length - v->fade ? v->length - v->fade : v->length);
+        size_t run = MIN_SZ(phase_end, end) - n;
+
+        if (n < v->attack || n >= v->length - v->fade) {
+            float step = n < v->attack ? 1.0f / (float)v->attack : -1.0f / (float)v->fade;
+            float env = n < v->attack ? (float)n / (float)v->attack : (float)(v->length - n) / (float)v->fade;
 
             for (size_t i = 0; i < run; i++) {
                 float y = y1;
 
-                out[i] += env * y;
+                mix[i] += env * y;
                 env += step;
                 y1 = c1 * y1 + c2 * y2;
                 y2 = y;
@@ -207,31 +265,105 @@ static void add_partial(float *mix, size_t loop, size_t start, double hz, float 
             for (size_t i = 0; i < run; i++) {
                 float y = y1;
 
-                out[i] += y;
+                mix[i] += y;
                 y1 = c1 * y1 + c2 * y2;
                 y2 = y;
             }
         }
+        mix += run;
         n += run;
-        pos += run;
-        if (pos == loop) {
-            pos = 0;
-        }
     }
+    v->y1[k] = y1;
+    v->y2[k] = y2;
+    v->next_n[k] = n;
 }
 
-bool alarm_tone_render(uint8_t sound, int16_t *out, float *scratch)
+/* Expected loudness of the loop, assuming the voices add as uncorrelated sines: a damped
+ * sine of amplitude a and time constant tau samples carries a^2 tau / 4 of energy. */
+static double estimate_rms(size_t voices, size_t loop)
+{
+    double energy = 0.0;
+
+    for (size_t i = 0; i < voices; i++) {
+        const tone_voice_t *v = &s_voices[i];
+        double tau = -1.0 / log(v->r);
+
+        energy += (double)v->level * (double)v->level * tau / 4.0 * (1.0 - pow(v->r, 2.0 * (double)v->length));
+    }
+    return sqrt(energy / (double)loop);
+}
+
+/* One pass over the loop, written out with `gain`. Reports the sum of squares and the peak
+ * of the unscaled mix, and whether any sample had to be clipped. */
+static bool render_pass(size_t voices, size_t loop, float gain, int16_t *out, float *block, double *sum_sq,
+                        float *peak)
+{
+    bool clipped = false;
+
+    *sum_sq = 0.0;
+    *peak = 0.0f;
+    for (size_t i = 0; i < voices; i++) {
+        for (int k = 0; k < TONE_WRAPS; k++) {
+            s_voices[i].next_n[k] = SIZE_MAX;
+        }
+    }
+    for (size_t p0 = 0; p0 < loop; p0 += ALARM_TONE_BLOCK_SAMPLES) {
+        size_t count = MIN_SZ((size_t)ALARM_TONE_BLOCK_SAMPLES, loop - p0);
+
+        memset(block, 0, count * sizeof(float));
+        for (size_t i = 0; i < voices; i++) {
+            tone_voice_t *v = &s_voices[i];
+
+            for (int k = 0; k < TONE_WRAPS; k++) {
+                /* Samples of this pass that land in the block: n = p + k loop - start. */
+                size_t pass_start = v->start;
+                size_t lo = p0 + (size_t)k * loop;
+                size_t hi = lo + count;
+                size_t n_lo, n_hi;
+
+                if (hi <= pass_start || lo >= pass_start + v->length) {
+                    continue;
+                }
+                n_lo = lo > pass_start ? lo - pass_start : 0;
+                n_hi = MIN_SZ(hi - pass_start, v->length);
+                voice_run(v, k, &block[n_lo + pass_start - lo], n_lo, n_hi - n_lo);
+            }
+        }
+        for (size_t i = 0; i < count; i++) {
+            float x = block[i];
+            float a = fabsf(x);
+            float s = x * gain;
+
+            *sum_sq += (double)(x * x);
+            if (a > *peak) {
+                *peak = a;
+            }
+            if (s > 32767.0f) {
+                s = 32767.0f;
+                clipped = true;
+            } else if (s < -32768.0f) {
+                s = -32768.0f;
+                clipped = true;
+            }
+            out[p0 + i] = (int16_t)lrintf(s);
+        }
+    }
+    return clipped;
+}
+
+bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
 {
     const tone_def_t *def = tone_def(sound);
     size_t loop = alarm_tone_loop_samples(sound);
-    double sum_sq = 0.0;
-    float peak = 0.0f;
+    size_t voices = 0;
+    double sum_sq;
+    float peak;
     float gain;
+    float want;
 
-    if (def == NULL || out == NULL || scratch == NULL || loop == 0) {
+    if (def == NULL || out == NULL || block == NULL || loop == 0) {
         return false;
     }
-    memset(scratch, 0, loop * sizeof(float));
     for (size_t s = 0; s < def->strike_count; s++) {
         const tone_strike_t *k = &def->strikes[s];
         size_t start = (size_t)(k->t_s * (float)ALARM_TONE_SAMPLE_RATE);
@@ -241,38 +373,46 @@ bool alarm_tone_render(uint8_t sound, int16_t *out, float *scratch)
             const tone_partial_t *part = &def->instrument->partials[p];
             float level = k->velocity * part->level;
             float decay = part->decay_s * decay_scale;
+            float attack = def->instrument->attack_s;
 
             if (part->level <= 0.0f) {
                 continue;
             }
             if (part->twin_hz > 0.0f) {
                 /* The pair shares the level, so the beat swells and fades without adding up. */
-                add_partial(scratch, loop, start, (double)(k->hz * part->ratio), level * 0.6f, decay,
-                            def->instrument->attack_s);
-                add_partial(scratch, loop, start, (double)(k->hz * part->ratio + part->twin_hz), level * 0.4f, decay,
-                            def->instrument->attack_s);
+                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio), level * 0.6f, decay, attack);
+                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio + part->twin_hz), level * 0.4f,
+                                   decay, attack);
             } else {
-                add_partial(scratch, loop, start, (double)(k->hz * part->ratio), level, decay, def->instrument->attack_s);
+                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio), level, decay, attack);
             }
         }
     }
-    for (size_t i = 0; i < loop; i++) {
-        float v = fabsf(scratch[i]);
+    if (voices == 0) {
+        return false;
+    }
 
-        sum_sq += (double)scratch[i] * (double)scratch[i];
-        if (v > peak) {
-            peak = v;
-        }
+    /* Render once at the estimated gain, then trim to the exact loudness in place. Only a
+     * badly low estimate (a clipped sample) costs a second pass. */
+    gain = TONE_TARGET_RMS / (float)estimate_rms(voices, loop);
+    if (render_pass(voices, loop, gain, out, block, &sum_sq, &peak)) {
+        gain = 0.0f;
     }
     if (peak <= 0.0f) {
         return false;
     }
-    gain = TONE_TARGET_RMS / (float)sqrt(sum_sq / (double)loop);
-    if (gain * peak > TONE_PEAK_LIMIT) {
-        gain = TONE_PEAK_LIMIT / peak;
+    want = TONE_TARGET_RMS / (float)sqrt(sum_sq / (double)loop);
+    if (want * peak > TONE_PEAK_LIMIT) {
+        want = TONE_PEAK_LIMIT / peak;
     }
-    for (size_t i = 0; i < loop; i++) {
-        out[i] = (int16_t)lrintf(scratch[i] * gain);
+    if (gain == 0.0f) {
+        render_pass(voices, loop, want, out, block, &sum_sq, &peak);
+    } else if (fabsf(want / gain - 1.0f) > 0.001f) {
+        float trim = want / gain;
+
+        for (size_t i = 0; i < loop; i++) {
+            out[i] = (int16_t)lrintf((float)out[i] * trim);
+        }
     }
     return true;
 }

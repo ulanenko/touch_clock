@@ -11,8 +11,10 @@
 #include "esp_codec_dev.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 
 #define ALARM_SAMPLE_RATE_HZ 44100
@@ -67,44 +69,70 @@ typedef struct {
 static const char *TAG = "alarm_audio";
 static alarm_audio_state_t s_alarm_audio = {0};
 
-/* The last synthesised tone, kept in PSRAM so playing it again starts at once. */
-static int16_t *s_tone_pcm;
-static size_t s_tone_samples;
-static uint8_t s_tone_sound = ALARM_SOUND_COUNT;
+/* Synthesised tones, rendered once into PSRAM and kept (about 3 MB for all of them). A
+ * background task renders them all a little after boot, so a preview or an alarm starts at
+ * once; one asked for before that is rendered on the spot. */
+#define TONE_PRERENDER_DELAY_MS 20000
+#define TONE_PRERENDER_STACK 4096
 
-/* Returns the loop for a sound, rendering a synthesised one on first use (well under a
- * second); the recorded tone if anything fails. */
+static int16_t *s_tone_pcm[ALARM_SOUND_COUNT];
+static SemaphoreHandle_t s_tone_lock;
+
+/* The rendered loop for a synthesised sound, rendering it first if need be. */
+static const int16_t *tone_pcm(uint8_t sound)
+{
+    const int16_t *pcm;
+
+    if (s_tone_lock == NULL) {
+        return NULL;
+    }
+    xSemaphoreTake(s_tone_lock, portMAX_DELAY);
+    if (s_tone_pcm[sound] == NULL) {
+        int16_t *buf = heap_caps_malloc(alarm_tone_loop_samples(sound) * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+        float *block = heap_caps_malloc(ALARM_TONE_BLOCK_SAMPLES * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+        int64_t render_start = esp_timer_get_time();
+
+        if (buf != NULL && block != NULL && alarm_tone_render(sound, buf, block)) {
+            s_tone_pcm[sound] = buf;
+            ESP_LOGI(TAG, "Rendered alarm sound %u in %lld ms", sound, (esp_timer_get_time() - render_start) / 1000);
+        } else {
+            heap_caps_free(buf);
+        }
+        heap_caps_free(block);
+    }
+    pcm = s_tone_pcm[sound];
+    xSemaphoreGive(s_tone_lock);
+    return pcm;
+}
+
+static void tone_prerender_task(void *arg)
+{
+    (void)arg;
+    vTaskDelay(pdMS_TO_TICKS(TONE_PRERENDER_DELAY_MS));
+    for (uint8_t sound = 0; sound < ALARM_SOUND_COUNT; sound++) {
+        if (alarm_tone_is_synth(sound)) {
+            tone_pcm(sound);
+        }
+    }
+    ESP_LOGI(TAG, "Alarm sounds ready; PSRAM free %u KB", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+    vTaskDelete(NULL);
+}
+
+/* Returns the loop for a sound; the recorded tone if a synthesised one cannot be had. */
 static alarm_audio_loop_t loop_for_sound(uint8_t sound)
 {
     alarm_audio_loop_t recorded = {.data = alarm_pcm_data, .samples = (size_t)ALARM_PCM_SAMPLES};
-    size_t samples;
-    float *scratch;
+    const int16_t *pcm;
 
     if (!alarm_tone_is_synth(sound)) {
         return recorded;
     }
-    if (s_tone_sound == sound && s_tone_pcm != NULL) {
-        return (alarm_audio_loop_t) {.data = s_tone_pcm, .samples = s_tone_samples};
-    }
-    samples = alarm_tone_loop_samples(sound);
-    if (s_tone_pcm != NULL && s_tone_samples < samples) {
-        heap_caps_free(s_tone_pcm);
-        s_tone_pcm = NULL;
-    }
-    if (s_tone_pcm == NULL) {
-        s_tone_pcm = heap_caps_malloc(samples * sizeof(int16_t), MALLOC_CAP_SPIRAM);
-    }
-    scratch = heap_caps_malloc(samples * sizeof(float), MALLOC_CAP_SPIRAM);
-    s_tone_sound = ALARM_SOUND_COUNT;
-    if (s_tone_pcm == NULL || scratch == NULL || !alarm_tone_render(sound, s_tone_pcm, scratch)) {
+    pcm = tone_pcm(sound);
+    if (pcm == NULL) {
         ESP_LOGW(TAG, "Could not render alarm sound %u, playing the recorded tone", sound);
-        heap_caps_free(scratch);
         return recorded;
     }
-    heap_caps_free(scratch);
-    s_tone_sound = sound;
-    s_tone_samples = samples;
-    return (alarm_audio_loop_t) {.data = s_tone_pcm, .samples = samples};
+    return (alarm_audio_loop_t) {.data = pcm, .samples = alarm_tone_loop_samples(sound)};
 }
 
 static uint8_t clamp_volume(uint8_t volume)
@@ -452,6 +480,14 @@ esp_err_t alarm_audio_init(uint8_t initial_volume)
         vQueueDelete(s_alarm_audio.queue);
         s_alarm_audio.queue = NULL;
         return ESP_ERR_NO_MEM;
+    }
+
+    /* Lowest priority: the renders only use time the UI leaves. Without the task, sounds
+     * render when first played. */
+    s_tone_lock = xSemaphoreCreateMutex();
+    if (s_tone_lock != NULL && xTaskCreate(tone_prerender_task, "alarm_tones", TONE_PRERENDER_STACK, NULL,
+                                           tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
+        ESP_LOGW(TAG, "Alarm sounds will render when first played");
     }
 
     s_alarm_audio.initialized = true;

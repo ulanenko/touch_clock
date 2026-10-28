@@ -37,7 +37,7 @@ int main(int argc, char **argv)
     for (uint8_t s = 0; s < ALARM_SOUND_COUNT; s++) {
         size_t n = alarm_tone_loop_samples(s);
         int16_t *pcm;
-        float *scratch;
+        float block[ALARM_TONE_BLOCK_SAMPLES];
         char path[512];
         FILE *f;
         uint32_t bytes;
@@ -46,8 +46,7 @@ int main(int argc, char **argv)
             continue;
         }
         pcm = malloc(n * sizeof(int16_t));
-        scratch = malloc(n * sizeof(float));
-        if (pcm == NULL || scratch == NULL || !alarm_tone_render(s, pcm, scratch)) {
+        if (pcm == NULL || !alarm_tone_render(s, pcm, block)) {
             fprintf(stderr, "render failed for %s\n", names[s]);
             return 1;
         }
@@ -76,7 +75,6 @@ int main(int argc, char **argv)
         fclose(f);
         printf("%s: %zu samples (%.1f s)\n", path, n, (double)n / ALARM_TONE_SAMPLE_RATE);
         free(pcm);
-        free(scratch);
     }
     return 0;
 }
