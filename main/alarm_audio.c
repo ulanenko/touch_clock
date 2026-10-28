@@ -33,6 +33,7 @@ typedef enum {
     ALARM_AUDIO_CMD_PLAY_ALARM = 0,
     ALARM_AUDIO_CMD_PLAY_TEST,
     ALARM_AUDIO_CMD_PLAY_CLICK,
+    ALARM_AUDIO_CMD_PLAY_START,
     ALARM_AUDIO_CMD_STOP,
     ALARM_AUDIO_CMD_SET_VOLUME,
 } alarm_audio_cmd_type_t;
@@ -42,6 +43,7 @@ typedef enum {
     ALARM_AUDIO_MODE_ALARM,
     ALARM_AUDIO_MODE_TEST,
     ALARM_AUDIO_MODE_CLICK,
+    ALARM_AUDIO_MODE_ONCE, /* the start chime: the loop played to its end */
 } alarm_audio_mode_t;
 
 typedef struct {
@@ -103,6 +105,30 @@ static const int16_t *tone_pcm(uint8_t sound)
     pcm = s_tone_pcm[sound];
     xSemaphoreGive(s_tone_lock);
     return pcm;
+}
+
+/* The start chime, rendered when first played (on the audio task) and kept. */
+static int16_t *s_start_pcm;
+
+static const int16_t *start_pcm(void)
+{
+    if (s_tone_lock == NULL) {
+        return NULL;
+    }
+    xSemaphoreTake(s_tone_lock, portMAX_DELAY);
+    if (s_start_pcm == NULL) {
+        int16_t *buf = heap_caps_malloc(alarm_tone_start_samples() * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+        float *block = heap_caps_malloc(ALARM_TONE_BLOCK_SAMPLES * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+
+        if (buf != NULL && block != NULL && alarm_tone_render_start(buf, block)) {
+            s_start_pcm = buf;
+        } else {
+            heap_caps_free(buf);
+        }
+        heap_caps_free(block);
+    }
+    xSemaphoreGive(s_tone_lock);
+    return s_start_pcm;
 }
 
 static void tone_prerender_task(void *arg)
@@ -263,6 +289,27 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
         *applied_volume = *volume;
         apply_volume(*applied_volume);
         break;
+    case ALARM_AUDIO_CMD_PLAY_START: {
+        const int16_t *pcm;
+
+        if (*mode == ALARM_AUDIO_MODE_ALARM || *mode == ALARM_AUDIO_MODE_TEST) {
+            break;
+        }
+        pcm = start_pcm();
+        if (pcm == NULL) {
+            *mode = ALARM_AUDIO_MODE_IDLE;
+            break;
+        }
+        loop->data = pcm;
+        loop->samples = alarm_tone_start_samples();
+        *volume = clamp_volume(cmd->volume);
+        *sample_index = 0;
+        *elapsed_samples = 0;
+        *mode = ALARM_AUDIO_MODE_ONCE;
+        *applied_volume = *volume;
+        apply_volume(*applied_volume);
+        break;
+    }
     case ALARM_AUDIO_CMD_STOP:
         *sample_index = 0;
         *elapsed_samples = 0;
@@ -328,6 +375,12 @@ static void alarm_audio_task(void *arg)
             }
 
             chunk_samples = fill_ui_click_chunk(chunk, sample_index);
+        } else if (mode == ALARM_AUDIO_MODE_ONCE && sample_index >= loop.samples) {
+            mode = ALARM_AUDIO_MODE_IDLE;
+            sample_index = 0;
+            s_alarm_audio.mode = mode;
+            write_silence();
+            continue;
         } else {
             size_t remaining;
 
@@ -395,6 +448,11 @@ static esp_err_t enqueue_command(alarm_audio_cmd_type_t type, uint8_t volume, ui
             return ESP_OK;
         }
         s_alarm_audio.mode = ALARM_AUDIO_MODE_CLICK;
+    } else if (type == ALARM_AUDIO_CMD_PLAY_START) {
+        if (previous_mode == ALARM_AUDIO_MODE_ALARM || previous_mode == ALARM_AUDIO_MODE_TEST) {
+            return ESP_OK;
+        }
+        s_alarm_audio.mode = ALARM_AUDIO_MODE_ONCE;
     } else if (type == ALARM_AUDIO_CMD_STOP) {
         s_alarm_audio.mode = ALARM_AUDIO_MODE_IDLE;
     } else if (type == ALARM_AUDIO_CMD_SET_VOLUME) {
@@ -521,6 +579,11 @@ esp_err_t alarm_audio_start_test(uint8_t volume, uint8_t sound)
 esp_err_t alarm_audio_play_ui_click(uint8_t volume)
 {
     return enqueue_command(ALARM_AUDIO_CMD_PLAY_CLICK, volume, 0);
+}
+
+esp_err_t alarm_audio_play_start_chime(uint8_t volume)
+{
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_START, volume, 0);
 }
 
 void alarm_audio_stop(void)

@@ -25,23 +25,50 @@ static void put_u16(FILE *f, uint16_t v)
     fputc((v >> 8) & 0xFF, f);
 }
 
+static int write_wav(const char *path, const int16_t *pcm, size_t n, int loops)
+{
+    FILE *f = fopen(path, "wb");
+    uint32_t bytes = (uint32_t)(n * sizeof(int16_t) * (size_t)loops);
+
+    if (f == NULL) {
+        perror(path);
+        return 1;
+    }
+    fwrite("RIFF", 1, 4, f);
+    put_u32(f, 36 + bytes);
+    fwrite("WAVEfmt ", 1, 8, f);
+    put_u32(f, 16);
+    put_u16(f, 1);
+    put_u16(f, 1);
+    put_u32(f, ALARM_TONE_SAMPLE_RATE);
+    put_u32(f, ALARM_TONE_SAMPLE_RATE * 2);
+    put_u16(f, 2);
+    put_u16(f, 16);
+    fwrite("data", 1, 4, f);
+    put_u32(f, bytes);
+    for (int l = 0; l < loops; l++) {
+        fwrite(pcm, sizeof(int16_t), n, f);
+    }
+    fclose(f);
+    printf("%s: %zu samples (%.1f s)\n", path, n, (double)n / ALARM_TONE_SAMPLE_RATE);
+    return 0;
+}
+
 int main(int argc, char **argv)
 {
     static const char *const names[ALARM_SOUND_COUNT] = {"morning_light", "wind_chimes", "marimba", "singing_bowl"};
     int loops = argc > 2 ? atoi(argv[2]) : 2;
+    float block[ALARM_TONE_BLOCK_SAMPLES];
+    char path[512];
+    int16_t *pcm;
+    size_t n;
 
     if (argc < 2) {
         fprintf(stderr, "usage: %s <out-dir> [loops]\n", argv[0]);
         return 2;
     }
     for (uint8_t s = 0; s < ALARM_SOUND_COUNT; s++) {
-        size_t n = alarm_tone_loop_samples(s);
-        int16_t *pcm;
-        float block[ALARM_TONE_BLOCK_SAMPLES];
-        char path[512];
-        FILE *f;
-        uint32_t bytes;
-
+        n = alarm_tone_loop_samples(s);
         if (n == 0) {
             continue;
         }
@@ -51,30 +78,22 @@ int main(int argc, char **argv)
             return 1;
         }
         snprintf(path, sizeof(path), "%s/%s.wav", argv[1], names[s]);
-        f = fopen(path, "wb");
-        if (f == NULL) {
-            perror(path);
+        if (write_wav(path, pcm, n, loops) != 0) {
             return 1;
         }
-        bytes = (uint32_t)(n * sizeof(int16_t) * (size_t)loops);
-        fwrite("RIFF", 1, 4, f);
-        put_u32(f, 36 + bytes);
-        fwrite("WAVEfmt ", 1, 8, f);
-        put_u32(f, 16);
-        put_u16(f, 1);
-        put_u16(f, 1);
-        put_u32(f, ALARM_TONE_SAMPLE_RATE);
-        put_u32(f, ALARM_TONE_SAMPLE_RATE * 2);
-        put_u16(f, 2);
-        put_u16(f, 16);
-        fwrite("data", 1, 4, f);
-        put_u32(f, bytes);
-        for (int l = 0; l < loops; l++) {
-            fwrite(pcm, sizeof(int16_t), n, f);
-        }
-        fclose(f);
-        printf("%s: %zu samples (%.1f s)\n", path, n, (double)n / ALARM_TONE_SAMPLE_RATE);
         free(pcm);
     }
+    /* The start chime plays once. */
+    n = alarm_tone_start_samples();
+    pcm = malloc(n * sizeof(int16_t));
+    if (pcm == NULL || !alarm_tone_render_start(pcm, block)) {
+        fprintf(stderr, "render failed for the start chime\n");
+        return 1;
+    }
+    snprintf(path, sizeof(path), "%s/start_chime.wav", argv[1]);
+    if (write_wav(path, pcm, n, 1) != 0) {
+        return 1;
+    }
+    free(pcm);
     return 0;
 }

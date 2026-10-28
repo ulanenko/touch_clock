@@ -190,6 +190,21 @@ static void on_ui_click_feedback(void *user_ctx)
     (void)audio->play_ui_click(ui_click_volume(app));
 }
 
+/* With the UI sounds, and never at night: the clock stands by a bed, and a restart in the
+ * night (an update, a power cut) must not wake anyone. */
+static void on_boot_chime(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    const audio_service_t *audio = app->core.config.audio_service;
+
+    if (audio == NULL || audio->play_start_chime == NULL || !app->core.state.audio_available ||
+        !app->core.state.settings.ui_click_sound_enabled || app->core.state.runtime.in_night_mode ||
+        app->core.state.settings.ui_click_volume == 0U) {
+        return;
+    }
+    (void)audio->play_start_chime(ui_click_volume(app));
+}
+
 static void on_set_ui_click_sound_enabled(void *user_ctx, bool enabled)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -422,6 +437,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_ota_check_requested = on_ota_check_requested,
         .on_ota_install_requested = on_ota_install_requested,
         .on_ui_click_feedback = on_ui_click_feedback,
+        .on_boot_chime = on_boot_chime,
         .on_set_ui_click_sound_enabled = on_set_ui_click_sound_enabled,
         .on_set_ui_click_volume = on_set_ui_click_volume,
         .on_set_language = on_set_language,

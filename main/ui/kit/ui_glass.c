@@ -38,7 +38,9 @@ void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 #define SCREEN 720
 #define LOW 180   /* the blur works at a quarter of the resolution */
 #define FROST 360 /* and is kept at half: it is soft enough */
+#define DEEP 90   /* sheets and large panels: blurred again at an eighth (about 30 px at full size) */
 #define VIEWS 256
+#define COVER_MIN 24 /* the least coverage a blurred colour is divided by */
 
 /* --- Backdrop ---------------------------------------------------------------------------- */
 
@@ -46,6 +48,11 @@ static lv_draw_buf_t *s_frost;      /* the backdrop blurred and graded, at half 
 static lv_draw_buf_t *s_back;       /* what the glass refracts: the face (FACE), the dimmed face (PAGE) */
 static const lv_draw_buf_t *s_sharp; /* the face the backdrop was built from (the screen scratch) */
 static float s_ground_fade = 1.0f;   /* 0 the sharp face, 1 the dimmed ground */
+static uint8_t *s_deep;             /* the deep frost: DEEP x DEEP, 8 bit RGB, graded like the frost */
+static bool s_deep_ok;
+static bool s_use_deep;             /* while baking a sheet or a large panel */
+static uint16_t s_deep_rows[4][FROST]; /* deep frost rows at the frost's size, as they are asked for */
+static int16_t s_deep_row_y[4] = {-1, -1, -1, -1};
 static bool s_frost_ok;
 static bool s_back_ok;
 static bool s_sharp_ok;
@@ -69,33 +76,69 @@ static lv_draw_buf_t *screen_buf(lv_draw_buf_t **buf)
     return *buf;
 }
 
-/* One box blur pass of radius r along rows (step 1) or columns (step LOW), in place. */
-static void box_pass(uint8_t *ch, uint8_t *tmp, int r, bool rows)
+/* One box blur pass of radius r along rows (step 1) or columns (step n) of an n x n plane, in
+ * place. */
+static void box_pass(uint8_t *ch, uint8_t *tmp, int r, bool rows, int n)
 {
     const int recip = (65536 + 2 * r) / (2 * r + 1); /* sum / (2r + 1) as a multiply */
 
-    for (int line = 0; line < LOW; line++) {
+    for (int line = 0; line < n; line++) {
         int sum = 0;
 
         for (int i = -r; i <= r; i++) {
-            int k = LV_CLAMP(0, i, LOW - 1);
+            int k = LV_CLAMP(0, i, n - 1);
 
-            sum += rows ? ch[line * LOW + k] : ch[k * LOW + line];
+            sum += rows ? ch[line * n + k] : ch[k * n + line];
         }
-        for (int i = 0; i < LOW; i++) {
-            int add = LV_MIN(i + r + 1, LOW - 1);
+        for (int i = 0; i < n; i++) {
+            int add = LV_MIN(i + r + 1, n - 1);
             int sub = LV_MAX(i - r, 0);
 
             tmp[i] = (uint8_t)((sum * recip) >> 16);
-            sum += rows ? ch[line * LOW + add] - ch[line * LOW + sub] : ch[add * LOW + line] - ch[sub * LOW + line];
+            sum += rows ? ch[line * n + add] - ch[line * n + sub] : ch[add * n + line] - ch[sub * n + line];
         }
-        for (int i = 0; i < LOW; i++) {
+        for (int i = 0; i < n; i++) {
             if (rows) {
-                ch[line * LOW + i] = tmp[i];
+                ch[line * n + i] = tmp[i];
             } else {
-                ch[i * LOW + line] = tmp[i];
+                ch[i * n + line] = tmp[i];
             }
         }
+    }
+}
+
+/* Three box passes each way over each of the four channels of an n x n RGBA image. */
+static void blur4(uint8_t *img, uint8_t *planes, uint8_t *tmp, int n, int r)
+{
+    for (int c = 0; c < 4; c++) {
+        for (int i = 0; i < n * n; i++) {
+            planes[i] = img[i * 4 + c];
+        }
+        for (int pass = 0; pass < 3; pass++) {
+            box_pass(planes, tmp, r, true, n);
+            box_pass(planes, tmp, r, false, n);
+        }
+        for (int i = 0; i < n * n; i++) {
+            img[i * 4 + c] = planes[i];
+        }
+    }
+}
+
+/* Colour over coverage, then graded: n x n RGBA (weighted) to RGB, in place. */
+static void unweight_grade(uint8_t *img, int n, float gain, float lift, float sat)
+{
+    for (int i = 0; i < n * n; i++) {
+        /* Far outside the circle the coverage is a few counts, its colours rounding noise:
+         * dividing by at least COVER_MIN fades them to black instead. */
+        int w = LV_MAX(img[i * 4 + 3], COVER_MIN);
+        float r = (float)LV_MIN(255, img[i * 4] * 255 / w);
+        float g = (float)LV_MIN(255, img[i * 4 + 1] * 255 / w);
+        float b = (float)LV_MIN(255, img[i * 4 + 2] * 255 / w);
+        float y = 0.21f * r + 0.72f * g + 0.07f * b;
+
+        img[i * 3] = (uint8_t)clampf((y + (r - y) * sat) * gain + lift, 0.0f, 255.0f);
+        img[i * 3 + 1] = (uint8_t)clampf((y + (g - y) * sat) * gain + lift, 0.0f, 255.0f);
+        img[i * 3 + 2] = (uint8_t)clampf((y + (b - y) * sat) * gain + lift, 0.0f, 255.0f);
     }
 }
 
@@ -273,22 +316,31 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         lv_free(acc);
     }
     GLASS_PERF_STEP("down");
-    /* Three box passes each way (close to a Gaussian of about 13 px at full size), per channel. */
+    /* Three box passes each way (close to a Gaussian of about 13 px at full size), per channel;
+     * then, for the deep frost, down by two more and three passes again (about 30 px): a sheet
+     * as wide as the screen shows no tick or numeral through it, and the picture it carries
+     * along while dragged has nothing in it to give the move away. */
+    s_deep_ok = false;
+    if (s_deep == NULL) {
+        s_deep = lv_malloc(DEEP * DEEP * 4);
+    }
     {
         uint8_t *planes = lv_malloc(LOW * LOW);
 
         if (planes != NULL) {
-            for (int c = 0; c < 4; c++) {
-                for (int i = 0; i < LOW * LOW; i++) {
-                    planes[i] = low[i * 4 + c];
+            blur4(low, planes, tmp, LOW, 3);
+            if (s_deep != NULL) {
+                for (int dy = 0; dy < DEEP; dy++) {
+                    for (int dx = 0; dx < DEEP; dx++) {
+                        const uint8_t *a = low + ((size_t)dy * 2 * LOW + (size_t)dx * 2) * 4;
+
+                        for (int c = 0; c < 4; c++) {
+                            s_deep[(dy * DEEP + dx) * 4 + c] =
+                                (uint8_t)((a[c] + a[4 + c] + a[LOW * 4 + c] + a[LOW * 4 + 4 + c] + 2) >> 2);
+                        }
+                    }
                 }
-                for (int pass = 0; pass < 3; pass++) {
-                    box_pass(planes, tmp, 3, true);
-                    box_pass(planes, tmp, 3, false);
-                }
-                for (int i = 0; i < LOW * LOW; i++) {
-                    low[i * 4 + c] = planes[i];
-                }
+                blur4(s_deep, planes, tmp, DEEP, 3);
             }
             lv_free(planes);
         }
@@ -299,7 +351,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         int w = low[i * 4 + 3];
 
         for (int c = 0; c < 3; c++) {
-            low[i * 3 + c] = w > 0 ? (uint8_t)LV_MIN(255, low[i * 4 + c] * 255 / w) : 0;
+            low[i * 3 + c] = (uint8_t)LV_MIN(255, low[i * 4 + c] * 255 / LV_MAX(w, COVER_MIN));
         }
     }
     for (int i = 0; i < LOW * LOW; i++) {
@@ -326,6 +378,13 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         low[i * 3] = (uint8_t)clampf((y + (r - y) * sat) * gain + lift, 0.0f, 255.0f);
         low[i * 3 + 1] = (uint8_t)clampf((y + (g - y) * sat) * gain + lift, 0.0f, 255.0f);
         low[i * 3 + 2] = (uint8_t)clampf((y + (b - y) * sat) * gain + lift, 0.0f, 255.0f);
+    }
+    if (s_deep != NULL) {
+        unweight_grade(s_deep, DEEP, gain, lift, sat);
+        s_deep_ok = true;
+        for (int k = 0; k < 4; k++) {
+            s_deep_row_y[k] = -1;
+        }
     }
     /* Up to half resolution bilinearly: each low row is interpolated across once (it serves
      * two output rows), then each pixel only blends two of them; dithered so gradients do not
@@ -483,9 +542,9 @@ typedef struct {
     float edge_dark; /* light glass on a light face: a darker edge to stand off it */
 } look_t;
 
-static look_t look_of(ui_glass_kind_t kind, lv_color_t tint)
+static look_t look_of(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mode)
 {
-    bool face = s_mode == UI_GLASS_FACE;
+    bool face = mode == UI_GLASS_FACE;
     bool light = face && s_light;
     look_t l = {face ? 0.55f : 0.85f, 0.0f, {0, 0, 0}, 0.62f, 1.18f, light ? 0.30f : 0.0f};
 
@@ -509,7 +568,7 @@ static look_t look_of(ui_glass_kind_t kind, lv_color_t tint)
         l.spec = 0.3f;
         break;
     case UI_GLASS_SHEET:
-        l.frost = 0.92f;
+        l.frost = 1.0f; /* material: no sharp face through it, only the bend at its edge */
         l.tint_a = s_light && face ? 0.12f : 0.20f;
         if (s_light && face) {
             l.tint[0] = l.tint[1] = l.tint[2] = 255.0f;
@@ -555,11 +614,11 @@ static float rrect_sdf(float px, float py, float hx, float hy, float r, float *n
 }
 
 /* The glass at screen point (x, y), s px inside the edge with outward normal (nx, ny). */
+static inline const uint16_t *frost_row(int32_t y);
+
 static inline uint16_t fetch_frost(int32_t x, int32_t y)
 {
-    x = LV_CLAMP(0, x, SCREEN - 1) >> 1;
-    y = LV_CLAMP(0, y, SCREEN - 1) >> 1;
-    return ((const uint16_t *)(s_frost->data + (size_t)y * s_frost->header.stride))[x];
+    return frost_row(y)[LV_CLAMP(0, x, SCREEN - 1) >> 1];
 }
 
 static inline uint16_t fetch(const lv_draw_buf_t *img, int32_t x, int32_t y)
@@ -573,14 +632,16 @@ static inline uint16_t fetch(const lv_draw_buf_t *img, int32_t x, int32_t y)
 typedef struct {
     int frost; /* 0..256 */
     int fgain; /* the frost's brightness: darker on pages, whose ground is the dimmed face */
+    int bgain; /* the back's: a page's glass baked while the back is still the bright face */
     int vib;   /* 256 = as is */
     int ta;    /* tint amount, 0..256 */
     int tint[3];
 } ilook_t;
 
-static ilook_t ilook_of(const look_t *l)
+static ilook_t ilook_of(const look_t *l, ui_glass_mode_t mode)
 {
-    ilook_t i = {(int)(l->frost * 256.0f), s_mode == UI_GLASS_PAGE ? 150 : 256, (int)(l->vibrance * 256.0f),
+    ilook_t i = {(int)(l->frost * 256.0f), mode == UI_GLASS_PAGE ? 150 : 256,
+                 mode == UI_GLASS_PAGE && s_mode == UI_GLASS_FACE ? 96 : 256, (int)(l->vibrance * 256.0f),
                  (int)(l->tint_a * 256.0f), {(int)l->tint[0], (int)l->tint[1], (int)l->tint[2]}};
 
     return i;
@@ -592,6 +653,9 @@ static inline void body(const ilook_t *il, int br, int bg, int bb, int fr, int f
 {
     int lum;
 
+    br = (br * il->bgain) >> 8;
+    bg = (bg * il->bgain) >> 8;
+    bb = (bb * il->bgain) >> 8;
     fr = (fr * il->fgain) >> 8;
     fg = (fg * il->fgain) >> 8;
     fb = (fb * il->fgain) >> 8;
@@ -674,6 +738,7 @@ typedef struct {
     uint32_t gen;      /* over the face: the generation it was baked from */
     uint32_t identity; /* on pages: the face it was baked from (the minute does not show) */
     uint8_t mode;
+    bool deep;         /* on a sheet or a large panel: frosted like it, not seeing past it */
     lv_draw_buf_t *buf;
     uint32_t stamp;
     int16_t pend_x, pend_y;
@@ -729,73 +794,236 @@ static void bake_drop(bake_t *b)
     b->key = NULL;
 }
 
+/* The bezel at one distance from a straight edge, in integers: how far each channel is bent
+ * (px, along the inward normal), the highlight (0..256) and the light glass's edge shade. */
+typedef struct {
+    int16_t off[3];
+    int16_t off_f;
+    int16_t spec;
+    int16_t dark; /* 256 = none */
+} rim_t;
+
+static rim_t rim_at(const bezel_t *bz, const look_t *l, float s, float nx, float ny)
+{
+    rim_t r;
+    float disp;
+    float slope;
+    float lit = LV_MAX(0.0f, -0.6f * nx - 0.8f * ny);
+    float refl = LV_MAX(0.0f, 0.6f * nx + 0.8f * ny);
+    float spec;
+
+    bezel_at(bz, s, &disp, &slope);
+    for (int k = 0; k < 3; k++) {
+        r.off[k] = (int16_t)lroundf(disp * (0.94f + 0.06f * (float)k));
+    }
+    r.off_f = (int16_t)lroundf(disp);
+    spec = slope == 0.0f ? 0.0f : l->spec * slope * slope * (0.25f + 0.85f * lit * lit + 0.45f * refl * refl);
+    spec += l->spec * 0.35f * clampf(1.4f - s, 0.0f, 1.0f);
+    r.spec = (int16_t)lroundf(clampf(spec, 0.0f, 1.0f) * 256.0f);
+    r.dark = (int16_t)lroundf(256.0f * (1.0f - l->edge_dark * clampf(1.0f - s / 5.0f, 0.0f, 1.0f) *
+                                                    (0.55f + 0.45f * LV_MAX(0.0f, ny))));
+    return r;
+}
+
+/* Body, highlight and edge shade of one pixel, packed. */
+static inline uint16_t shade_px(const ilook_t *il, const rim_t *rp, uint16_t vr, uint16_t vg, uint16_t vb,
+                                uint16_t vf, int32_t sx, int32_t sy)
+{
+    int c[3];
+
+    body(il, s_e5[vr >> 11], s_e6[(vg >> 5) & 63], s_e5[vb & 31], s_e5[vf >> 11], s_e6[(vf >> 5) & 63], s_e5[vf & 31],
+         c);
+    if (rp != NULL) {
+        for (int k = 0; k < 3; k++) {
+            int v = LV_CLAMP(0, c[k], 255);
+            /* The highlight takes some of the colour behind it. */
+            int hl = 191 + LV_MIN(64, (v * 2) / 5);
+
+            v += ((hl - v) * rp->spec) >> 8;
+            c[k] = (v * rp->dark) >> 8;
+        }
+    }
+    return pack(c[0], c[1], c[2], sx, sy);
+}
+
+static inline const uint16_t *back_row(int32_t y)
+{
+    return (const uint16_t *)(s_back->data + (size_t)LV_CLAMP(0, y, SCREEN - 1) * s_back->header.stride);
+}
+
+/* A deep frost row at the frost's size (bilinear from DEEP, x 4), made when first asked for: a
+ * bake asks for the same few rows over and over. */
+static const uint16_t *deep_row(int32_t fy)
+{
+    static int16_t x0[FROST];
+    static uint8_t wx[FROST];
+    static bool xs;
+    int slot = fy & 3;
+    uint16_t *out = s_deep_rows[slot];
+    int f = (fy * 2 + 1) * 32 - 128; /* ((fy + 0.5) / 4 - 0.5) * 256 */
+    int y0 = f < 0 ? 0 : LV_MIN(f >> 8, DEEP - 2);
+    int wy = f < 0 ? 0 : ((f >> 8) >= DEEP - 1 ? 255 : (f & 255));
+    const uint8_t *r0 = s_deep + (size_t)y0 * DEEP * 3;
+    const uint8_t *r1 = r0 + DEEP * 3;
+
+    if (s_deep_row_y[slot] == fy) {
+        return out;
+    }
+    if (!xs) {
+        for (int x = 0; x < FROST; x++) {
+            int fx = (x * 2 + 1) * 32 - 128;
+            int i = fx < 0 ? 0 : fx >> 8;
+
+            x0[x] = (int16_t)LV_MIN(i, DEEP - 2);
+            wx[x] = (uint8_t)(fx < 0 ? 0 : (i >= DEEP - 1 ? 255 : (fx & 255)));
+        }
+        xs = true;
+    }
+    for (int x = 0; x < FROST; x++) {
+        const uint8_t *a = r0 + x0[x] * 3;
+        const uint8_t *b = r1 + x0[x] * 3;
+        int w = wx[x];
+        int c[3];
+
+        for (int k = 0; k < 3; k++) {
+            int top = a[k] * (256 - w) + a[3 + k] * w;
+            int bot = b[k] * (256 - w) + b[3 + k] * w;
+
+            c[k] = (top * (256 - wy) + bot * wy) >> 16;
+        }
+        out[x] = pack(c[0], c[1], c[2], x, fy);
+    }
+    s_deep_row_y[slot] = (int16_t)fy;
+    return out;
+}
+
+static inline const uint16_t *frost_row(int32_t y)
+{
+    int32_t fy = LV_CLAMP(0, y, SCREEN - 1) >> 1;
+
+    if (s_use_deep) {
+        return deep_row(fy);
+    }
+    return (const uint16_t *)(s_frost->data + (size_t)fy * s_frost->header.stride);
+}
+
+/* One pixel the slow way (corners): exact distance and normal, the ground outside the shape. */
+static uint16_t corner_px(const bake_t *b, const bezel_t *bz, const look_t *l, const ilook_t *il, float hx, float hy,
+                          float rr, int32_t x, int32_t y, int32_t sx, int32_t sy, uint16_t ground)
+{
+    float nx;
+    float ny;
+    float d = rrect_sdf((float)x + 0.5f - hx, (float)y + 0.5f - hy, hx, hy, rr, &nx, &ny);
+    float c[3];
+
+    if (d >= 0.5f) {
+        return ground;
+    }
+    glass_pixel((float)sx + 0.5f, (float)sy + 0.5f, LV_MAX(0.0f, -d), nx, ny, bz, l, il, c);
+    if (d > -0.5f && b->opaque) {
+        /* The antialiased edge over the ground. */
+        float cov = 0.5f - d;
+
+        c[0] = c[0] * cov + (float)s_e5[ground >> 11] * (1.0f - cov);
+        c[1] = c[1] * cov + (float)s_e6[(ground >> 5) & 63] * (1.0f - cov);
+        c[2] = c[2] * cov + (float)s_e5[ground & 31] * (1.0f - cov);
+    }
+    return pack((int)c[0], (int)c[1], (int)c[2], sx, sy);
+}
+
+/* Bakes the shape. Away from the corners every row is spans: along the top and bottom bezel the
+ * bend and the light are the same across the row, along the sides the same down a column, and
+ * the flat top has none, so all of them run in integers; only the corners (radius x radius)
+ * take the exact path. */
 static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind, lv_color_t tint)
 {
     int32_t w = lv_area_get_width(area);
     int32_t h = lv_area_get_height(area);
     float hx = (float)w / 2.0f;
     float hy = (float)h / 2.0f;
-    look_t l = look_of(kind, tint);
-    ilook_t il = ilook_of(&l);
+    look_t l = look_of(kind, tint, (ui_glass_mode_t)b->mode);
+    ilook_t il;
     bezel_t bz;
     float rr = (float)radius;
+    int32_t bez;
+    int32_t corner;
+    rim_t side[2][32];
     GLASS_PERF_START();
 
+    /* Sheets and large panels are material: the deep frost only, the face bent at their edge
+     * but nowhere seen sharp through them. Glass on them (the sheet's keys) sees the same: the
+     * sheet is what is behind it, not the face under the sheet. */
+    s_use_deep = s_deep_ok && (b->deep || kind == UI_GLASS_SHEET || w * h > 100000);
+    if (s_use_deep) {
+        l.frost = 1.0f;
+    }
+    il = ilook_of(&l, (ui_glass_mode_t)b->mode);
     bezel_for(&bz, w, h);
+    bez = LV_MIN((int32_t)ceilf(bz.bezel), 31);
+    /* The straight spans start past the corner arcs (and the bezel, if the radius is smaller). */
+    corner = LV_MAX(radius, bez);
+    corner = LV_MIN(corner, LV_MIN(w, h) / 2);
+    for (int32_t i = 0; i < bez; i++) {
+        side[0][i] = rim_at(&bz, &l, (float)i + 0.5f, -1.0f, 0.0f);
+        side[1][i] = rim_at(&bz, &l, (float)i + 0.5f, 1.0f, 0.0f);
+    }
     for (int32_t y = 0; y < h; y++) {
         uint16_t *row = (uint16_t *)(b->buf->data + (size_t)y * b->buf->header.stride);
         int32_t sy = area->y1 + y;
-        float dye = (float)LV_MIN(y, h - 1 - y) + 0.5f;
-        const uint16_t *brow = (const uint16_t *)(s_back->data + (size_t)LV_CLAMP(0, sy, SCREEN - 1) * s_back->header.stride);
-        const uint16_t *frow = (const uint16_t *)(s_frost->data + (size_t)(LV_CLAMP(0, sy, SCREEN - 1) >> 1) * s_frost->header.stride);
+        int32_t dy = LV_MIN(y, h - 1 - y); /* rows from the nearer edge */
+        int32_t ny = y < h / 2 ? -1 : 1;
+        const uint16_t *brow = back_row(sy);
+        const uint16_t *frow = frost_row(sy);
+        bool corner_row = dy < corner;
+        int32_t x0 = corner_row ? corner : 0;
+        int32_t x1 = corner_row ? w - corner : w;
 
-        for (int32_t x = 0; x < w; x++) {
+        /* The corners, exactly. */
+        if (corner_row) {
+            for (int32_t x = 0; x < x0; x++) {
+                int32_t sx = area->x1 + x;
+
+                row[x] = corner_px(b, &bz, &l, &il, hx, hy, rr, x, y, sx, sy, brow[LV_CLAMP(0, sx, SCREEN - 1)]);
+            }
+            for (int32_t x = x1; x < w; x++) {
+                int32_t sx = area->x1 + x;
+
+                row[x] = corner_px(b, &bz, &l, &il, hx, hy, rr, x, y, sx, sy, brow[LV_CLAMP(0, sx, SCREEN - 1)]);
+            }
+        }
+        if (dy < bez) {
+            /* The top or bottom bezel: one bend and one light for the whole span. */
+            rim_t rp = rim_at(&bz, &l, (float)dy + 0.5f, 0.0f, (float)ny);
+            const uint16_t *rr_row = back_row(sy - ny * rp.off[0]);
+            const uint16_t *rg_row = back_row(sy - ny * rp.off[1]);
+            const uint16_t *rb_row = back_row(sy - ny * rp.off[2]);
+            const uint16_t *rf_row = frost_row(sy - ny * rp.off_f);
+
+            for (int32_t x = x0; x < x1; x++) {
+                int32_t sx = LV_CLAMP(0, area->x1 + x, SCREEN - 1);
+
+                row[x] = shade_px(&il, &rp, rr_row[sx], rg_row[sx], rb_row[sx], rf_row[sx >> 1], area->x1 + x, sy);
+            }
+            continue;
+        }
+        /* A middle row: the side bezels (one bend per column) and the flat top between. */
+        for (int32_t x = x0; x < x1; x++) {
             int32_t sx = area->x1 + x;
-            int32_t cx = LV_CLAMP(0, sx, SCREEN - 1);
-            float dxe = (float)LV_MIN(x, w - 1 - x) + 0.5f;
-            float d;
-            float nx;
-            float ny;
-            float c[3];
+            int32_t dx = LV_MIN(x, w - 1 - x);
 
-            if (dxe >= bz.bezel && dye >= bz.bezel && (dxe >= rr || dye >= rr)) {
-                /* The flat top, away from the bezel: integers only (most of every shape). */
-                uint16_t vb = brow[cx];
-                uint16_t vf = frow[cx >> 1];
-                int ci[3];
+            if (dx < bez) {
+                const rim_t *rp = &side[x < w / 2 ? 0 : 1][dx];
+                int32_t dir = x < w / 2 ? 1 : -1; /* inward */
 
-                body(&il, s_e5[vb >> 11], s_e6[(vb >> 5) & 63], s_e5[vb & 31], s_e5[vf >> 11], s_e6[(vf >> 5) & 63],
-                     s_e5[vf & 31], ci);
-                row[x] = pack(ci[0], ci[1], ci[2], sx, sy);
-                continue;
-            }
-            if (dxe < rr && dye < rr) {
-                d = rrect_sdf((float)x + 0.5f - hx, (float)y + 0.5f - hy, hx, hy, rr, &nx, &ny);
-            } else if (dxe < dye) {
-                d = -dxe;
-                nx = x < w / 2 ? -1.0f : 1.0f;
-                ny = 0.0f;
+                row[x] = shade_px(&il, rp, brow[LV_CLAMP(0, sx + dir * rp->off[0], SCREEN - 1)],
+                                  brow[LV_CLAMP(0, sx + dir * rp->off[1], SCREEN - 1)],
+                                  brow[LV_CLAMP(0, sx + dir * rp->off[2], SCREEN - 1)],
+                                  frow[LV_CLAMP(0, sx + dir * rp->off_f, SCREEN - 1) >> 1], sx, sy);
             } else {
-                d = -dye;
-                nx = 0.0f;
-                ny = y < h / 2 ? -1.0f : 1.0f;
-            }
-            if (d >= 0.5f) {
-                /* Outside the shape: the ground (or anything, where the corners are clipped). */
-                row[x] = brow[cx];
-                continue;
-            }
-            glass_pixel((float)sx + 0.5f, (float)sy + 0.5f, LV_MAX(0.0f, -d), nx, ny, &bz, &l, &il, c);
-            if (d > -0.5f && b->opaque) {
-                /* The antialiased edge over the ground. */
-                uint16_t g = brow[cx];
-                float cov = 0.5f - d;
+                int32_t cx = LV_CLAMP(0, sx, SCREEN - 1);
 
-                c[0] = c[0] * cov + (float)s_e5[g >> 11] * (1.0f - cov);
-                c[1] = c[1] * cov + (float)s_e6[(g >> 5) & 63] * (1.0f - cov);
-                c[2] = c[2] * cov + (float)s_e5[g & 31] * (1.0f - cov);
+                row[x] = shade_px(&il, NULL, brow[cx], brow[cx], brow[cx], frow[cx >> 1], sx, sy);
             }
-            row[x] = pack((int)c[0], (int)c[1], (int)c[2], sx, sy);
         }
     }
     b->x = (int16_t)area->x1;
@@ -804,6 +1032,7 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
     b->identity = s_identity;
     b->pend_x = b->x;
     b->pend_y = b->y;
+    s_use_deep = false;
     GLASS_PERF_END("bake", w, h);
 }
 
@@ -826,8 +1055,16 @@ static void settle_timer_cb(lv_timer_t *t)
     }
 }
 
+/* Whether a bake still shows its shape's backdrop: page glass (and sheets and large panels,
+ * frosted enough) as long as the face is the same; glass over the face for each new backdrop. */
+static bool bake_current(const bake_t *b, ui_glass_kind_t kind, int32_t w, int32_t h)
+{
+    return (b->mode == UI_GLASS_PAGE || kind == UI_GLASS_SHEET || w * h > 100000) ? b->identity == s_identity
+                                                                                   : b->gen == s_generation;
+}
+
 static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind, lv_color_t tint,
-                        bool opaque)
+                        bool opaque, ui_glass_mode_t mode, bool deep)
 {
     int32_t w = lv_area_get_width(area);
     int32_t h = lv_area_get_height(area);
@@ -839,14 +1076,11 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
         bake_t *b = &s_bakes[i];
 
         if (b->buf == NULL || b->key != key || b->w != w || b->h != h || b->r != radius || b->kind != kind ||
-            b->tint != t || b->opaque != opaque || b->mode != (uint8_t)s_mode) {
+            b->tint != t || b->opaque != opaque || b->mode != (uint8_t)mode) {
             continue;
         }
         b->stamp = ++s_bake_stamp;
-        /* Pages, sheets and large panels are frosted enough that a minute's change behind does
-         * not show: they follow the face, not each new backdrop. */
-        if ((s_mode == UI_GLASS_PAGE || kind == UI_GLASS_SHEET || w * h > 100000) ? b->identity != s_identity
-                                                                                 : b->gen != s_generation) {
+        if (!bake_current(b, kind, w, h)) {
             bake_render(b, area, radius, kind, tint);
         } else if (b->x != area->x1 || b->y != area->y1) {
             /* Moved: bake again once it has settled; meanwhile the old image moves with it. */
@@ -900,7 +1134,8 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
     slot->kind = (uint8_t)kind;
     slot->tint = t;
     slot->opaque = opaque;
-    slot->mode = (uint8_t)s_mode;
+    slot->mode = (uint8_t)mode;
+    slot->deep = deep;
     slot->stamp = ++s_bake_stamp;
     bake_render(slot, area, radius, kind, tint);
     return slot;
@@ -921,6 +1156,9 @@ void ui_glass_release(void)
         lv_draw_buf_destroy(s_back);
         s_back = NULL;
     }
+    lv_free(s_deep);
+    s_deep = NULL;
+    s_deep_ok = false;
     s_frost_ok = false;
     s_back_ok = false;
 }
@@ -963,49 +1201,72 @@ static void draw_view(lv_layer_t *layer, const lv_draw_buf_t *src, const lv_area
 
 /* Whether a glass object sits inside another glass object (its corners must show that glass,
  * not the ground). */
-static bool nested_in_glass(lv_obj_t *obj);
+static bool nested_in_glass(lv_obj_t *obj, bool *material);
+
+/* Whether an object sits on a page (its glass refracts the dimmed face) rather than over the
+ * face. */
+static bool on_page(lv_obj_t *obj);
+
+/* How an object's glass is baked: where it rests (an object gliding into place, translated,
+ * keeps one image while it moves), whether its corners are baked against the ground (large, not
+ * round, not inside other glass: drawn without LVGL's per-pixel corner mask), and its context. */
+static void plan(const void *key, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind, lv_area_t *rest,
+                 bool *opaque, ui_glass_mode_t *mode, bool *deep)
+{
+    int32_t w = lv_area_get_width(area);
+    int32_t h = lv_area_get_height(area);
+    bool nested;
+
+    *rest = *area;
+    *opaque = kind != UI_GLASS_SHEET && radius * 2 < LV_MIN(w, h) - 2 && w * h <= 250000;
+    *mode = s_mode;
+    *deep = false;
+    if (key == NULL) {
+        return;
+    }
+    lv_area_move(rest, -lv_obj_get_style_translate_x((lv_obj_t *)key, 0),
+                 -lv_obj_get_style_translate_y((lv_obj_t *)key, 0));
+    /* Asked once per object: an existing bake already knows. */
+    for (int i = 0; i < BAKE_MAX; i++) {
+        if (s_bakes[i].buf != NULL && s_bakes[i].key == key && s_bakes[i].w == w && s_bakes[i].h == h) {
+            *opaque = s_bakes[i].opaque;
+            *mode = (ui_glass_mode_t)s_bakes[i].mode;
+            *deep = s_bakes[i].deep;
+            return;
+        }
+    }
+    *mode = on_page((lv_obj_t *)key) ? UI_GLASS_PAGE : UI_GLASS_FACE;
+    nested = nested_in_glass((lv_obj_t *)key, deep);
+    *opaque = *opaque && !nested;
+}
+
+/* A bake can be made when the backdrop has what it needs: page glass from either back (the
+ * bright face is dimmed as it is read), glass over the face only from the face itself. */
+static bool can_bake(ui_glass_mode_t mode)
+{
+    return s_frost_ok && s_back_ok && (mode == UI_GLASS_PAGE || s_mode == UI_GLASS_FACE);
+}
 
 void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind,
                    lv_color_t tint)
 {
     lv_area_t screen = {0, 0, SCREEN - 1, SCREEN - 1};
-    lv_area_t rest = *area;
+    lv_area_t rest;
     lv_area_t vis;
     int32_t w = lv_area_get_width(area);
     int32_t h = lv_area_get_height(area);
     bake_t *b = NULL;
+    ui_glass_mode_t mode;
     bool opaque;
+    bool deep;
 
     if (!lv_area_intersect(&vis, area, &screen)) {
         return;
     }
     radius = LV_MIN(radius, LV_MIN(w, h) / 2);
-    /* Baked where it rests: an object gliding into place (the page entrance, the controls'
-     * sweep) is translated, and keeps one image while it moves. */
-    if (key != NULL) {
-        lv_area_move(&rest, -lv_obj_get_style_translate_x((lv_obj_t *)key, 0),
-                     -lv_obj_get_style_translate_y((lv_obj_t *)key, 0));
-    }
-    /* Large, not round, on the ground: corners baked against the ground, drawn without a
-     * corner mask (the mask costs per pixel per frame). Round keys and beads, sheets and glass
-     * inside glass keep the mask. */
-    opaque = kind != UI_GLASS_SHEET && radius * 2 < LV_MIN(w, h) - 2 && w * h <= 250000 && s_back_ok;
-    if (opaque && key != NULL) {
-        /* Asked once per object: an existing bake already knows. */
-        bool known = false;
-
-        for (int i = 0; i < BAKE_MAX && !known; i++) {
-            if (s_bakes[i].buf != NULL && s_bakes[i].key == key && s_bakes[i].w == w && s_bakes[i].h == h) {
-                opaque = s_bakes[i].opaque;
-                known = true;
-            }
-        }
-        if (!known) {
-            opaque = !nested_in_glass((lv_obj_t *)key);
-        }
-    }
-    if (s_frost_ok && s_back_ok) {
-        b = bake_get(key, &rest, radius, kind, tint, opaque);
+    plan(key, area, radius, kind, &rest, &opaque, &mode, &deep);
+    if (can_bake(mode)) {
+        b = bake_get(key, &rest, radius, kind, tint, opaque, mode, deep);
     }
     if (b != NULL) {
         lv_draw_image_dsc_t d;
@@ -1103,7 +1364,7 @@ static bool arc_pixel(int32_t x, int32_t y, int32_t cx, int32_t cy, float rm, fl
     if (d > 0.5f) {
         return false;
     }
-    ilook_t il = ilook_of(l);
+    ilook_t il = ilook_of(l, s_mode);
 
     glass_pixel((float)x + 0.5f, (float)y + 0.5f, LV_MAX(0.0f, -d), nx, ny, bz, l, &il, rgb);
     *coverage = clampf(0.5f - d, 0.0f, 1.0f);
@@ -1137,7 +1398,7 @@ lv_draw_buf_t *ui_glass_arc_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t
 {
     float r0 = a0 * 3.14159265f / 180.0f;
     float r1 = a1 * 3.14159265f / 180.0f;
-    look_t l = look_of(kind, tint);
+    look_t l = look_of(kind, tint, s_mode);
     bezel_t bz;
     lv_draw_buf_t *buf;
     lv_area_t box;
@@ -1186,7 +1447,7 @@ void ui_glass_arc_blend(lv_draw_buf_t *dst, int32_t dst_x, int32_t dst_y, int32_
 {
     float r0 = a0 * 3.14159265f / 180.0f;
     float r1 = a1 * 3.14159265f / 180.0f;
-    look_t l = look_of(kind, tint);
+    look_t l = look_of(kind, tint, s_mode);
     bezel_t bz;
     lv_area_t box;
 
@@ -1375,8 +1636,10 @@ static material_t classify(lv_obj_t *obj, lv_color_t color, int32_t w, int32_t h
     return MAT_NONE;
 }
 
-static bool nested_in_glass(lv_obj_t *obj)
+/* Whether obj sits on other glass; material: on a sheet or a large panel. */
+static bool nested_in_glass(lv_obj_t *obj, bool *material)
 {
+    *material = false;
     for (lv_obj_t *p = lv_obj_get_parent(obj); p != NULL; p = lv_obj_get_parent(p)) {
         ui_glass_kind_t kind;
         lv_area_t c;
@@ -1391,10 +1654,106 @@ static bool nested_in_glass(lv_obj_t *obj)
         h = lv_area_get_height(&c);
         if (classify(p, lv_obj_get_style_bg_color(p, LV_PART_MAIN), w, h,
                      LV_MIN(lv_obj_get_style_radius(p, LV_PART_MAIN), LV_MIN(w, h) / 2), &kind) == MAT_GLASS) {
+            *material = kind == UI_GLASS_SHEET || w * h > 100000;
             return true;
         }
     }
     return false;
+}
+
+static bool on_page(lv_obj_t *obj)
+{
+    for (lv_obj_t *p = lv_obj_get_parent(obj); p != NULL; p = lv_obj_get_parent(p)) {
+        ui_glass_kind_t kind;
+        lv_area_t c;
+
+        if (lv_obj_get_style_bg_opa(p, LV_PART_MAIN) < LV_OPA_50) {
+            continue;
+        }
+        lv_obj_get_coords(p, &c);
+        if (classify(p, lv_obj_get_style_bg_color(p, LV_PART_MAIN), lv_area_get_width(&c), lv_area_get_height(&c), 0,
+                     &kind) == MAT_GROUND) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static void glass_draw_cb(lv_event_t *e);
+
+static bool has_glass_cb(lv_obj_t *obj)
+{
+    uint32_t n = lv_obj_get_event_count(obj);
+
+    for (uint32_t i = 0; i < n; i++) {
+        if (lv_event_dsc_get_cb(lv_obj_get_event_dsc(obj, i)) == glass_draw_cb) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Bakes obj's glass now if it would draw some and has none current. */
+static void prewarm_one(lv_obj_t *obj)
+{
+    lv_area_t screen = {0, 0, SCREEN - 1, SCREEN - 1};
+    ui_glass_kind_t kind = UI_GLASS_CLEAR;
+    ui_glass_mode_t mode;
+    lv_area_t coords;
+    lv_area_t rest;
+    lv_area_t vis;
+    lv_color_t color;
+    int32_t w;
+    int32_t h;
+    int32_t radius;
+    bool opaque;
+    bool deep;
+
+    if (!has_glass_cb(obj) || lv_obj_get_style_bg_opa(obj, LV_PART_MAIN) < LV_OPA_50 ||
+        lv_obj_get_style_bg_grad_dir(obj, LV_PART_MAIN) != LV_GRAD_DIR_NONE) {
+        return;
+    }
+    lv_obj_get_coords(obj, &coords);
+    w = lv_area_get_width(&coords);
+    h = lv_area_get_height(&coords);
+    if (w <= 0 || h <= 0 || !lv_area_intersect(&vis, &coords, &screen)) {
+        return;
+    }
+    color = lv_obj_get_style_bg_color(obj, LV_PART_MAIN);
+    radius = LV_MIN(lv_obj_get_style_radius(obj, LV_PART_MAIN), LV_MIN(w, h) / 2);
+    if (classify(obj, color, w, h, radius, &kind) != MAT_GLASS) {
+        return;
+    }
+    plan(obj, &coords, radius, kind, &rest, &opaque, &mode, &deep);
+    /* Only into free room: a prewarm that evicted would bake round and round at idle. */
+    if (can_bake(mode) && s_bake_bytes + (size_t)w * (size_t)h * 2 <= BAKE_BYTES) {
+        bake_get(obj, &rest, radius, kind, color, opaque, mode, deep);
+    }
+}
+
+bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms)
+{
+    uint32_t start = lv_tick_get();
+    lv_obj_t *stack[64];
+    int depth = 0;
+
+    if (!ui_skin_is_glass() || root == NULL || !s_frost_ok || !s_back_ok) {
+        return true;
+    }
+    stack[depth++] = root;
+    while (depth > 0) {
+        lv_obj_t *obj = stack[--depth];
+        uint32_t n = lv_obj_get_child_count(obj);
+
+        prewarm_one(obj);
+        if (lv_tick_elaps(start) >= budget_ms) {
+            return false;
+        }
+        for (uint32_t i = n; i > 0 && depth < 64; i--) {
+            stack[depth++] = lv_obj_get_child(obj, (int32_t)i - 1);
+        }
+    }
+    return true;
 }
 
 /* Draws the object as glass instead of LVGL's background (and border: the rim replaces it). */
@@ -1442,4 +1801,20 @@ void ui_glass_attach(lv_obj_t *root)
 {
     lv_obj_add_event_cb(root, glass_draw_cb, (lv_event_code_t)(LV_EVENT_DRAW_MAIN | LV_EVENT_PREPROCESS), NULL);
     lv_obj_add_event_cb(root, child_created_cb, LV_EVENT_CHILD_CREATED, NULL);
+}
+
+void ui_glass_debug_bake(int32_t w, int32_t h, int32_t radius, ui_glass_kind_t kind)
+{
+    static int s_keys[4];
+    const void *key = &s_keys[(w * 7 + h) & 3];
+    lv_area_t area = {110, 74, 110 + w - 1, 74 + h - 1};
+    bake_t *b;
+
+    if (!s_frost_ok || !s_back_ok) {
+        return;
+    }
+    b = bake_get(key, &area, radius, kind, lv_color_black(), true, UI_GLASS_PAGE, false);
+    if (b != NULL) {
+        bake_render(b, &area, radius, kind, lv_color_black()); /* the bake alone, buffer reused */
+    }
 }

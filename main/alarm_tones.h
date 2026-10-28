@@ -27,3 +27,8 @@ size_t alarm_tone_loop_samples(uint8_t sound);
  * wrap to the start, so the loop repeats without a seam. Not reentrant. Returns false for a
  * sound that is not synthesised. */
 bool alarm_tone_render(uint8_t sound, int16_t *out, float *block);
+
+/* The start chime (played once as the face first opens): its length in samples, and the
+ * render into out (that many samples), as alarm_tone_render. */
+size_t alarm_tone_start_samples(void);
+bool alarm_tone_render_start(int16_t *out, float *block);

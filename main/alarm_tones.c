@@ -59,6 +59,7 @@ typedef struct {
 #define N_B5 987.77f
 #define N_C6 1046.50f
 #define N_D6 1174.66f
+#define N_G6 1567.98f
 
 /* --- Wind chimes: tuned tubes, D major pentatonic, a loose breezy cascade ---------------- */
 
@@ -134,6 +135,28 @@ static const tone_def_t s_tones[ALARM_SOUND_COUNT] = {
     [ALARM_SOUND_SINGING_BOWL] = {&s_bowl, s_bowl_strikes, sizeof(s_bowl_strikes) / sizeof(s_bowl_strikes[0]), 14.0f},
 };
 
+/* --- Start chime: glass bells rolling up a G major chord as the face opens --------------- */
+
+static const tone_instrument_t s_glass_bell = {
+    .partials =
+        {
+            {1.000f, 1.00f, 1.10f, 0.6f},
+            {2.000f, 0.22f, 0.60f, 0.0f},
+            {3.010f, 0.10f, 0.35f, 0.9f},
+            {4.160f, 0.05f, 0.18f, 0.0f},
+        },
+    .attack_s = 0.003f,
+    .decay_ref_hz = N_G5,
+};
+
+static const tone_strike_t s_start_strikes[] = {
+    {0.00f, N_G4, 0.40f}, {0.00f, N_D5, 0.26f}, {0.07f, N_G5, 0.50f},
+    {0.14f, N_B5, 0.46f}, {0.21f, N_D6, 0.50f}, {0.36f, N_G6, 0.30f},
+};
+
+static const tone_def_t s_start = {&s_glass_bell, s_start_strikes, sizeof(s_start_strikes) / sizeof(s_start_strikes[0]),
+                                   2.4f};
+
 /* Loudness of the recorded tone (RMS about 2200 of 32767), a little gentler, with headroom
  * for the strikes' peaks. */
 #define TONE_TARGET_RMS 1900.0f
@@ -190,10 +213,13 @@ typedef struct {
 
 static tone_voice_t s_voices[TONE_MAX_VOICES];
 
-static size_t add_voice(size_t count, size_t loop, size_t start, double hz, float level, float decay_s, float attack_s)
+/* one_shot: the voice ends with the sound (faded) instead of wrapping to its start. */
+static size_t add_voice(size_t count, size_t loop, size_t start, double hz, float level, float decay_s, float attack_s,
+                        bool one_shot)
 {
     tone_voice_t *v;
     size_t length = (size_t)(decay_s * 6.9f * (float)ALARM_TONE_SAMPLE_RATE);
+    size_t room = one_shot ? (start < loop ? loop - start : 0) : loop * 2;
 
     if (count >= TONE_MAX_VOICES) {
         return count;
@@ -202,8 +228,8 @@ static size_t add_voice(size_t count, size_t loop, size_t start, double hz, floa
     v->w = TWO_PI * hz / (double)ALARM_TONE_SAMPLE_RATE;
     v->r = exp(-1.0 / ((double)decay_s * (double)ALARM_TONE_SAMPLE_RATE));
     v->attack = (size_t)(attack_s * (float)ALARM_TONE_SAMPLE_RATE);
-    v->fade = (size_t)(0.03f * (float)ALARM_TONE_SAMPLE_RATE);
-    v->length = length > loop * 2 ? loop * 2 : length;
+    v->fade = (size_t)((one_shot ? 0.25f : 0.03f) * (float)ALARM_TONE_SAMPLE_RATE);
+    v->length = length > room ? room : length;
     if (v->w >= TWO_PI / 2.0 || v->length < v->attack + v->fade) {
         return count; /* above Nyquist, or too short to sound */
     }
@@ -351,10 +377,10 @@ static bool render_pass(size_t voices, size_t loop, float gain, int16_t *out, fl
     return clipped;
 }
 
-bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
+/* Renders def into out (loop samples) at the given loudness. */
+static bool render_def(const tone_def_t *def, size_t loop, bool one_shot, float target_rms, float peak_limit,
+                       int16_t *out, float *block)
 {
-    const tone_def_t *def = tone_def(sound);
-    size_t loop = alarm_tone_loop_samples(sound);
     size_t voices = 0;
     double sum_sq;
     float peak;
@@ -380,11 +406,12 @@ bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
             }
             if (part->twin_hz > 0.0f) {
                 /* The pair shares the level, so the beat swells and fades without adding up. */
-                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio), level * 0.6f, decay, attack);
+                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio), level * 0.6f, decay, attack,
+                                   one_shot);
                 voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio + part->twin_hz), level * 0.4f,
-                                   decay, attack);
+                                   decay, attack, one_shot);
             } else {
-                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio), level, decay, attack);
+                voices = add_voice(voices, loop, start, (double)(k->hz * part->ratio), level, decay, attack, one_shot);
             }
         }
     }
@@ -394,16 +421,16 @@ bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
 
     /* Render once at the estimated gain, then trim to the exact loudness in place. Only a
      * badly low estimate (a clipped sample) costs a second pass. */
-    gain = TONE_TARGET_RMS / (float)estimate_rms(voices, loop);
+    gain = target_rms / (float)estimate_rms(voices, loop);
     if (render_pass(voices, loop, gain, out, block, &sum_sq, &peak)) {
         gain = 0.0f;
     }
     if (peak <= 0.0f) {
         return false;
     }
-    want = TONE_TARGET_RMS / (float)sqrt(sum_sq / (double)loop);
-    if (want * peak > TONE_PEAK_LIMIT) {
-        want = TONE_PEAK_LIMIT / peak;
+    want = target_rms / (float)sqrt(sum_sq / (double)loop);
+    if (want * peak > peak_limit) {
+        want = peak_limit / peak;
     }
     if (gain == 0.0f) {
         render_pass(voices, loop, want, out, block, &sum_sq, &peak);
@@ -415,4 +442,28 @@ bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
         }
     }
     return true;
+}
+
+bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
+{
+    const tone_def_t *def = tone_def(sound);
+
+    if (def == NULL || out == NULL || block == NULL) {
+        return false;
+    }
+    return render_def(def, alarm_tone_loop_samples(sound), false, TONE_TARGET_RMS, TONE_PEAK_LIMIT, out, block);
+}
+
+size_t alarm_tone_start_samples(void)
+{
+    return (size_t)(s_start.loop_s * (float)ALARM_TONE_SAMPLE_RATE);
+}
+
+bool alarm_tone_render_start(int16_t *out, float *block)
+{
+    if (out == NULL || block == NULL) {
+        return false;
+    }
+    /* Softer than the alarms: a greeting, mostly the first strikes; the tail fades out. */
+    return render_def(&s_start, alarm_tone_start_samples(), true, 1500.0f, 18000.0f, out, block);
 }

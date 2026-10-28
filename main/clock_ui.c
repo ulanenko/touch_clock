@@ -41,111 +41,6 @@ const uint8_t s_wharton_font[10][WH_DIGIT_ROWS] = {
 const uint8_t s_matrix_digit_col[4] = {3, 9, 19, 25};
 const uint8_t s_matrix_colon_col = 16;
 const uint8_t s_matrix_digit_row0 = (MTX_GRID_Y - MTX_DIGIT_H) / 2;
-static void boot_overlay_apply_phase(clock_ui_context_t *ctx, uint8_t phase, const char *subtitle)
-{
-    uint8_t active = phase % BOOT_SPINNER_DOT_COUNT;
-
-    if (ctx->boot.overlay == NULL) {
-        return;
-    }
-
-    ctx->boot.phase = active;
-
-    for (uint8_t i = 0; i < BOOT_SPINNER_DOT_COUNT; ++i) {
-        lv_color_t color = lv_color_hex(0x3A3F46);
-        lv_opa_t opa = LV_OPA_30;
-
-        if (i == active) {
-            color = lv_color_hex(0xF2F5F7);
-            opa = LV_OPA_COVER;
-        } else if (i == ((active + BOOT_SPINNER_DOT_COUNT) - 1) % BOOT_SPINNER_DOT_COUNT) {
-            color = lv_color_hex(0xB8C0C7);
-            opa = LV_OPA_70;
-        } else if (i == ((active + BOOT_SPINNER_DOT_COUNT) - 2) % BOOT_SPINNER_DOT_COUNT) {
-            color = lv_color_hex(0x7D8791);
-            opa = LV_OPA_50;
-        }
-
-        if (ctx->boot.dots[i] != NULL) {
-            lv_obj_set_style_bg_color(ctx->boot.dots[i], color, 0);
-            lv_obj_set_style_bg_opa(ctx->boot.dots[i], opa, 0);
-        }
-    }
-
-    if (subtitle != NULL && ctx->boot.subtitle != NULL) {
-        lv_label_set_text(ctx->boot.subtitle, subtitle);
-    }
-
-    lv_refr_now(NULL);
-}
-
-static void boot_overlay_advance(clock_ui_context_t *ctx, const char *subtitle)
-{
-    boot_overlay_apply_phase(ctx, (uint8_t)(ctx->boot.phase + 1), subtitle);
-}
-
-static void boot_overlay_create(clock_ui_context_t *ctx)
-{
-    static const lv_coord_t ring_radius = 58;
-    static const lv_coord_t ring_center_y_offset = -64;
-
-    ctx->screen = lv_screen_active();
-    lv_obj_set_style_bg_color(ctx->screen, lv_color_black(), 0);
-    lv_obj_set_style_pad_all(ctx->screen, 0, 0);
-    lv_obj_remove_flag(ctx->screen, LV_OBJ_FLAG_SCROLLABLE);
-
-    ctx->boot.overlay = lv_obj_create(lv_layer_top());
-    lv_obj_set_size(ctx->boot.overlay, lv_pct(100), lv_pct(100));
-    lv_obj_set_style_bg_color(ctx->boot.overlay, lv_color_black(), 0);
-    lv_obj_set_style_bg_opa(ctx->boot.overlay, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(ctx->boot.overlay, 0, 0);
-    lv_obj_set_style_radius(ctx->boot.overlay, 0, 0);
-    lv_obj_set_style_pad_all(ctx->boot.overlay, 0, 0);
-    lv_obj_clear_flag(ctx->boot.overlay, LV_OBJ_FLAG_SCROLLABLE);
-
-    for (uint8_t i = 0; i < BOOT_SPINNER_DOT_COUNT; ++i) {
-        float angle = ((float)i / (float)BOOT_SPINNER_DOT_COUNT) * 2.0f * (float)M_PI;
-        lv_coord_t x = (lv_coord_t)lroundf(cosf(angle) * ring_radius);
-        lv_coord_t y = ring_center_y_offset + (lv_coord_t)lroundf(sinf(angle) * ring_radius);
-
-        ctx->boot.dots[i] = lv_obj_create(ctx->boot.overlay);
-        lv_obj_set_size(ctx->boot.dots[i], 12, 12);
-        lv_obj_set_style_radius(ctx->boot.dots[i], LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(ctx->boot.dots[i], 0, 0);
-        lv_obj_set_style_pad_all(ctx->boot.dots[i], 0, 0);
-        lv_obj_set_style_bg_color(ctx->boot.dots[i], lv_color_hex(0x3A3F46), 0);
-        lv_obj_set_style_bg_opa(ctx->boot.dots[i], LV_OPA_30, 0);
-        lv_obj_clear_flag(ctx->boot.dots[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_align(ctx->boot.dots[i], LV_ALIGN_CENTER, x, y);
-    }
-
-    ctx->boot.title = lv_label_create(ctx->boot.overlay);
-    lv_obj_set_style_text_font(ctx->boot.title, &lv_font_montserrat_24, 0);
-    lv_obj_set_style_text_color(ctx->boot.title, lv_color_hex(0xF2F5F7), 0);
-    lv_label_set_text(ctx->boot.title, "Touch Clock");
-    lv_obj_align(ctx->boot.title, LV_ALIGN_CENTER, 0, 60);
-
-    ctx->boot.subtitle = lv_label_create(ctx->boot.overlay);
-    lv_obj_set_style_text_font(ctx->boot.subtitle, &lv_font_montserrat_20, 0);
-    lv_obj_set_style_text_color(ctx->boot.subtitle, lv_color_hex(0x8F99A3), 0);
-    lv_label_set_text(ctx->boot.subtitle, "Starting");
-    lv_obj_align(ctx->boot.subtitle, LV_ALIGN_CENTER, 0, 96);
-
-    boot_overlay_apply_phase(ctx, 0, "Starting");
-}
-
-static void boot_overlay_destroy(clock_ui_context_t *ctx)
-{
-    if (ctx->boot.overlay != NULL) {
-        lv_obj_delete(ctx->boot.overlay);
-        ctx->boot.overlay = NULL;
-    }
-
-    ctx->boot.title = NULL;
-    ctx->boot.subtitle = NULL;
-    memset(ctx->boot.dots, 0, sizeof(ctx->boot.dots));
-}
-
 static void styles_init(void)
 {
     lv_style_init(&s_style_hour);
@@ -236,7 +131,6 @@ static void prewarm_face_previews(clock_ui_context_t *ctx)
 {
     clock_face_id_t active_face;
     int visible_count;
-    char subtitle[48];
 
     if (ctx->screen == NULL) {
         return;
@@ -246,15 +140,12 @@ static void prewarm_face_previews(clock_ui_context_t *ctx)
 
     visible_count = clock_face_visible_count();
     for (int index = 0; index < visible_count; ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
-
-        update_face(ctx, face);
-        snprintf(subtitle, sizeof(subtitle), "Loading %s", clock_face_name(face));
-        boot_overlay_advance(ctx, subtitle);
+        update_face(ctx, clock_face_visible_index_to_id(index));
+        ui_boot_step(ctx);
     }
 
     refresh_digital_face_snapshot(ctx);
-    boot_overlay_advance(ctx, "Finalizing");
+    ui_boot_step(ctx);
 
     active_face = ctx->runtime->in_night_mode ? ctx->settings->night_mode.face : ctx->settings->current_face;
     set_active_face(ctx, active_face, LV_ANIM_OFF);
@@ -656,7 +547,8 @@ esp_err_t clock_ui_begin_boot(const app_settings_t *settings,
     build_timezone_options(ctx->timezone_options, sizeof(ctx->timezone_options));
     build_face_options(ctx->face_options, sizeof(ctx->face_options));
     styles_init();
-    boot_overlay_create(ctx);
+    /* Steps: the interface, each face, the digital snapshot, the chrome. */
+    ui_boot_create(ctx, (uint8_t)(clock_face_visible_count() + 3));
     return ESP_OK;
 }
 
@@ -664,15 +556,13 @@ esp_err_t clock_ui_finish_boot(void)
 {
     clock_ui_context_t *ctx = &s_ctx;
 
-    boot_overlay_advance(ctx, "Building interface");
     build_root_ui(ctx);
-    boot_overlay_advance(ctx, "Preparing faces");
+    ui_boot_step(ctx);
     prewarm_face_previews(ctx);
     ui_chrome_refresh(ctx);
-    boot_overlay_advance(ctx, "Ready");
-    boot_overlay_destroy(ctx);
-    ui_face_chrome_show_controls(ctx);
-    lv_refr_now(NULL);
+    ui_boot_step(ctx);
+    /* The intro runs from here on the UI thread; the controls come up when it ends. */
+    ui_boot_finish(ctx);
     return ESP_OK;
 }
 

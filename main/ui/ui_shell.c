@@ -325,9 +325,13 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         update_face(ctx, current);
         return;
     }
-    /* Liquid Glass: keep the face's glass ready, so the controls come up at once. */
+    /* Liquid Glass: keep the face's glass ready, so the controls come up at once, and bake
+     * what the chrome will show a little at a time (one tick does at most a few shapes). */
     if (!face_controls_visible(ctx)) {
         face_glass_capture(ctx, UI_GLASS_FACE);
+        if (ui_glass_backdrop_ready()) {
+            ui_glass_prewarm(ctx->chrome_root, 20);
+        }
     }
 }
 
@@ -1063,6 +1067,32 @@ static void debug_next_theme(clock_ui_context_t *ctx)
 
     request_set_face_theme(ctx, face, (uint8_t)((theme + 1U) % CLOCK_FACE_THEME_COUNT));
 }
+/* Glass timing (the simulator's "timecall"): the frost rebuilt for the face shown, the switch
+ * to a page, and bakes of a page row and of a sheet-sized panel. */
+static void debug_glass_backdrop(clock_ui_context_t *ctx)
+{
+    if (ui_skin_is_glass() && face_slide_snapshot(ctx, face_slide_current(ctx), 0)) {
+        ui_glass_backdrop_build(ctx->faces.face_slide_bufs[0], UI_GLASS_FACE, true);
+    }
+}
+
+static void debug_glass_to_page(clock_ui_context_t *ctx)
+{
+    ui_glass_backdrop_to_page(screen_scratch(ctx));
+}
+
+static void debug_glass_bake_row(clock_ui_context_t *ctx)
+{
+    LV_UNUSED(ctx);
+    ui_glass_debug_bake(500, 88, 32, UI_GLASS_CLEAR);
+}
+
+static void debug_glass_bake_panel(clock_ui_context_t *ctx)
+{
+    LV_UNUSED(ctx);
+    ui_glass_debug_bake(600, 572, 64, UI_GLASS_CLEAR);
+}
+
 
 /* --- Hooks (ui_areas.h) ----------------------------------------------------------------- */
 
@@ -1074,7 +1104,12 @@ void ui_face_chrome_create(clock_ui_context_t *ctx)
     if (ctx->face_chrome.themes_tab != NULL) {
         face_shell_attach_swipe(ctx, ctx->face_chrome.themes_tab);
     }
+    ui_debug_register("glass_backdrop", debug_glass_backdrop);
+    ui_debug_register("glass_to_page", debug_glass_to_page);
+    ui_debug_register("glass_bake_row", debug_glass_bake_row);
+    ui_debug_register("glass_bake_panel", debug_glass_bake_panel);
     ui_debug_register("show_controls", ui_face_chrome_show_controls);
+    ui_debug_register("boot_intro", ui_boot_replay);
     ui_debug_register("hide_controls", debug_hide_controls);
     ui_debug_register("open_theme", debug_open_theme);
     ui_debug_register("close_theme", debug_close_theme);

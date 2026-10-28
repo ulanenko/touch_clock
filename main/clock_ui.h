@@ -24,6 +24,7 @@ typedef struct {
     void (*on_ota_check_requested)(void *user_ctx);
     void (*on_ota_install_requested)(void *user_ctx);
     void (*on_ui_click_feedback)(void *user_ctx);
+    void (*on_boot_chime)(void *user_ctx); /* the face opens after boot: the start chime */
     void (*on_set_ui_click_sound_enabled)(void *user_ctx, bool enabled);
     void (*on_set_ui_click_volume)(void *user_ctx, uint8_t volume);
     void (*on_set_language)(void *user_ctx, clock_language_t language);

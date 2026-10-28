@@ -20,6 +20,7 @@ typedef struct {
     int (*start_alarm)(uint8_t volume, uint8_t sound);
     int (*start_test)(uint8_t volume, uint8_t sound);
     int (*play_ui_click)(uint8_t volume);
+    int (*play_start_chime)(uint8_t volume);
     void (*stop)(void);
     bool (*is_alarm_active)(void);
     bool (*is_test_active)(void);

@@ -67,5 +67,12 @@ void ui_glass_frost_blit(lv_draw_buf_t *dst, int32_t dst_x, int32_t dst_y);
  * ground fades from the face to the dimmed face. targets: the objects that rise, in order. */
 void ui_glass_page_enter(lv_obj_t *root, lv_obj_t *const *targets, int count, bool from_face);
 
+/* Bakes, while the face is idle, the glass of everything under root that has none current yet
+ * (hidden pages included), so opening them does not wait; returns true once all is baked. */
+bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms);
+
+/* For timing (debug calls): bakes a w x h shape of kind once, as a row on a page would be. */
+void ui_glass_debug_bake(int32_t w, int32_t h, int32_t radius, ui_glass_kind_t kind);
+
 /* Makes every chrome object created under root draw as glass where its colours say so. */
 void ui_glass_attach(lv_obj_t *root);

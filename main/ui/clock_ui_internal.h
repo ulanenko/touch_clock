@@ -45,7 +45,6 @@
 #define SETTINGS_CLOSE_EDGE_ZONE 16
 #define SETTINGS_CLOSE_SWIPE_TRIGGER 26
 #define ALARM_CLOSE_BOTTOM_EDGE_ZONE 24
-#define BOOT_SPINNER_DOT_COUNT 12
 #define FACE_THEME_SHEET_HEIGHT SCREEN_SIZE
 #define FACE_THEME_SHEET_OPEN_Y 0
 #define FACE_THEME_SHEET_CLOSED_Y (-FACE_THEME_SHEET_HEIGHT)
@@ -147,11 +146,13 @@ typedef struct {
 } ui_l10n_binding_t;
 
 typedef struct {
-    lv_obj_t *overlay;
+    lv_obj_t *overlay; /* the boot screen, drawn by ui_boot.c */
     lv_obj_t *title;
-    lv_obj_t *subtitle;
-    lv_obj_t *dots[BOOT_SPINNER_DOT_COUNT];
-    uint8_t phase;
+    uint8_t step;      /* build steps done, of steps */
+    uint8_t steps;
+    uint16_t intro_ms; /* time into the intro (the face opening) */
+    bool intro;
+    bool chimed;
 } clock_ui_boot_state_t;
 
 
