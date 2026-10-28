@@ -2,17 +2,9 @@
 
 #include "ui/clock_ui_private.h"
 
-#if CONFIG_SOC_PPA_SUPPORTED
-
 #include <stdio.h>
 #include <string.h>
 
-#include "driver/ppa.h"
-#include "esp_heap_caps.h"
-#include "esp_log.h"
-#include "esp_memory_utils.h"
-#include "esp_private/esp_cache_private.h"
-#include "esp_timer.h"
 #include "lvgl.h"
 #include "src/draw/lv_draw_private.h"
 #include "src/misc/lv_area_private.h"
@@ -20,10 +12,20 @@
 #include "src/draw/sw/blend/lv_draw_sw_blend_private.h"
 #include "src/draw/sw/blend/lv_draw_sw_blend_to_rgb565.h"
 
+#if CONFIG_SOC_PPA_SUPPORTED
+#include "driver/ppa.h"
+#include "esp_heap_caps.h"
+#include "esp_log.h"
+#include "esp_memory_utils.h"
+#include "esp_private/esp_cache_private.h"
+#include "esp_timer.h"
+#endif
+
 /*
- * Large full-width blends into the RGB565 frame buffer (full-screen face images, the
- * screen background, overlay scrims, sheet snapshots) go to the PPA. Everything else
- * stays on LVGL's software blender.
+ * The RGB565 blend handler. Large full-width blends into the frame buffer (full-screen face
+ * images, the screen background, overlay scrims, sheet snapshots) go to the PPA where there
+ * is one. Everything else is blended on the CPU: ARGB8888 images by the loops below, the
+ * rest by LVGL's software blender.
  *
  * Only whole rows whose bytes start and end on a cache line go to the PPA. The PPA driver
  * writes back and invalidates the cache lines of the rows it touches. With two software
@@ -32,28 +34,152 @@
  * them. The rows at the edges that are not aligned are blended in software.
  */
 
-#define PPA_BLEND_MIN_ROWS 16
+/* --- Sparse images ----------------------------------------------------------------------- */
 
-static const char *TAG = "ui_ppa_blend";
-
-static ppa_client_handle_t s_blend_client;
-static ppa_client_handle_t s_fill_client;
-static size_t s_align;
-static uint8_t *s_a8_dummy;
-static size_t s_a8_dummy_size;
-static bool s_failed_logged;
-#if CONFIG_TOUCH_CLOCK_PERF_TOUR
-/* Time the draw units spend blocked on the PPA, for the perf tour. */
-static uint32_t s_stat_ops;
-static uint32_t s_stat_us;
-#endif
+/* Mostly transparent ARGB8888 images (the kit's ring and dial tiles) can be registered with
+ * the runs of visible pixels in each row. Blending one then touches only those pixels: the
+ * Atelier rim's tiles cover about 125k pixels for about 4k visible ones. The kit registers a
+ * tile when it builds it and unregisters it before freeing it, both on the UI thread; the
+ * draw threads only read. */
+#define SPARSE_MAX 192
 
 typedef struct {
-    uint8_t *buf;
+    const uint8_t *data; /* NULL for a free slot; published last */
+    size_t size;
     uint32_t stride;
-    uint32_t pic_w;
-    uint32_t pic_h;
-} ppa_target_t;
+    uint32_t *row_start; /* h + 1 indices into runs */
+    uint16_t *runs;      /* (x, length) pairs */
+} sparse_image_t;
+
+static sparse_image_t s_sparse[SPARSE_MAX];
+static int s_sparse_count; /* slots in use or once used: the lookup scans these */
+
+void ui_sparse_image_register(const lv_draw_buf_t *buf)
+{
+    uint32_t h = buf->header.h;
+    uint32_t w = buf->header.w;
+    uint32_t runs = 0;
+    sparse_image_t *slot = NULL;
+
+    if (buf->header.cf != LV_COLOR_FORMAT_ARGB8888) {
+        return;
+    }
+    for (int i = 0; i < SPARSE_MAX && slot == NULL; i++) {
+        if (s_sparse[i].data == NULL) {
+            slot = &s_sparse[i];
+        }
+    }
+    if (slot == NULL) {
+        return; /* blended in full instead */
+    }
+    for (uint32_t y = 0; y < h; y++) {
+        const lv_color32_t *row = (const lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
+
+        for (uint32_t x = 0; x < w; x++) {
+            if (row[x].alpha != 0 && (x == 0 || row[x - 1].alpha == 0)) {
+                runs++;
+            }
+        }
+    }
+    slot->row_start = lv_malloc((h + 1) * sizeof(uint32_t));
+    slot->runs = lv_malloc((runs ? runs : 1) * 2 * sizeof(uint16_t));
+    if (slot->row_start == NULL || slot->runs == NULL) {
+        lv_free(slot->row_start);
+        lv_free(slot->runs);
+        return;
+    }
+    runs = 0;
+    for (uint32_t y = 0; y < h; y++) {
+        const lv_color32_t *row = (const lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
+
+        slot->row_start[y] = runs;
+        for (uint32_t x = 0; x < w; x++) {
+            if (row[x].alpha == 0) {
+                continue;
+            }
+            if (x == 0 || row[x - 1].alpha == 0) {
+                slot->runs[runs * 2] = (uint16_t)x;
+                slot->runs[runs * 2 + 1] = 0;
+                runs++;
+            }
+            slot->runs[(runs - 1) * 2 + 1]++;
+        }
+    }
+    slot->row_start[h] = runs;
+    slot->size = (size_t)h * buf->header.stride;
+    slot->stride = buf->header.stride;
+    __atomic_store_n(&slot->data, buf->data, __ATOMIC_RELEASE);
+    if (slot - s_sparse >= s_sparse_count) {
+        __atomic_store_n(&s_sparse_count, (int)(slot - s_sparse) + 1, __ATOMIC_RELEASE);
+    }
+}
+
+void ui_sparse_image_unregister(const lv_draw_buf_t *buf)
+{
+    for (int i = 0; i < s_sparse_count; i++) {
+        if (s_sparse[i].data == buf->data) {
+            __atomic_store_n(&s_sparse[i].data, NULL, __ATOMIC_RELEASE);
+            lv_free(s_sparse[i].row_start);
+            lv_free(s_sparse[i].runs);
+            s_sparse[i].row_start = NULL;
+            s_sparse[i].runs = NULL;
+            return;
+        }
+    }
+}
+
+static inline uint16_t argb_mix(uint32_t px, uint16_t c)
+{
+    uint32_t mix = px >> 24;
+    uint32_t inv;
+
+    if (mix == 255) {
+        return (uint16_t)(((px >> 8) & 0xF800) | ((px >> 5) & 0x07E0) | ((px & 0xF8) >> 3));
+    }
+    inv = 255 - mix;
+    return (uint16_t)((((((px >> 19) & 0x1F) * mix + ((c >> 11) & 0x1F) * inv) << 3) & 0xF800) +
+                      (((((px >> 10) & 0x3F) * mix + ((c >> 5) & 0x3F) * inv) >> 3) & 0x07E0) +
+                      ((((px >> 3) & 0x1F) * mix + (c & 0x1F) * inv) >> 8));
+}
+
+/* Blends only the visible runs if the source lies in a registered sparse image. */
+static bool sparse_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc)
+{
+    const uint8_t *src = dsc->src_buf;
+    int count = __atomic_load_n(&s_sparse_count, __ATOMIC_ACQUIRE);
+
+    for (int i = 0; i < count; i++) {
+        const uint8_t *data = __atomic_load_n(&s_sparse[i].data, __ATOMIC_ACQUIRE);
+        const sparse_image_t *img = &s_sparse[i];
+        size_t off;
+        int32_t sx;
+        int32_t sy;
+        uint8_t *dest_row = dsc->dest_buf;
+
+        if (data == NULL || src < data || src >= data + img->size || (uint32_t)dsc->src_stride != img->stride) {
+            continue;
+        }
+        off = (size_t)(src - data);
+        sy = (int32_t)(off / img->stride);
+        sx = (int32_t)((off % img->stride) / 4);
+        for (int32_t y = 0; y < dsc->dest_h; y++) {
+            const uint32_t *src_px = (const uint32_t *)(data + (size_t)(sy + y) * img->stride);
+            uint16_t *dest = (uint16_t *)dest_row - sx;
+
+            for (uint32_t k = img->row_start[sy + y]; k < img->row_start[sy + y + 1]; k++) {
+                int32_t lo = LV_MAX((int32_t)img->runs[k * 2], sx);
+                int32_t hi = LV_MIN((int32_t)img->runs[k * 2] + (int32_t)img->runs[k * 2 + 1], sx + dsc->dest_w);
+
+                for (int32_t x = lo; x < hi; x++) {
+                    dest[x] = argb_mix(src_px[x], dest[x]);
+                }
+            }
+            dest_row += dsc->dest_stride;
+        }
+        return true;
+    }
+    return false;
+}
 
 /* An opaque ARGB8888 image over RGB565, as LVGL blends it (lv_color_24_16_mix) but without
  * touching the destination under fully transparent pixels. Cached ring and dial tiles are
@@ -71,18 +197,8 @@ static void argb8888_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc)
             uint32_t px = src[x];
             uint32_t mix = px >> 24;
 
-            if (mix == 0) {
-                continue;
-            }
-            if (mix == 255) {
-                dest[x] = (uint16_t)(((px >> 8) & 0xF800) | ((px >> 5) & 0x07E0) | ((px & 0xF8) >> 3));
-            } else {
-                uint32_t inv = 255 - mix;
-                uint32_t c = dest[x];
-
-                dest[x] = (uint16_t)((((((px >> 19) & 0x1F) * mix + ((c >> 11) & 0x1F) * inv) << 3) & 0xF800) +
-                                     (((((px >> 10) & 0x3F) * mix + ((c >> 5) & 0x3F) * inv) >> 3) & 0x07E0) +
-                                     ((((px >> 3) & 0x1F) * mix + (c & 0x1F) * inv) >> 8));
+            if (mix != 0) {
+                dest[x] = argb_mix(px, dest[x]);
             }
         }
         src_row += dsc->src_stride;
@@ -153,11 +269,38 @@ static void sw_blend(lv_layer_t *layer, const lv_draw_sw_blend_dsc_t *dsc, const
                                                 blend_area.y1 - layer->buf_area.y1);
     if (image_dsc.src_color_format == LV_COLOR_FORMAT_ARGB8888 && image_dsc.mask_buf == NULL &&
         image_dsc.opa >= LV_OPA_MAX && image_dsc.blend_mode == LV_BLEND_MODE_NORMAL) {
-        argb8888_over_rgb565(&image_dsc);
+        if (!sparse_over_rgb565(&image_dsc)) {
+            argb8888_over_rgb565(&image_dsc);
+        }
         return;
     }
     lv_draw_sw_blend_image_to_rgb565(&image_dsc);
 }
+
+#if CONFIG_SOC_PPA_SUPPORTED
+
+#define PPA_BLEND_MIN_ROWS 16
+
+static const char *TAG = "ui_ppa_blend";
+
+static ppa_client_handle_t s_blend_client;
+static ppa_client_handle_t s_fill_client;
+static size_t s_align;
+static uint8_t *s_a8_dummy;
+static size_t s_a8_dummy_size;
+static bool s_failed_logged;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+/* Time the draw units spend blocked on the PPA, for the perf tour. */
+static uint32_t s_stat_ops;
+static uint32_t s_stat_us;
+#endif
+
+typedef struct {
+    uint8_t *buf;
+    uint32_t stride;
+    uint32_t pic_w;
+    uint32_t pic_h;
+} ppa_target_t;
 
 static void ppa_log_failure(esp_err_t err)
 {
@@ -537,8 +680,35 @@ void ui_ppa_blend_benchmark(void)
 
 #else
 
+/* No PPA (the simulator): the same CPU blending, so the simulator draws what the clock does. */
+static void cpu_blend_handler(lv_draw_task_t *t, const lv_draw_sw_blend_dsc_t *dsc)
+{
+    lv_area_t area;
+
+    if (!lv_area_intersect(&area, dsc->blend_area, &t->clip_area)) {
+        return;
+    }
+    if (dsc->src_buf != NULL &&
+        (!lv_area_intersect(&area, &area, dsc->src_area) ||
+         (dsc->mask_area != NULL && !lv_area_intersect(&area, &area, dsc->mask_area)))) {
+        return;
+    }
+    sw_blend(t->target_layer, dsc, &area);
+}
+
+static lv_draw_sw_custom_blend_handler_t s_handler = {
+    .dest_cf = LV_COLOR_FORMAT_RGB565,
+    .handler = cpu_blend_handler,
+};
+
 void ui_ppa_blend_install(void)
 {
+    static bool installed;
+
+    if (!installed) {
+        installed = true;
+        lv_draw_sw_register_blend_handler(&s_handler);
+    }
 }
 
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR

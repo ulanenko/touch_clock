@@ -466,6 +466,9 @@ static void style_button_surface(lv_obj_t *btn, kit_button_kind_t kind, bool rou
             lv_obj_set_style_outline_pad(btn, 4, 0);
             lv_obj_set_style_outline_color(btn, sk->line, 0);
         }
+        if (round) {
+            kit_ring_border(btn);
+        }
     }
 }
 
@@ -949,18 +952,17 @@ static lv_obj_t *row_leading(lv_obj_t *row, const kit_row_opts_t *opts)
         lv_obj_set_style_bg_color(holder, tint, 0);
         icon = kit_icon(holder, opts->icon, kit_on_color(tint));
     } else {
-        /* A sub-dial: brass ring with an inner hairline ring. */
-        lv_obj_t *inner;
-
-        lv_obj_set_size(holder, 52, 52);
+        /* A sub-dial: brass ring with an inner hairline ring. The 42 px hairline is the
+         * border and the 52 px brass ring its outline, drawn as one cached dial; the margin
+         * keeps the 52 px footprint. */
+        lv_obj_set_size(holder, 42, 42);
+        lv_obj_set_style_margin_all(holder, 5, 0);
         lv_obj_set_style_border_width(holder, 1, 0);
-        lv_obj_set_style_border_color(holder, sk->accent_deep, 0);
-        inner = kit_plain(holder);
-        lv_obj_set_size(inner, 42, 42);
-        lv_obj_set_style_radius(inner, LV_RADIUS_CIRCLE, 0);
-        lv_obj_set_style_border_width(inner, 1, 0);
-        lv_obj_set_style_border_color(inner, sk->line, 0);
-        lv_obj_center(inner);
+        lv_obj_set_style_border_color(holder, sk->line, 0);
+        lv_obj_set_style_outline_width(holder, 1, 0);
+        lv_obj_set_style_outline_pad(holder, 4, 0);
+        lv_obj_set_style_outline_color(holder, sk->accent_deep, 0);
+        kit_ring_border(holder);
         icon = kit_icon_small(holder, opts->icon, sk->value);
     }
     lv_obj_center(icon);

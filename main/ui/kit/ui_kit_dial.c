@@ -13,11 +13,12 @@
 #include <math.h>
 #include <string.h>
 
+#include "ui/clock_ui_private.h"
 #include "ui/kit/ui_kit_internal.h"
 #include "src/draw/lv_draw_private.h"
 #include "src/misc/lv_area_private.h"
 
-#define KIT_DIAL_TILES 32
+#define KIT_DIAL_TILES 8
 #define KIT_DIAL_CACHE 24
 #define DEG_TO_RAD (3.14159265f / 180.0f)
 
@@ -82,6 +83,11 @@ static float norm_deg(float a)
     return a;
 }
 
+static float ring_r(const kit_dial_ring_t *ring)
+{
+    return (float)ring->r + (ring->half ? 0.5f : 0.0f);
+}
+
 /* Distance from a point (relative to the centre) to a ring's centre line between its angles,
  * with round ends for partial arcs. */
 static float ring_distance(const kit_dial_ring_t *ring, float px, float py, float d, float ang)
@@ -91,19 +97,19 @@ static float ring_distance(const kit_dial_ring_t *ring, float px, float py, floa
     float best = 1e9f;
 
     if (a1 - a0 >= 360.0f) {
-        return fabsf(d - (float)ring->r);
+        return fabsf(d - ring_r(ring));
     }
     for (int turn = -1; turn <= 1; turn++) {
         float a = ang + 360.0f * (float)turn;
 
         if (a >= a0 && a <= a1) {
-            return fabsf(d - (float)ring->r);
+            return fabsf(d - ring_r(ring));
         }
     }
     for (int i = 0; i < 2; i++) {
         float e = (i == 0 ? a0 : a1) * DEG_TO_RAD;
-        float ex = (float)ring->r * cosf(e) - px;
-        float ey = (float)ring->r * sinf(e) - py;
+        float ex = ring_r(ring) * cosf(e) - px;
+        float ey = ring_r(ring) * sinf(e) - py;
 
         best = LV_MIN(best, sqrtf(ex * ex + ey * ey));
     }
@@ -138,8 +144,8 @@ static void dial_extent(const kit_dial_t *dial, float *r_min, float *r_max)
         if (ring->width > 0) {
             float hw = (float)ring->width / 2.0f + 1.0f;
 
-            *r_min = LV_MIN(*r_min, (float)ring->r - hw);
-            *r_max = LV_MAX(*r_max, (float)ring->r + hw);
+            *r_min = LV_MIN(*r_min, ring_r(ring) - hw);
+            *r_max = LV_MAX(*r_max, ring_r(ring) + hw);
         }
     }
     for (int i = 0; i < KIT_DIAL_TICK_SETS; i++) {
@@ -194,6 +200,7 @@ static void over_px(lv_color32_t *px, lv_color_t c, float cover)
 
 typedef struct {
     float u0x, u0y, u1x, u1y;
+    bool whole; /* the full circle in one tile */
 } sector_t;
 
 /* Which side of a boundary ray a point lies on. Neighbouring tiles evaluate this same
@@ -209,6 +216,9 @@ static float boundary_side(float ux, float uy, float px, float py)
  * with cross products instead of atan2. */
 static bool in_sector(const sector_t *sec, float px, float py)
 {
+    if (sec->whole) {
+        return true;
+    }
     return boundary_side(sec->u0x, sec->u0y, px, py) >= 0.0f && boundary_side(sec->u1x, sec->u1y, px, py) < 0.0f;
 }
 
@@ -218,7 +228,8 @@ static bool in_sector(const sector_t *sec, float px, float py)
 static lv_draw_buf_t *build_tile(const kit_dial_t *dial, float a0, float a1, float r_min, float r_max,
                                  lv_area_t *area)
 {
-    sector_t sec = {cosf(a0 * DEG_TO_RAD), sinf(a0 * DEG_TO_RAD), cosf(a1 * DEG_TO_RAD), sinf(a1 * DEG_TO_RAD)};
+    sector_t sec = {cosf(a0 * DEG_TO_RAD), sinf(a0 * DEG_TO_RAD), cosf(a1 * DEG_TO_RAD), sinf(a1 * DEG_TO_RAD),
+                    a1 - a0 >= 360.0f};
     float in2 = LV_MAX(0.0f, r_min - 1.0f);
     float out2 = r_max + 1.0f;
     lv_draw_buf_t *buf;
@@ -275,11 +286,11 @@ static lv_draw_buf_t *build_tile(const kit_dial_t *dial, float a0, float a1, flo
                     float dist;
                     float cover;
 
-                    if (ring->width <= 0 || fabsf(d - (float)ring->r) > hw + 6.0f) {
+                    if (ring->width <= 0 || fabsf(d - ring_r(ring)) > hw + 6.0f) {
                         continue;
                     }
                     dist = ring->end_deg - ring->start_deg >= 360
-                               ? fabsf(d - (float)ring->r)
+                               ? fabsf(d - ring_r(ring))
                                : ring_distance(ring, px, py, d, norm_deg(atan2f(py, px) / DEG_TO_RAD));
                     cover = LV_CLAMP(0.0f, hw - dist + 0.5f, 1.0f);
                     if (cover > 0.0f) {
@@ -353,6 +364,8 @@ static lv_draw_buf_t *build_tile(const kit_dial_t *dial, float a0, float a1, flo
         lv_draw_buf_destroy(buf);
         return NULL;
     }
+    /* Tiles are mostly transparent: blends then touch only the visible pixels. */
+    ui_sparse_image_register(buf);
     return buf;
 }
 
@@ -360,6 +373,7 @@ static void free_tiles(dial_tiles_t *tiles)
 {
     for (int t = 0; t < KIT_DIAL_TILES; t++) {
         if (tiles->buf[t] != NULL) {
+            ui_sparse_image_unregister(tiles->buf[t]);
             lv_draw_buf_destroy(tiles->buf[t]);
             tiles->buf[t] = NULL;
         }
@@ -374,8 +388,11 @@ static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
     float step;
 
     dial_extent(dial, &r_min, &r_max);
-    /* Small rings (a key's lit edge) need few tiles; every tile is a draw task. */
-    count = r_max < 120.0f ? 4 : r_max - r_min < 40.0f ? KIT_DIAL_TILES : 16;
+    /* Every tile is a draw task, about 70 us of LVGL's image setup on the device, while its
+     * transparent area costs almost nothing (tiles are blended sparsely). So small rings
+     * (key rims, row-icon rings) are one tile and large ones 8: the Atelier rim's 8 tiles
+     * take about 1 MB. */
+    count = r_max < 120.0f ? 1 : KIT_DIAL_TILES;
     step = 360.0f / (float)count;
     for (int t = 0; t < count; t++) {
         float a0 = step * (float)t;
@@ -434,12 +451,20 @@ static void dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t op
     lv_draw_image_dsc_init(&img);
     img.opa = opa;
     for (int t = 0; t < KIT_DIAL_TILES; t++) {
-        if (tiles->buf[t] != NULL) {
-            img.src = tiles->buf[t];
-            area = tiles->area[t];
-            lv_area_move(&area, dial->cx, dial->cy);
-            lv_draw_image(layer, &img, &area);
+        lv_area_t visible;
+
+        if (tiles->buf[t] == NULL) {
+            continue;
         }
+        area = tiles->area[t];
+        lv_area_move(&area, dial->cx, dial->cy);
+        /* LVGL renders a frame as horizontal stripes, one per draw unit, and runs this for
+         * each; a tile outside the stripe would still cost a draw task on the UI thread. */
+        if (!lv_area_intersect(&visible, &area, &layer->_clip_area)) {
+            continue;
+        }
+        img.src = tiles->buf[t];
+        lv_draw_image(layer, &img, &area);
     }
 }
 
@@ -487,6 +512,97 @@ void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, in
     if (opa > LV_OPA_MIN) {
         dial_draw_opa(layer, &dial, opa);
     }
+}
+
+/* --- Round borders ------------------------------------------------------------------------- */
+
+/* A full circle line of the given width whose centre line has a diameter of twice_r (an odd
+ * value puts it on a half pixel). */
+static void circle_line(kit_dial_ring_t *ring, int32_t twice_r, int32_t width, lv_color_t color, lv_opa_t opa)
+{
+    ring->r = twice_r / 2;
+    ring->half = (uint8_t)(twice_r & 1);
+    ring->width = width;
+    ring->end_deg = 360;
+    ring->color = color;
+    ring->opa = opa;
+}
+
+static void ring_border_cb(lv_event_t *e)
+{
+    lv_obj_t *obj = lv_event_get_current_target(e);
+    lv_opa_t outline_opa = (lv_opa_t)(uintptr_t)lv_event_get_user_data(e);
+    int32_t bw = lv_obj_get_style_border_width(obj, LV_PART_MAIN);
+    int32_t ow = outline_opa > LV_OPA_MIN ? lv_obj_get_style_outline_width(obj, LV_PART_MAIN) : 0;
+    int32_t pad = lv_obj_get_style_outline_pad(obj, LV_PART_MAIN);
+    lv_color_t border = lv_obj_get_style_border_color(obj, LV_PART_MAIN);
+    lv_color_t outline = lv_obj_get_style_outline_color(obj, LV_PART_MAIN);
+    lv_opa_t opa = lv_obj_get_style_opa_recursive(obj, LV_PART_MAIN);
+    lv_opa_t border_opa = LV_OPA_MIX2(lv_obj_get_style_border_opa(obj, LV_PART_MAIN), opa);
+    lv_layer_t *layer;
+    lv_area_t a;
+    int32_t size;
+
+    if (lv_event_get_code(e) == LV_EVENT_REFR_EXT_DRAW_SIZE) {
+        if (ow > 0) {
+            lv_event_set_ext_draw_size(e, pad + ow + 1);
+        }
+        return;
+    }
+    layer = lv_event_get_layer(e);
+    lv_obj_get_coords(obj, &a);
+    size = lv_area_get_width(&a);
+    if (size == lv_area_get_height(&a) && (size & 1) == 0) {
+        /* Border and outline as one dial: one draw task. Their opacities are part of the
+         * cached shape; the object's opacity applies when drawing. */
+        kit_dial_t dial;
+        int n = 0;
+
+        memset(&dial, 0, sizeof(dial));
+        dial.cx = a.x1 + size / 2;
+        dial.cy = a.y1 + size / 2;
+        if (bw > 0 && lv_obj_get_style_border_opa(obj, LV_PART_MAIN) > LV_OPA_MIN) {
+            circle_line(&dial.rings[n++], size - bw, bw, border, lv_obj_get_style_border_opa(obj, LV_PART_MAIN));
+        }
+        if (ow > 0) {
+            circle_line(&dial.rings[n++], size + 2 * pad + ow, ow, outline, outline_opa);
+        }
+        if (n > 0 && opa > LV_OPA_MIN) {
+            dial_draw_opa(layer, &dial, opa);
+        }
+        return;
+    }
+    /* Not an even circle: LVGL's own border and outline. */
+    lv_draw_border_dsc_t d;
+
+    lv_draw_border_dsc_init(&d);
+    d.radius = LV_RADIUS_CIRCLE;
+    if (bw > 0) {
+        d.color = border;
+        d.width = bw;
+        d.opa = border_opa;
+        lv_draw_border(layer, &d, &a);
+    }
+    if (ow > 0) {
+        lv_area_increase(&a, pad + ow, pad + ow);
+        d.color = outline;
+        d.width = ow;
+        d.opa = LV_OPA_MIX2(outline_opa, opa);
+        lv_draw_border(layer, &d, &a);
+    }
+}
+
+void kit_ring_border(lv_obj_t *obj)
+{
+    /* LVGL skips a border with no sides and an outline with no opacity; the callback keeps
+     * the outline's opacity. */
+    lv_opa_t outline_opa = lv_obj_get_style_outline_opa(obj, LV_PART_MAIN);
+
+    lv_obj_set_style_border_side(obj, LV_BORDER_SIDE_NONE, 0);
+    lv_obj_set_style_outline_opa(obj, LV_OPA_TRANSP, 0);
+    lv_obj_add_event_cb(obj, ring_border_cb, LV_EVENT_DRAW_MAIN_END, (void *)(uintptr_t)outline_opa);
+    lv_obj_add_event_cb(obj, ring_border_cb, LV_EVENT_REFR_EXT_DRAW_SIZE, (void *)(uintptr_t)outline_opa);
+    lv_obj_refresh_ext_draw_size(obj);
 }
 
 /* --- Live arcs ----------------------------------------------------------------------------- */

@@ -46,6 +46,7 @@ typedef struct {
     int32_t end_deg;
     lv_color_t color;
     lv_opa_t opa;
+    uint8_t half; /* 1: the centre radius is r + 0.5 (a 1 px line on an even-sized circle) */
 } kit_dial_ring_t;
 
 typedef struct {
@@ -83,6 +84,10 @@ void kit_arc_bake(lv_obj_t *arc);
 void kit_draw_arc(lv_layer_t *layer, const lv_draw_arc_dsc_t *dsc);
 void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, int32_t width, int32_t start_deg,
                    int32_t end_deg, lv_color_t color, lv_opa_t opa);
+/* Draws obj's circular border (and outline) as cached rings instead of LVGL's masked
+ * border, which costs about 0.35 ms a circle on the device. The border styles stay (layout,
+ * state colours); LVGL is told not to draw them. Only for round objects of even size. */
+void kit_ring_border(lv_obj_t *obj);
 /* Atelier chapter ring: rim hairline and minute track; ticks between skip_from_deg and
  * skip_to_deg (degrees from twelve o'clock, inclusive) are left out (-1 for none). */
 void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg);

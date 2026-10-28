@@ -85,6 +85,10 @@ void build_root_ui(clock_ui_context_t *ctx);
 clock_ui_context_t *clock_ui_get_context(void);
 void ui_install_theme_overrides(lv_display_t *disp);
 void ui_ppa_blend_install(void);
+/* Registers a mostly transparent ARGB8888 image so blends of it touch only its visible
+ * pixels; unregister before freeing it. */
+void ui_sparse_image_register(const lv_draw_buf_t *buf);
+void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 lv_obj_t *ui_backdrop_create(lv_obj_t *overlay);
 void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop, bool moving, lv_opa_t dim_opa);
 void ui_l10n_reset(clock_ui_context_t *ctx);
