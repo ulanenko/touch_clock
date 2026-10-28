@@ -47,6 +47,8 @@
 #include "lvgl.h"
 #include "src/core/lv_obj_private.h"
 #include "src/core/lv_obj_class_private.h"
+#include "src/draw/lv_draw_private.h"
+#include "src/misc/lv_area_private.h"
 #include "ui/clock_ui_private.h"
 #include "ui/ui_areas.h"
 #include "ui/kit/ui_kit.h"
@@ -414,6 +416,8 @@ static bool apply_set(const char *key, const char *value)
         s_settings.ui_style = (uint8_t)v;
     } else if (strcmp(key, "face") == 0) {
         s_settings.current_face = (clock_face_id_t)v;
+    } else if (strcmp(key, "face_theme") == 0) {
+        s_settings.face_themes[s_settings.current_face] = (uint8_t)v;
     } else if (strcmp(key, "language") == 0) {
         s_settings.language = (uint8_t)v;
     } else if (strcmp(key, "night_active") == 0) {
@@ -661,6 +665,141 @@ static void object_costs(int top)
     }
 }
 
+/* What one frame draws, by object and draw-task type: the host's timings say little about
+ * the device's, but the pixels each kind of task covers do. */
+#define DRAWCOST_TYPES 16
+typedef struct {
+    lv_obj_t *obj;
+    uint32_t count[DRAWCOST_TYPES];
+    uint64_t px[DRAWCOST_TYPES];
+    uint64_t weighted;
+} drawcost_t;
+
+static drawcost_t s_drawcost[2048];
+static int s_drawcost_count;
+
+static const char *drawcost_type_name(int type)
+{
+    switch (type) {
+    case LV_DRAW_TASK_TYPE_FILL: return "fill";
+    case LV_DRAW_TASK_TYPE_BORDER: return "border";
+    case LV_DRAW_TASK_TYPE_BOX_SHADOW: return "shadow";
+    case LV_DRAW_TASK_TYPE_LETTER: return "letter";
+    case LV_DRAW_TASK_TYPE_LABEL: return "label";
+    case LV_DRAW_TASK_TYPE_IMAGE: return "image";
+    case LV_DRAW_TASK_TYPE_LAYER: return "layer";
+    case LV_DRAW_TASK_TYPE_LINE: return "line";
+    case LV_DRAW_TASK_TYPE_ARC: return "arc";
+    case LV_DRAW_TASK_TYPE_TRIANGLE: return "triangle";
+    case LV_DRAW_TASK_TYPE_MASK_RECTANGLE: return "maskrect";
+    case LV_DRAW_TASK_TYPE_MASK_BITMAP: return "maskbmp";
+    default: return "other";
+    }
+}
+
+static void drawcost_cb(lv_event_t *e)
+{
+    lv_draw_task_t *t = lv_event_get_draw_task(e);
+    drawcost_t *c = lv_event_get_user_data(e);
+    int type = (int)lv_draw_task_get_type(t);
+    lv_area_t a;
+    uint64_t px;
+    uint64_t weight = 1;
+
+    if (!lv_area_intersect(&a, &t->area, &t->clip_area)) {
+        return;
+    }
+    px = (uint64_t)lv_area_get_size(&a);
+    if (type >= DRAWCOST_TYPES) {
+        type = 0;
+    }
+    if (type == LV_DRAW_TASK_TYPE_FILL) {
+        const lv_draw_fill_dsc_t *d = t->draw_dsc;
+        weight = (d->radius > 0 ? 2 : 1) * (d->opa < LV_OPA_MAX || d->grad.dir != LV_GRAD_DIR_NONE ? 2 : 1);
+    } else if (type == LV_DRAW_TASK_TYPE_BOX_SHADOW || type == LV_DRAW_TASK_TYPE_LAYER) {
+        weight = 6;
+    } else if (type == LV_DRAW_TASK_TYPE_BORDER || type == LV_DRAW_TASK_TYPE_ARC) {
+        weight = 2;
+    }
+    c->count[type]++;
+    c->px[type] += px;
+    c->weighted += px * weight;
+}
+
+static void collect_all(lv_obj_t *obj, lv_obj_t **out, int *count, int max)
+{
+    if (*count >= max || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+    out[(*count)++] = obj;
+    for (uint32_t i = 0; i < lv_obj_get_child_count(obj); i++) {
+        collect_all(lv_obj_get_child(obj, i), out, count, max);
+    }
+}
+
+static int cmp_drawcost(const void *a, const void *b)
+{
+    const drawcost_t *x = a, *y = b;
+
+    return x->weighted < y->weighted ? 1 : (x->weighted > y->weighted ? -1 : 0);
+}
+
+static void draw_costs(int top)
+{
+    static lv_obj_t *objs[2048];
+    uint32_t total_count[DRAWCOST_TYPES] = {0};
+    uint64_t total_px[DRAWCOST_TYPES] = {0};
+    uint64_t total_weighted = 0;
+    int count = 0;
+
+    collect_all(lv_layer_top(), objs, &count, 1024);
+    collect_all(lv_screen_active(), objs, &count, 2048);
+    memset(s_drawcost, 0, sizeof(s_drawcost));
+    s_drawcost_count = count;
+    for (int i = 0; i < count; i++) {
+        s_drawcost[i].obj = objs[i];
+        lv_obj_add_flag(objs[i], LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
+        lv_obj_add_event_cb(objs[i], drawcost_cb, LV_EVENT_DRAW_TASK_ADDED, &s_drawcost[i]);
+    }
+    lv_obj_invalidate(lv_screen_active());
+    lv_refr_now(NULL);
+    for (int i = 0; i < count; i++) {
+        lv_obj_remove_event_cb_with_user_data(objs[i], drawcost_cb, &s_drawcost[i]);
+        lv_obj_remove_flag(objs[i], LV_OBJ_FLAG_SEND_DRAW_TASK_EVENTS);
+        for (int t = 0; t < DRAWCOST_TYPES; t++) {
+            total_count[t] += s_drawcost[i].count[t];
+            total_px[t] += s_drawcost[i].px[t];
+        }
+        total_weighted += s_drawcost[i].weighted;
+    }
+    printf("drawcost: %d objects, weighted %.2f Mpx\n", count, total_weighted / 1e6);
+    for (int t = 0; t < DRAWCOST_TYPES; t++) {
+        if (total_count[t] > 0) {
+            printf("  %-9s %5u tasks %8.3f Mpx\n", drawcost_type_name(t), total_count[t], total_px[t] / 1e6);
+        }
+    }
+    qsort(s_drawcost, (size_t)count, sizeof(s_drawcost[0]), cmp_drawcost);
+    for (int i = 0; i < count && i < top; i++) {
+        drawcost_t *c = &s_drawcost[i];
+        lv_area_t a;
+        char kinds[160] = "";
+        size_t n = 0;
+
+        lv_obj_get_coords(c->obj, &a);
+        for (int t = 0; t < DRAWCOST_TYPES; t++) {
+            if (c->count[t] > 0 && n < sizeof(kinds)) {
+                n += (size_t)snprintf(kinds + n, sizeof(kinds) - n, " %s:%u/%.0fk", drawcost_type_name(t),
+                                      c->count[t], c->px[t] / 1e3);
+            }
+        }
+        printf("  %7.0fk %-10s %4dx%-4d at %4d,%-4d r=%d opa=%d%s %.24s\n", c->weighted / 1e3,
+               c->obj->class_p->name ? c->obj->class_p->name : "?", (int)lv_area_get_width(&a),
+               (int)lv_area_get_height(&a), (int)a.x1, (int)a.y1, (int)lv_obj_get_style_radius(c->obj, 0),
+               (int)lv_obj_get_style_bg_opa(c->obj, 0), kinds,
+               lv_obj_check_type(c->obj, &lv_label_class) ? lv_label_get_text(c->obj) : "");
+    }
+}
+
 static int run_scenario(FILE *f)
 {
     char line[256];
@@ -718,6 +857,11 @@ static int run_scenario(FILE *f)
         } else if (strcmp(cmd, "benchdrag") == 0 &&
                    sscanf(line, "%*s %63s %d %d %d %d %d", a, &x0, &y0, &x1, &y1, &ms) == 6) {
             bench_drag(a, x0, y0, x1, y1, (uint32_t)ms);
+        } else if (strcmp(cmd, "drawcost") == 0) {
+            int n = 15;
+
+            sscanf(line, "%*s %d", &n);
+            draw_costs(n);
         } else if (strcmp(cmd, "costs") == 0) {
             int n = 12;
 

@@ -69,6 +69,9 @@ typedef struct {
     uint32_t render_samples[PERF_RENDER_SAMPLES];
     uint32_t render_sample_count;
     size_t internal_free_min;
+    int64_t flush_wait_sum; /* part of render: waiting for the previous frame's flush */
+    uint32_t ppa_ops_start;
+    uint32_t ppa_us_start;
 } perf_segment_t;
 
 typedef struct {
@@ -104,6 +107,7 @@ static uint32_t s_manual_start;
 static int64_t s_refr_start;
 static int64_t s_render_start;
 static int64_t s_last_refr_start;
+static int64_t s_flush_wait_start;
 
 #define DEBUG_CALL(fn_name, debug_name) \
     static void fn_name(clock_ui_context_t *ctx) { ui_debug_call(ctx, debug_name); }
@@ -118,6 +122,8 @@ DEBUG_CALL(call_open_alarms, "open_alarms")
 DEBUG_CALL(call_open_alarm_editor, "new_alarm")
 DEBUG_CALL(call_close_alarm_editor, "close_alarm_editor")
 DEBUG_CALL(call_close_alarms, "close_alarms")
+DEBUG_CALL(call_alarm_sound_next, "alarm_sound_next")
+DEBUG_CALL(call_alarm_test_stop, "alarm_test_stop")
 DEBUG_CALL(call_close_theme, "close_theme")
 DEBUG_CALL(call_close_brightness, "close_quick")
 DEBUG_CALL(call_show_controls, "show_controls")
@@ -225,6 +231,10 @@ static const perf_step_t s_steps[] = {
     FLICK_BURST("alarms_scroll"),
     CALL("alarm_editor_open", call_open_alarm_editor, 1500),
     THUMB("alarm_editor"),
+    CALL("alarm_sound", call_alarm_sound_next, 4000),
+    CALL("alarm_sound", call_alarm_sound_next, 4000),
+    CALL("alarm_sound", call_alarm_sound_next, 4000),
+    CALL("alarm_sound", call_alarm_test_stop, 800),
     CALL("alarm_editor_close", call_close_alarm_editor, 1200),
     CALL("alarms_close", call_close_alarms, 1200),
     IDLE("idle_face_end", 5000),
@@ -322,6 +332,7 @@ static void segment_reset(const char *name_in)
     }
 #endif
     s_seg.internal_free_min = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
+    ui_ppa_blend_stats(&s_seg.ppa_ops_start, &s_seg.ppa_us_start);
     s_last_refr_start = 0;
 }
 
@@ -376,6 +387,8 @@ static void report_task_cpu(const char *name)
 static void segment_report(void)
 {
     uint32_t p95 = 0;
+    uint32_t ppa_ops;
+    uint32_t ppa_us;
 
     if (s_seg.name[0] == '\0') {
         return;
@@ -385,6 +398,11 @@ static void segment_report(void)
         p95 = s_seg.render_samples[(s_seg.render_sample_count * 95) / 100];
     }
     report_task_cpu(s_seg.name);
+    ui_ppa_blend_stats(&ppa_ops, &ppa_us);
+    printf("PERF segx loop=%d name=%s frames=%lu flush_wait_avg=%lld ppa_ops=%lu ppa_us_avg=%lu\n", s_loop, s_seg.name,
+           (unsigned long)s_seg.frames, s_seg.frames ? s_seg.flush_wait_sum / s_seg.frames : 0,
+           (unsigned long)(ppa_ops - s_seg.ppa_ops_start),
+           (unsigned long)(s_seg.frames ? (ppa_us - s_seg.ppa_us_start) / s_seg.frames : 0));
     printf("PERF seg loop=%d name=%s frames=%lu render_avg=%lld render_p95=%lu render_max=%lld "
            "pre_avg=%lld pre_max=%lld interval_max=%lld slow=%lu white=%lu internal_free_min=%u t_ms=%lld\n",
            s_loop,
@@ -441,6 +459,13 @@ static void display_event_cb(lv_event_t *event)
         s_render_start = 0;
     } else if (code == LV_EVENT_RENDER_START) {
         s_render_start = now;
+    } else if (code == LV_EVENT_FLUSH_WAIT_START) {
+        s_flush_wait_start = now;
+    } else if (code == LV_EVENT_FLUSH_WAIT_FINISH) {
+        if (s_flush_wait_start != 0 && s_seg.name[0] != '\0') {
+            s_seg.flush_wait_sum += now - s_flush_wait_start;
+        }
+        s_flush_wait_start = 0;
     } else if (code == LV_EVENT_FLUSH_START) {
         if (s_seg.name[0] != '\0' && frame_looks_white(lv_event_get_target(event))) {
             s_seg.white_frames++;
@@ -726,6 +751,8 @@ void ui_perf_tour_start(clock_ui_context_t *ctx)
     lv_display_add_event_cb(disp, display_event_cb, LV_EVENT_RENDER_START, NULL);
     lv_display_add_event_cb(disp, display_event_cb, LV_EVENT_FLUSH_START, NULL);
     lv_display_add_event_cb(disp, display_event_cb, LV_EVENT_RENDER_READY, NULL);
+    lv_display_add_event_cb(disp, display_event_cb, LV_EVENT_FLUSH_WAIT_START, NULL);
+    lv_display_add_event_cb(disp, display_event_cb, LV_EVENT_FLUSH_WAIT_FINISH, NULL);
 
     s_timer = lv_timer_create(tour_timer_cb, 10, NULL);
     printf("PERF armed start_delay_s=%d loops=%d\n",

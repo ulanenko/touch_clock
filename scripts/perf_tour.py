@@ -41,6 +41,7 @@ PERF_OVERRIDES = {
 PERF_DROP_PREFIXES = ("CONFIG_ESP_CONSOLE_UART", "CONFIG_ESP_CONSOLE_SECONDARY_", "CONFIG_CONSOLE_UART")
 
 SEG_RE = re.compile(r"PERF seg (.*)")
+SEGX_RE = re.compile(r"PERF segx (.*)")
 KV_RE = re.compile(r"(\w+)=(\S+)")
 
 
@@ -171,6 +172,7 @@ def write_png(path, width, height, rgb_rows):
 def parse(log_path, out_dir):
     text = log_path.read_bytes().decode("utf-8", "replace").splitlines()
     segments = {}
+    extras = {}
     order = []
     white = []
     thumbs = {}
@@ -178,6 +180,11 @@ def parse(log_path, out_dir):
     rows = []
     for line in text:
         line = line.strip()
+        m = SEGX_RE.search(line)
+        if m:
+            kv = dict(KV_RE.findall(m.group(1)))
+            extras.setdefault(kv["name"], []).append({k: int(v) for k, v in kv.items() if v.isdigit()})
+            continue
         m = SEG_RE.search(line)
         if m:
             kv = dict(KV_RE.findall(m.group(1)))
@@ -232,13 +239,25 @@ def parse(log_path, out_dir):
             "internal_free_min": min(r["internal_free_min"] for r in runs),
         }
 
-    summary = {name: agg(segments[name]) for name in order}
-    md = ["| step | frames | render avg ms | p95 | max | layout avg/max ms | longest gap ms | >33ms | white |",
-          "|---|---|---|---|---|---|---|---|---|"]
+    def agg_extra(name):
+        runs = extras.get(name, [])
+        frames = sum(r.get("frames", 0) for r in runs)
+        if frames == 0:
+            return {"flush_wait_ms": 0.0, "ppa_ms": 0.0}
+        return {
+            "flush_wait_ms": sum(r.get("flush_wait_avg", 0) * r.get("frames", 0) for r in runs) / frames / 1000,
+            "ppa_ms": sum(r.get("ppa_us_avg", 0) * r.get("frames", 0) for r in runs) / frames / 1000,
+        }
+
+    summary = {name: {**agg(segments[name]), **agg_extra(name)} for name in order}
+    md = ["| step | frames | render avg ms | p95 | max | flush wait ms | PPA ms | layout avg/max ms | longest gap ms "
+          "| >33ms | white |",
+          "|---|---|---|---|---|---|---|---|---|---|---|"]
     for name in order:
         s = summary[name]
         md.append(f"| {name} | {s['frames']} | {s['render_avg_ms']:.1f} | {s['render_p95_ms']:.1f} | "
-                  f"{s['render_max_ms']:.1f} | {s['pre_avg_ms']:.1f}/{s['pre_max_ms']:.1f} | "
+                  f"{s['render_max_ms']:.1f} | {s['flush_wait_ms']:.1f} | {s['ppa_ms']:.1f} | "
+                  f"{s['pre_avg_ms']:.1f}/{s['pre_max_ms']:.1f} | "
                   f"{s['interval_max_ms']:.0f} | {s['slow_frames']} | {s['white_frames']} |")
     underruns = [l for l in text if "underrun" in l]
     crashes = [l for l in text if "Guru Meditation" in l or "abort()" in l or "assert failed" in l]

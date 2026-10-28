@@ -77,6 +77,8 @@ void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx);
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
 void ui_perf_tour_start(clock_ui_context_t *ctx);
 void ui_ppa_blend_benchmark(void);
+/* Running totals of PPA operations and the microseconds spent in them. */
+void ui_ppa_blend_stats(uint32_t *ops, uint32_t *us);
 #endif
 void refresh_settings_controls(clock_ui_context_t *ctx);
 void build_root_ui(clock_ui_context_t *ctx);

@@ -42,6 +42,11 @@ static size_t s_align;
 static uint8_t *s_a8_dummy;
 static size_t s_a8_dummy_size;
 static bool s_failed_logged;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+/* Time the draw units spend blocked on the PPA, for the perf tour. */
+static uint32_t s_stat_ops;
+static uint32_t s_stat_us;
+#endif
 
 typedef struct {
     uint8_t *buf;
@@ -309,6 +314,9 @@ static void ppa_blend_handler(lv_draw_task_t *t, const lv_draw_sw_blend_dsc_t *d
 
         if (end - first >= PPA_BLEND_MIN_ROWS && (dst.stride * dst.pic_h) % s_align == 0) {
             bool done;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+            int64_t started_us = esp_timer_get_time();
+#endif
 
             if (dsc->src_buf == NULL) {
                 done = ppa_fill_rows(&dst, first, end - first, dsc->color, dsc->opa);
@@ -321,6 +329,10 @@ static void ppa_blend_handler(lv_draw_task_t *t, const lv_draw_sw_blend_dsc_t *d
                                       area.x1 - dsc->src_area->x1,
                                       first + layer->buf_area.y1 - dsc->src_area->y1, dsc->opa);
             }
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+            __atomic_fetch_add(&s_stat_ops, 1, __ATOMIC_RELAXED);
+            __atomic_fetch_add(&s_stat_us, (uint32_t)(esp_timer_get_time() - started_us), __ATOMIC_RELAXED);
+#endif
 
             if (done) {
                 lv_area_t edge = area;
@@ -341,6 +353,14 @@ static void ppa_blend_handler(lv_draw_task_t *t, const lv_draw_sw_blend_dsc_t *d
 
     sw_blend(layer, dsc, &area);
 }
+
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+void ui_ppa_blend_stats(uint32_t *ops, uint32_t *us)
+{
+    *ops = __atomic_load_n(&s_stat_ops, __ATOMIC_RELAXED);
+    *us = __atomic_load_n(&s_stat_us, __ATOMIC_RELAXED);
+}
+#endif
 
 static lv_draw_sw_custom_blend_handler_t s_handler = {
     .dest_cf = LV_COLOR_FORMAT_RGB565,
@@ -484,6 +504,12 @@ void ui_ppa_blend_install(void)
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
 void ui_ppa_blend_benchmark(void)
 {
+}
+
+void ui_ppa_blend_stats(uint32_t *ops, uint32_t *us)
+{
+    *ops = 0;
+    *us = 0;
 }
 #endif
 
