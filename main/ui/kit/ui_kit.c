@@ -1125,10 +1125,25 @@ static void minute_rim_spec(kit_dial_t *dial, int32_t skip_from_deg, int32_t ski
 
 void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg)
 {
+    kit_draw_minute_rim_at(layer, KIT_CENTER, KIT_CENTER, skip_from_deg, skip_to_deg);
+}
+
+void kit_draw_minute_rim_at(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t skip_from_deg, int32_t skip_to_deg)
+{
     kit_dial_t dial;
 
     minute_rim_spec(&dial, skip_from_deg, skip_to_deg);
+    dial.cx = cx;
+    dial.cy = cy;
     kit_dial_draw(layer, &dial);
+}
+
+void kit_minute_rim_prewarm(int32_t skip_from_deg, int32_t skip_to_deg)
+{
+    kit_dial_t dial;
+
+    minute_rim_spec(&dial, skip_from_deg, skip_to_deg);
+    kit_dial_prewarm(&dial);
 }
 
 void kit_prewarm(void)

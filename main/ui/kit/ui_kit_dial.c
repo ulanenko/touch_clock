@@ -17,7 +17,7 @@
 #include "src/draw/lv_draw_private.h"
 #include "src/misc/lv_area_private.h"
 
-#define KIT_DIAL_TILES 16
+#define KIT_DIAL_TILES 32
 #define KIT_DIAL_CACHE 24
 #define DEG_TO_RAD (3.14159265f / 180.0f)
 
@@ -375,7 +375,7 @@ static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
 
     dial_extent(dial, &r_min, &r_max);
     /* Small rings (a key's lit edge) need few tiles; every tile is a draw task. */
-    count = r_max < 120.0f ? 4 : KIT_DIAL_TILES;
+    count = r_max < 120.0f ? 4 : r_max - r_min < 40.0f ? KIT_DIAL_TILES : 16;
     step = 360.0f / (float)count;
     for (int t = 0; t < count; t++) {
         float a0 = step * (float)t;

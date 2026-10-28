@@ -86,6 +86,9 @@ void kit_draw_ring(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, in
 /* Atelier chapter ring: rim hairline and minute track; ticks between skip_from_deg and
  * skip_to_deg (degrees from twelve o'clock, inclusive) are left out (-1 for none). */
 void kit_draw_minute_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg);
+/* The same ring around another centre (a sheet that moves), and its tiles built ahead. */
+void kit_draw_minute_rim_at(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t skip_from_deg, int32_t skip_to_deg);
+void kit_minute_rim_prewarm(int32_t skip_from_deg, int32_t skip_to_deg);
 
 /* A band along an arc with round caps and an optional 1 px edge, pre-rendered into one ARGB8888
  * image (rim tabs, rim bands). Angles in degrees, 0 = three o'clock, clockwise, a0 < a1.

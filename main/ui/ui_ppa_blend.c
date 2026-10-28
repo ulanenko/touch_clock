@@ -55,6 +55,41 @@ typedef struct {
     uint32_t pic_h;
 } ppa_target_t;
 
+/* An opaque ARGB8888 image over RGB565, as LVGL blends it (lv_color_24_16_mix) but without
+ * touching the destination under fully transparent pixels. Cached ring and dial tiles are
+ * mostly transparent, and LVGL reads and rewrites every destination pixel of them. */
+static void argb8888_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc)
+{
+    const uint8_t *src_row = dsc->src_buf;
+    uint8_t *dest_row = dsc->dest_buf;
+
+    for (int32_t y = 0; y < dsc->dest_h; y++) {
+        const uint32_t *src = (const uint32_t *)src_row;
+        uint16_t *dest = (uint16_t *)dest_row;
+
+        for (int32_t x = 0; x < dsc->dest_w; x++) {
+            uint32_t px = src[x];
+            uint32_t mix = px >> 24;
+
+            if (mix == 0) {
+                continue;
+            }
+            if (mix == 255) {
+                dest[x] = (uint16_t)(((px >> 8) & 0xF800) | ((px >> 5) & 0x07E0) | ((px & 0xF8) >> 3));
+            } else {
+                uint32_t inv = 255 - mix;
+                uint32_t c = dest[x];
+
+                dest[x] = (uint16_t)((((((px >> 19) & 0x1F) * mix + ((c >> 11) & 0x1F) * inv) << 3) & 0xF800) +
+                                     (((((px >> 10) & 0x3F) * mix + ((c >> 5) & 0x3F) * inv) >> 3) & 0x07E0) +
+                                     ((((px >> 3) & 0x1F) * mix + (c & 0x1F) * inv) >> 8));
+            }
+        }
+        src_row += dsc->src_stride;
+        dest_row += dsc->dest_stride;
+    }
+}
+
 static void sw_blend(lv_layer_t *layer, const lv_draw_sw_blend_dsc_t *dsc, const lv_area_t *area)
 {
     lv_area_t blend_area = *area;
@@ -116,6 +151,11 @@ static void sw_blend(lv_layer_t *layer, const lv_draw_sw_blend_dsc_t *dsc, const
     lv_area_move(&image_dsc.src_area, -layer->buf_area.x1, -layer->buf_area.y1);
     image_dsc.dest_buf = lv_draw_layer_go_to_xy(layer, blend_area.x1 - layer->buf_area.x1,
                                                 blend_area.y1 - layer->buf_area.y1);
+    if (image_dsc.src_color_format == LV_COLOR_FORMAT_ARGB8888 && image_dsc.mask_buf == NULL &&
+        image_dsc.opa >= LV_OPA_MAX && image_dsc.blend_mode == LV_BLEND_MODE_NORMAL) {
+        argb8888_over_rgb565(&image_dsc);
+        return;
+    }
     lv_draw_sw_blend_image_to_rgb565(&image_dsc);
 }
 

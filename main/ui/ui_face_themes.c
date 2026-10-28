@@ -351,30 +351,21 @@ static void build_option(clock_ui_context_t *ctx, uint8_t t, const theme_layout_
     ft->option_card[t] = card;
 }
 
+/* Ticks from 113 to 247 degrees (past 4 to before 8 o'clock) are left out. */
+#define THEME_RIM_SKIP_FROM 113
+#define THEME_RIM_SKIP_TO 247
+
 static void atelier_rim_cb(lv_event_t *e)
 {
-    const ui_skin_t *sk = ui_skin();
-    lv_layer_t *layer = lv_event_get_layer(e);
     lv_obj_t *panel = lv_event_get_current_target(e);
     lv_area_t a;
-    lv_point_t c;
 
     /* The chapter ring of the bezel continues across the sheet (from 8 to 4 o'clock), drawn
-     * around the panel's own centre point so its snapshot matches. */
+     * around the panel's own centre point so its snapshot matches. It is the kit's cached
+     * minute rim: a live 712 px arc and 60 line ticks cost about 30 ms a frame. */
     lv_obj_get_coords(panel, &a);
-    c.x = a.x1 + KIT_CENTER;
-    c.y = a.y1 + KIT_CENTER;
-    face_draw_rim_arc(layer, c, 356, 1, 0, 360, sk->accent_deep, 140, false);
-    for (int i = 0; i < 60; i++) {
-        int32_t deg = i * 6;
-        bool major = (i % 5) == 0;
-
-        if (deg > 112 && deg < 248) {
-            continue;
-        }
-        face_draw_tick(layer, c, major ? 331 : 339, 347, (float)(deg - 90), major ? 2 : 1,
-                       major ? sk->accent_deep : sk->line_strong);
-    }
+    kit_draw_minute_rim_at(lv_event_get_layer(e), a.x1 + KIT_CENTER, a.y1 + KIT_CENTER, THEME_RIM_SKIP_FROM,
+                           THEME_RIM_SKIP_TO);
 }
 
 void face_themes_create(clock_ui_context_t *ctx)
@@ -419,6 +410,7 @@ void face_themes_create(clock_ui_context_t *ctx)
         break;
     case CLOCK_UI_STYLE_ATELIER:
         lv_obj_add_event_cb(ft->panel, atelier_rim_cb, LV_EVENT_DRAW_MAIN_END, NULL);
+        kit_minute_rim_prewarm(THEME_RIM_SKIP_FROM, THEME_RIM_SKIP_TO);
         ft->eyebrow = centered_label(ft->panel, KIT_TEXT_LABEL, 62, o.width);
         ft->title = centered_label(ft->panel, KIT_TEXT_TITLE, 92, o.width);
         face_engraved_rule(ft->panel, 155, 240);
