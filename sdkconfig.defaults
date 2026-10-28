@@ -82,3 +82,7 @@ CONFIG_ESP_WIFI_REMOTE_ENABLED=y
 CONFIG_SLAVE_IDF_TARGET_ESP32C6=y
 CONFIG_ESP_WIFI_REMOTE_LIBRARY_HOSTED=y
 CONFIG_LV_USE_SNAPSHOT=y
+
+# LP RAM is far slower than L2 memory: as general heap it held LVGL's per-draw mask buffers
+# whenever internal RAM ran low, and rounded fills took 17 ms instead of 1 ms.
+# CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP is not set

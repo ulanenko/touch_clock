@@ -113,12 +113,19 @@ Not usable on this board: the adapter's `DOUBLE_FULL` and `DOUBLE_DIRECT` modes 
 - `refresh_settings_controls` (run on every slider `VALUE_CHANGED`) only syncs Night when `night_controls_need_sync()` says so.
 - `CONFIG_LV_DRAW_SW_SHADOW_CACHE_SIZE=64`: the banner and button shadows were re-blurred every frame.
 
+## Fixed 2026-10-27/28 (measured on the clock)
+
+- **Analog faces (Sternglas, Avenir, Modern Silver)** cleared a 640 px ARGB hands canvas and snapshotted the whole tile every second: about 110 ms of UI thread a tick. The face is now one RGB565 canvas, the dial snapshot with the hands drawn in. A tick restores the dial only where the hands were and are now, and redraws them there (`face_hands_begin`/`face_hands_finish` in `ui_faces.c`). A tick now costs 10-24 ms, and that worst case is the first full draw after a swipe in. It also frees three 1.6 MB hands canvases.
+- **Matrix and Wharton** redraw and invalidate only the dots that changed (`face_dot`, `dot_canvas_finish`).
+- **Digital** re-applies its styles only when the palette changes.
+- **Alarm sounds** are synthesised (`alarm_tones.c`) block by block in an 8 KB internal-RAM mixing buffer, and pre-rendered by a lowest-priority task 20 s after boot (about 3.3 s of work, 3 MB of PSRAM). A preview or an alarm starts at once.
+- **Settings pages at 80-140 ms a frame, on whichever screen happened to be open (LP RAM heap).** `CONFIG_ESP_SYSTEM_ALLOW_RTC_FAST_MEM_AS_HEAP` added the P4's LP RAM to the general heap. When L2 memory ran low, LVGL's small per-draw buffers came from it: the row masks of rounded rectangles, and glyph and mask buffers. Every pixel through them was about 20x slower. A 500x160 card with radius 44 took 17.4 ms when a 500-byte `malloc` landed in LP RAM, and 0.9 ms otherwise (measured side by side on the clock). Which pages were slow depended on the heap state at the time, so it looked random across runs and styles. LP RAM is no longer heap. Small allocations fall back to PSRAM, which is cached and fast, and the 32 KB internal DMA reserve is unchanged.
+- **LVGL clip_radius mask leak.** LVGL 9.3.0 never frees the radius mask of an image drawn with `clip_radius` (`lv_draw_sw_img.c`). The face reveal draws one a frame with a growing radius, so each frame pins a circle-cache entry for good. Once all 64 are pinned, every reveal frame also leaks a temporary entry. The managed LVGL copy carries the one-line fix, and `main/CMakeLists.txt` warns when a fresh download lacks it.
+- **Kit arcs and dials** are cached tiles instead of live `lv_draw_arc` (4-14 ms of mask setup each on the device).
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High
-- **Analog faces render twice per second** (canvas redraw + `lv_snapshot_take_to_draw_buf`, `ui_faces.c` ~376-412). Sternglas redraws every second for about 0.5 px of movement.
-- **Matrix and Wharton redraw the whole canvas every second** (1089 and about 202 rect draws) when only 2-3 dots change.
-- **Digital face sets about 22 styles per second unconditionally** (`ui_faces.c` ~925-1008). It also has two invisible glow labels.
 - **Alarm list re-styles every card at scroll end** (`ui_alarms.c` `refresh_alarm_management_layout`, `update_alarm_list_focus_treatment`).
 
 - **Night face picker re-renders all 8 previews on every open.**
