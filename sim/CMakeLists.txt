@@ -31,6 +31,15 @@ set(SIM_DEFS LV_CONF_KCONFIG_EXTERNAL_INCLUDE="sim_sdkconfig.h" LV_LVGL_H_INCLUD
 set(SIM_INCLUDES ${GEN_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/stubs ${LVGL_DIR} ${LVGL_DIR}/src)
 
 file(GLOB_RECURSE LVGL_SOURCES CONFIGURE_DEPENDS ${LVGL_DIR}/src/*.c)
+# The firmware's LVGL fixes (cmake/lvgl_patches.cmake), so the simulator runs the same LVGL.
+include(${REPO_ROOT}/cmake/lvgl_patches.cmake)
+lvgl_patch_sources(${LVGL_DIR} ${CMAKE_CURRENT_BINARY_DIR}/lvgl_patched LVGL_ORIGINALS LVGL_PATCHED)
+foreach(original patched IN ZIP_LISTS LVGL_ORIGINALS LVGL_PATCHED)
+    get_filename_component(original_dir ${original} DIRECTORY)
+    list(REMOVE_ITEM LVGL_SOURCES ${original})
+    list(APPEND LVGL_SOURCES ${patched})
+    set_source_files_properties(${patched} PROPERTIES COMPILE_OPTIONS "-iquote${original_dir}")
+endforeach()
 add_library(lvgl STATIC ${LVGL_SOURCES})
 add_dependencies(lvgl sim_sdkconfig)
 target_compile_definitions(lvgl PUBLIC ${SIM_DEFS})

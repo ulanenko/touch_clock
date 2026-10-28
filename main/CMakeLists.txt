@@ -55,21 +55,16 @@ idf_component_register(
     REQUIRES esp_wifi
     PRIV_REQUIRES app_update esp_driver_ppa esp_http_client esp_hw_support esp_mm esp_timer mbedtls nvs_flash)
 
-# LVGL 9.3.0 never frees the radius mask of an image drawn with clip_radius
-# (lv_draw_sw_img.c, end of radius_only), so every such draw pins a circle-cache entry for
-# good. The face reveal draws one per frame with a growing radius; after a few reveals the
-# cache is full and every rounded corner is recomputed each frame (a 500x160 card: 1 ms ->
-# 17 ms on the device). The managed copy carries the one-line fix
-# (lv_draw_sw_mask_free_param(&mask_param) before lv_free(mask_buf)); warn when a fresh
-# download of LVGL lacks it.
+# LVGL fixes not yet upstream (cmake/lvgl_patches.cmake): compile fixed copies of the
+# affected LVGL sources in place of the managed originals.
 idf_build_get_property(project_dir PROJECT_DIR)
-set(lv_img_src "${project_dir}/managed_components/lvgl__lvgl/src/draw/sw/lv_draw_sw_img.c")
-if(EXISTS "${lv_img_src}")
-    file(READ "${lv_img_src}" lv_img_text)
-    string(FIND "${lv_img_text}" "lv_draw_sw_mask_free_param(&mask_param);" lv_img_fixed)
-    if(lv_img_fixed EQUAL -1)
-        message(WARNING "LVGL lacks the clip_radius mask fix: add lv_draw_sw_mask_free_param(&mask_param); "
-                        "before the last lv_free(mask_buf) in ${lv_img_src}. Without it rounded corners "
-                        "get much slower after a few face swipes.")
-    endif()
-endif()
+include("${project_dir}/cmake/lvgl_patches.cmake")
+idf_component_get_property(lvgl_lib lvgl__lvgl COMPONENT_LIB)
+idf_component_get_property(lvgl_dir lvgl__lvgl COMPONENT_DIR)
+lvgl_patch_sources("${lvgl_dir}" "${CMAKE_CURRENT_BINARY_DIR}/lvgl_patched" lvgl_originals lvgl_patched)
+foreach(original patched IN ZIP_LISTS lvgl_originals lvgl_patched)
+    get_filename_component(original_dir "${original}" DIRECTORY)
+    set_source_files_properties("${original}" DIRECTORY "${lvgl_dir}" PROPERTIES HEADER_FILE_ONLY TRUE)
+    set_source_files_properties("${patched}" DIRECTORY "${lvgl_dir}" PROPERTIES COMPILE_OPTIONS "-iquote${original_dir}")
+    target_sources(${lvgl_lib} PRIVATE "${patched}")
+endforeach()

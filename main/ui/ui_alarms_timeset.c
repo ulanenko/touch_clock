@@ -14,6 +14,7 @@
 #include "assets/skin_fonts/skin_fonts.h"
 #include "assets/ui_assets/alarms_assets.h"
 #include "esp_heap_caps.h"
+#include "esp_timer.h"
 #include "lvgl_private.h" /* lv_hit_test_info_t */
 
 /* Orbit ring (design/ui_concepts/orbit.html, screen 10). */
@@ -219,43 +220,105 @@ static void draw_text_at(lv_layer_t *layer, const lv_font_t *font, lv_color_t co
     lv_draw_label(layer, &d, &a);
 }
 
+/* Blends colour c at coverage a (0..1) into an RGB565 pixel. */
+static void dial_px(uint16_t *px, lv_color_t c, float a)
+{
+    uint32_t m = (uint32_t)lroundf(a * 255.0f);
+    uint32_t inv = 255 - m;
+    uint32_t v = *px;
+    uint32_t r = ((c.red >> 3) * m + (v >> 11) * inv + 127) / 255;
+    uint32_t g = ((c.green >> 2) * m + ((v >> 5) & 0x3F) * inv + 127) / 255;
+    uint32_t b = ((c.blue >> 3) * m + (v & 0x1F) * inv + 127) / 255;
+
+    *px = (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+/* Coverage of a pixel at distance d from the centre by a circle line of the given width
+ * whose outer edge has radius r_outer (as an LVGL arc draws it). LVGL's antialiased hairlines
+ * come out lighter than the exact coverage; `weight` matches them (measured on the dial: the
+ * fine grooves about 0.6, single rings about 0.85). */
+static float dial_cover(float d, float r_outer, float width, float weight)
+{
+    return weight * LV_CLAMP(0.0f, width / 2.0f + 0.5f - fabsf(d - (r_outer - width / 2.0f)), 1.0f);
+}
+
+/* The dial's concentric lines straight into its RGB565 canvas: the guilloche grooves (every
+ * 4 px from 6 to 210, one RGB565 step above the ink), its 214 px rim, the 344 px minute
+ * track and the 356 px bezel hairline. As 55 LVGL arcs they made the first open of the
+ * editor hitch by 50-100 ms; here only pixels near a line are visited. */
+static void render_dial_lines(lv_obj_t *canvas)
+{
+    const ui_skin_t *sk = ui_skin();
+    lv_draw_buf_t *buf = lv_canvas_get_draw_buf(canvas);
+    const lv_color_t groove = lv_color_hex(0x1C1824);
+    const float disc = (float)A_GUILLOCHE_R + 1.5f;
+    const float band_in = 341.0f;
+    const float band_out = 357.5f;
+
+    if (buf == NULL || buf->header.cf != LV_COLOR_FORMAT_RGB565) {
+        return;
+    }
+    for (int32_t y = 0; y < (int32_t)buf->header.h; y++) {
+        uint16_t *row = (uint16_t *)(buf->data + (size_t)y * buf->header.stride);
+        float dy = (float)y + 0.5f - (float)KIT_CENTER;
+        float dy2 = dy * dy;
+
+        if (dy2 < disc * disc) {
+            int32_t half = (int32_t)ceilf(sqrtf(disc * disc - dy2));
+
+            for (int32_t x = LV_MAX(0, KIT_CENTER - half); x < LV_MIN(KIT_SCREEN, KIT_CENTER + half); x++) {
+                float dx = (float)x + 0.5f - (float)KIT_CENTER;
+                float d = sqrtf(dx * dx + dy2);
+                /* The nearest groove: outer radius 6 + 4k, k = 0..51. */
+                int32_t k = LV_CLAMP(0, (int32_t)lroundf((d + 0.5f - 6.0f) / 4.0f), 51);
+                float a = dial_cover(d, (float)(6 + 4 * k), 1.0f, 0.6f);
+
+                if (a > 0.0f) {
+                    dial_px(&row[x], groove, a);
+                }
+                a = dial_cover(d, (float)A_GUILLOCHE_R, 1.0f, 0.85f);
+                if (a > 0.0f) {
+                    dial_px(&row[x], sk->line, a);
+                }
+            }
+        }
+        if (dy2 < band_out * band_out) {
+            float x_out = sqrtf(band_out * band_out - dy2);
+            float x_in = dy2 < band_in * band_in ? sqrtf(band_in * band_in - dy2) : 0.0f;
+
+            for (int side = -1; side <= 1; side += 2) {
+                int32_t x0 = KIT_CENTER + (side < 0 ? (int32_t)floorf(-x_out) : (int32_t)floorf(x_in)) - 1;
+                int32_t x1 = KIT_CENTER + (side < 0 ? (int32_t)ceilf(-x_in) : (int32_t)ceilf(x_out)) + 1;
+
+                for (int32_t x = LV_MAX(0, x0); x < LV_MIN(KIT_SCREEN, x1); x++) {
+                    float dx = (float)x + 0.5f - (float)KIT_CENTER;
+                    float d = sqrtf(dx * dx + dy2);
+                    float a = dial_cover(d, 356.0f, 1.0f, 0.85f) * 140.0f / 255.0f;
+
+                    if (a > 0.0f) {
+                        dial_px(&row[x], sk->accent_deep, a);
+                    }
+                    a = dial_cover(d, 344.0f, 2.0f, 0.85f);
+                    if (a > 0.0f) {
+                        dial_px(&row[x], sk->line, a);
+                    }
+                }
+            }
+        }
+    }
+}
+
 /* The static dial, drawn once: guilloche disc, minute track, numerals. */
 static void render_dial(lv_obj_t *canvas)
 {
     const ui_skin_t *sk = ui_skin();
     lv_layer_t layer;
-    lv_draw_arc_dsc_t arc;
     lv_draw_line_dsc_t line;
     char text[4];
 
     lv_canvas_fill_bg(canvas, sk->bg, LV_OPA_COVER);
+    render_dial_lines(canvas);
     lv_canvas_init_layer(canvas, &layer);
-
-    lv_draw_arc_dsc_init(&arc);
-    arc.center.x = KIT_CENTER;
-    arc.center.y = KIT_CENTER;
-    arc.start_angle = 0;
-    arc.end_angle = 360;
-    /* Guilloche: fine concentric grooves, one RGB565 step above the ink. */
-    arc.color = lv_color_hex(0x1C1824);
-    arc.width = 1;
-    for (int r = 6; r < A_GUILLOCHE_R; r += 4) {
-        arc.radius = (uint16_t)r;
-        kit_draw_arc(&layer, &arc);
-    }
-    arc.color = sk->line;
-    arc.radius = A_GUILLOCHE_R;
-    kit_draw_arc(&layer, &arc);
-    /* Bezel hairline and the minute track. */
-    arc.color = sk->accent_deep;
-    arc.opa = 140;
-    arc.radius = 356;
-    kit_draw_arc(&layer, &arc);
-    arc.opa = LV_OPA_COVER;
-    arc.color = sk->line;
-    arc.width = 2;
-    arc.radius = 344;
-    kit_draw_arc(&layer, &arc);
 
     lv_draw_line_dsc_init(&line);
     for (int i = 0; i < 60; i++) {
@@ -433,7 +496,13 @@ static void atelier_ensure_dial(clock_ui_context_t *ctx)
     }
     lv_obj_set_pos(ts->dial, 0, 0);
     lv_obj_move_to_index(ts->dial, 0);
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    int64_t started_us = esp_timer_get_time();
+#endif
     render_dial(ts->dial);
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    printf("PERF dial_build us=%lld t_ms=%lld\n", esp_timer_get_time() - started_us, esp_timer_get_time() / 1000);
+#endif
 }
 
 static void atelier_sync(clock_ui_context_t *ctx, bool hour_changed, bool minute_changed)
@@ -462,6 +531,14 @@ static void atelier_sync(clock_ui_context_t *ctx, bool hour_changed, bool minute
     }
 }
 
+/* Builds the Atelier dial a few seconds after the chrome, so the first open of the editor
+ * does not wait for it. The timer runs once and stays paused (the chrome deletes it). */
+static void dial_prebuild_cb(lv_timer_t *timer)
+{
+    lv_timer_pause(timer);
+    atelier_ensure_dial(lv_timer_get_user_data(timer));
+}
+
 /* --- Common --------------------------------------------------------------------------------- */
 
 void alm_timeset_create(clock_ui_context_t *ctx, lv_obj_t *parent)
@@ -475,6 +552,7 @@ void alm_timeset_create(clock_ui_context_t *ctx, lv_obj_t *parent)
         create_orbit(ctx, parent);
     } else {
         create_atelier(ctx, parent);
+        ui_chrome_timer_create(ctx, dial_prebuild_cb, 3000, ctx);
     }
 }
 
