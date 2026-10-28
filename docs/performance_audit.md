@@ -141,17 +141,35 @@ Not usable on this board: the adapter's `DOUBLE_FULL` and `DOUBLE_DIRECT` modes 
 - **Evening faces.** `ev_fill` filled the 720x720 base through the per-pixel blend (three divides a pixel): Ember's base took 150-180 ms, now about 45 ms. Nocturne's moon (a shaded sphere with maria and craters, about 30k samples) is cached per theme and day, so retaking the shared base copies it.
 - **Face controls** come in as a sprung sweep round the dial (about 580 ms, only the moving controls and the rim redraw) and fade out in 230 ms.
 
-## Liquid Glass (2026-10-28, in progress)
+## Liquid Glass (2026-10-28/29)
 
-The fourth style draws chrome surfaces as glass (`main/ui/kit/ui_glass.c`). Each shape is baked once at its place into an RGB565 image: the face behind it refracted through a convex squircle bezel (Snell's law, n = 1.5, the three channels bent slightly differently), mixed with a half-resolution frost, tinted and lit at the rim. A frame then draws one image per shape; rows not inside other glass bake their corners against the page ground and skip LVGL's per-pixel corner mask.
+The fourth style draws chrome surfaces as glass (`main/ui/kit/ui_glass.c`). Each shape is baked once at its place into an RGB565 image: the face behind it refracted through a convex squircle bezel (Snell's law, n = 1.5, the three channels bent slightly differently), mixed with a half-resolution frost, tinted and lit at the rim. A frame then draws one image per shape; rows not inside other glass bake their corners against the page ground and skip LVGL's per-pixel corner mask. Sheets and large panels (over 100 k px), and glass sitting on them, use a deep frost instead (blurred again at 90x90, about 30 px at full size) with no sharp face mixed in: they read as material.
 
-Measured on the clock (glass tour):
+Measured on the clock (glass tour 20261028-213305, before the changes below):
 
 - Frames: face 15 ms, face slide 20-22 ms, settings scrolling 23-29 ms (Orbit 11-15 ms).
 - Backdrop: about 138 ms (downsample 13, blur 70, upscale 40, back 15). The frost is rebuilt only when the face, its minute or its theme changes (idle time); going from the face to a page only dims the back image in place.
 - Bakes: about 0.4-0.9 us a pixel: a page's rows about 200 ms the first time a page opens for a face, the theme sheet panel about 270 ms. Bakes on pages and large panels stay valid while the face and theme are the same.
 
-Still to do: move the frost build and bakes off the UI thread, and cut the blur's memory traffic.
+Since then (simulator cost model only, to confirm on the clock):
+
+- Blur: interleaved RGBA, rows with four sums, columns a row at a time with a sum per byte, edges from index tables: bit-identical, 2.4x (-O1) to 4.75x (-O2) faster on the host. Upscale: the fixed (3 near + far) / 4 weights as shifts and adds in 16-bit lanes. The backdrop debug call (snapshot and frost) is estimated at ~100 ms, down from ~168 with the deep frost; the frost build alone at ~37 ms, the rest being the face snapshot render.
+- Bakes carry their own context (page or face, from their ancestry), so page glass is baked while the face is showing: the face's idle timer (every 250 ms when nothing is touched) prewarms the chrome's glass for up to 20 ms a tick, into free cache room only (a prewarm never evicts). Opening a page should no longer wait for its rows.
+- Boot intro (`main/ui/ui_boot.c`): estimated 32-39 ms a frame during the iris (one large arc over the face), about 26-30 fps for 1.1 s, once per boot.
+
+Deferred: the frost build on a worker task (it is mostly idle-time work now, and the snapshot it needs renders on the UI thread anyway) and the settings scroll's full-screen ground blit (about 12 ms of a 23-29 ms frame; cutting it needs occlusion bookkeeping against the opaque rows). Revisit with the numbers from the device.
+
+### Checking Liquid Glass on the clock
+
+1. Glass tour against the 20261028-213305 baseline:
+   `$PY scripts/perf_tour.py --port /dev/cu.usbmodem1301 --restore --set CONFIG_TOUCH_CLOCK_PERF_TOUR_STYLE_FIRST=3`,
+   then `--compare` with the baseline. Look at `PERF glass_step` (down / blur / up: blur was 70 ms, up 40)
+   and `PERF glass_bake` lines, and whether bakes now land while the face is idle rather than when a page opens.
+2. Boot (normal firmware): the ring fills as the faces build, the iris opens smoothly, the chime plays once
+   at the UI click volume, and stays silent with UI sounds off or in night mode (`night_now`).
+3. Pull the theme and quick sheets slowly: frosted, no face detail through them or their keys, no noise
+   at the screen's edge.
+4. After a minute idle, tap the face and open settings: no stall before the controls or the page.
 
 ## Open findings, by priority (*unverified* unless measured)
 
