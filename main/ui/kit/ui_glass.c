@@ -76,52 +76,84 @@ static lv_draw_buf_t *screen_buf(lv_draw_buf_t **buf)
     return *buf;
 }
 
-/* One box blur pass of radius r along rows (step 1) or columns (step n) of an n x n plane, in
- * place. */
-static void box_pass(uint8_t *ch, uint8_t *tmp, int r, bool rows, int n)
+/* Three box passes each way over an n x n RGBA image, in place: about a Gaussian of radius
+ * 1.7 r. Rows run along each row with a sum per channel; columns run down the image a row at a
+ * time with a sum per byte of the row, so both read memory in order, and the edges (clamped)
+ * come from index tables rather than tests in the loops. False without memory. */
+static bool blur_rgba(uint8_t *img, int n, int r)
 {
     const int recip = (65536 + 2 * r) / (2 * r + 1); /* sum / (2r + 1) as a multiply */
+    const int stride = n * 4;
+    uint8_t *tmp = lv_malloc((size_t)n * (size_t)stride);
+    uint16_t *sums = lv_malloc((size_t)stride * sizeof(uint16_t));
+    int16_t *add = lv_malloc((size_t)n * 2 * sizeof(int16_t));
+    int16_t *sub = add + n;
 
-    for (int line = 0; line < n; line++) {
-        int sum = 0;
+    if (tmp == NULL || sums == NULL || add == NULL) {
+        lv_free(tmp);
+        lv_free(sums);
+        lv_free(add);
+        return false;
+    }
+    for (int i = 0; i < n; i++) {
+        add[i] = (int16_t)LV_MIN(i + r + 1, n - 1); /* the sample entering the sum */
+        sub[i] = (int16_t)LV_MAX(i - r, 0);         /* and the one leaving it */
+    }
+    for (int pass = 0; pass < 3; pass++) {
+        for (int y = 0; y < n; y++) {
+            const uint8_t *in = img + (size_t)y * stride;
+            uint8_t *out = tmp + (size_t)y * stride;
+            int s0 = 0;
+            int s1 = 0;
+            int s2 = 0;
+            int s3 = 0;
 
+            for (int i = -r; i <= r; i++) {
+                const uint8_t *p = in + LV_CLAMP(0, i, n - 1) * 4;
+
+                s0 += p[0];
+                s1 += p[1];
+                s2 += p[2];
+                s3 += p[3];
+            }
+            for (int x = 0; x < n; x++) {
+                const uint8_t *pa = in + add[x] * 4;
+                const uint8_t *pb = in + sub[x] * 4;
+
+                out[0] = (uint8_t)((s0 * recip) >> 16);
+                out[1] = (uint8_t)((s1 * recip) >> 16);
+                out[2] = (uint8_t)((s2 * recip) >> 16);
+                out[3] = (uint8_t)((s3 * recip) >> 16);
+                out += 4;
+                s0 += pa[0] - pb[0];
+                s1 += pa[1] - pb[1];
+                s2 += pa[2] - pb[2];
+                s3 += pa[3] - pb[3];
+            }
+        }
+        memset(sums, 0, (size_t)stride * sizeof(uint16_t));
         for (int i = -r; i <= r; i++) {
-            int k = LV_CLAMP(0, i, n - 1);
+            const uint8_t *row = tmp + (size_t)LV_CLAMP(0, i, n - 1) * stride;
 
-            sum += rows ? ch[line * n + k] : ch[k * n + line];
+            for (int j = 0; j < stride; j++) {
+                sums[j] += row[j];
+            }
         }
-        for (int i = 0; i < n; i++) {
-            int add = LV_MIN(i + r + 1, n - 1);
-            int sub = LV_MAX(i - r, 0);
+        for (int y = 0; y < n; y++) {
+            const uint8_t *ra = tmp + (size_t)add[y] * stride;
+            const uint8_t *rb = tmp + (size_t)sub[y] * stride;
+            uint8_t *out = img + (size_t)y * stride;
 
-            tmp[i] = (uint8_t)((sum * recip) >> 16);
-            sum += rows ? ch[line * n + add] - ch[line * n + sub] : ch[add * n + line] - ch[sub * n + line];
-        }
-        for (int i = 0; i < n; i++) {
-            if (rows) {
-                ch[line * n + i] = tmp[i];
-            } else {
-                ch[i * n + line] = tmp[i];
+            for (int j = 0; j < stride; j++) {
+                out[j] = (uint8_t)((sums[j] * recip) >> 16);
+                sums[j] = (uint16_t)(sums[j] + ra[j] - rb[j]);
             }
         }
     }
-}
-
-/* Three box passes each way over each of the four channels of an n x n RGBA image. */
-static void blur4(uint8_t *img, uint8_t *planes, uint8_t *tmp, int n, int r)
-{
-    for (int c = 0; c < 4; c++) {
-        for (int i = 0; i < n * n; i++) {
-            planes[i] = img[i * 4 + c];
-        }
-        for (int pass = 0; pass < 3; pass++) {
-            box_pass(planes, tmp, r, true, n);
-            box_pass(planes, tmp, r, false, n);
-        }
-        for (int i = 0; i < n * n; i++) {
-            img[i * 4 + c] = planes[i];
-        }
-    }
+    lv_free(tmp);
+    lv_free(sums);
+    lv_free(add);
+    return true;
 }
 
 /* Colour over coverage, then graded: n x n RGBA (weighted) to RGB, in place. */
@@ -169,6 +201,9 @@ static void tables_init(void)
     }
     s_tables = true;
 }
+
+/* Three 8-bit channels in 16-bit lanes of one word. */
+#define UPLANES(p) ((uint64_t)(p)[0] | (uint64_t)(p)[1] << 16 | (uint64_t)(p)[2] << 32)
 
 static inline uint16_t pack(int r, int g, int b, int x, int y)
 {
@@ -235,15 +270,12 @@ bool ui_glass_backdrop_to_page(lv_draw_buf_t *keep_sharp)
 void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bool frost_too)
 {
     uint8_t *low = NULL;
-    uint8_t *tmp = NULL;
-    uint16_t *hrow = NULL;
+    uint64_t *hrow = NULL;
     lv_draw_buf_t *frost;
     float gain;
     float lift;
     float sat;
     uint32_t luma = 0;
-    int16_t x0[SCREEN];
-    uint8_t wx[SCREEN];
 
     GLASS_PERF_START();
 
@@ -263,11 +295,9 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         return;
     }
     low = lv_malloc(LOW * LOW * 4);
-    tmp = lv_malloc(LOW);
-    hrow = lv_malloc(2 * SCREEN * 3 * sizeof(uint16_t));
-    if (low == NULL || tmp == NULL || hrow == NULL) {
+    hrow = lv_malloc(3 * FROST * sizeof(uint64_t));
+    if (low == NULL || hrow == NULL) {
         lv_free(low);
-        lv_free(tmp);
         lv_free(hrow);
         return;
     }
@@ -281,7 +311,6 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
 
         if (acc == NULL) {
             lv_free(low);
-            lv_free(tmp);
             lv_free(hrow);
             return;
         }
@@ -316,7 +345,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         lv_free(acc);
     }
     GLASS_PERF_STEP("down");
-    /* Three box passes each way (close to a Gaussian of about 13 px at full size), per channel;
+    /* Three box passes each way (close to a Gaussian of about 13 px at full size);
      * then, for the deep frost, down by two more and three passes again (about 30 px): a sheet
      * as wide as the screen shows no tick or numeral through it, and the picture it carries
      * along while dragged has nothing in it to give the move away. */
@@ -324,25 +353,20 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
     if (s_deep == NULL) {
         s_deep = lv_malloc(DEEP * DEEP * 4);
     }
-    {
-        uint8_t *planes = lv_malloc(LOW * LOW);
+    if (blur_rgba(low, LOW, 3) && s_deep != NULL) {
+        for (int dy = 0; dy < DEEP; dy++) {
+            for (int dx = 0; dx < DEEP; dx++) {
+                const uint8_t *a = low + ((size_t)dy * 2 * LOW + (size_t)dx * 2) * 4;
 
-        if (planes != NULL) {
-            blur4(low, planes, tmp, LOW, 3);
-            if (s_deep != NULL) {
-                for (int dy = 0; dy < DEEP; dy++) {
-                    for (int dx = 0; dx < DEEP; dx++) {
-                        const uint8_t *a = low + ((size_t)dy * 2 * LOW + (size_t)dx * 2) * 4;
-
-                        for (int c = 0; c < 4; c++) {
-                            s_deep[(dy * DEEP + dx) * 4 + c] =
-                                (uint8_t)((a[c] + a[4 + c] + a[LOW * 4 + c] + a[LOW * 4 + 4 + c] + 2) >> 2);
-                        }
-                    }
+                for (int c = 0; c < 4; c++) {
+                    s_deep[(dy * DEEP + dx) * 4 + c] =
+                        (uint8_t)((a[c] + a[4 + c] + a[LOW * 4 + c] + a[LOW * 4 + 4 + c] + 2) >> 2);
                 }
-                blur4(s_deep, planes, tmp, DEEP, 3);
             }
-            lv_free(planes);
+        }
+        if (!blur_rgba(s_deep, DEEP, 3)) {
+            lv_free(s_deep);
+            s_deep = NULL;
         }
     }
     GLASS_PERF_STEP("blur");
@@ -386,60 +410,54 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
             s_deep_row_y[k] = -1;
         }
     }
-    /* Up to half resolution bilinearly: each low row is interpolated across once (it serves
-     * two output rows), then each pixel only blends two of them; dithered so gradients do not
+    /* Up to half resolution bilinearly. A frost pixel sits a quarter of the way between two
+     * low ones each way, so it is (3 near + 1 far) / 4 across and down: shifts and adds, the
+     * three channels at once in 16-bit lanes. Each low row is widened once (three are kept:
+     * an output row needs its own and the one above or below); dithered so gradients do not
      * band. */
-    for (int x = 0; x < FROST; x++) {
-        int f = (x * 2 + 1) * 64 - 128; /* ((x + 0.5) / 2 - 0.5) * 256 */
-        int i = f < 0 ? 0 : f >> 8;
-
-        x0[x] = (int16_t)LV_MIN(i, LOW - 2);
-        wx[x] = (uint8_t)(f < 0 ? 0 : (i >= LOW - 1 ? 255 : (f & 255)));
-    }
     {
-        int cached[2] = {-1, -1};
+        int cached[3] = {-1, -1, -1};
 
         for (int y = 0; y < FROST; y++) {
-            int f = (y * 2 + 1) * 64 - 128;
-            int y0 = f < 0 ? 0 : LV_MIN(f >> 8, LOW - 2);
-            int wy = f < 0 ? 0 : ((f >> 8) >= LOW - 1 ? 255 : (f & 255));
+            int near = y >> 1;
+            int far = LV_CLAMP(0, (y & 1) ? near + 1 : near - 1, LOW - 1);
             uint16_t *out = (uint16_t *)(frost->data + (size_t)y * frost->header.stride);
-            uint16_t *h0;
-            uint16_t *h1;
+            const uint64_t *hn;
+            const uint64_t *hf;
 
             for (int k = 0; k < 2; k++) {
-                int ly = y0 + k;
-                int slot = ly & 1;
+                int ly = k == 0 ? near : far;
+                int slot = ly % 3;
 
                 if (cached[slot] != ly) {
                     const uint8_t *lr = low + (size_t)ly * LOW * 3;
-                    uint16_t *h = hrow + (size_t)slot * FROST * 3;
+                    uint64_t *h = hrow + (size_t)slot * FROST;
+                    uint64_t prev = UPLANES(lr);
+                    uint64_t cur = prev;
 
-                    for (int x = 0; x < FROST; x++) {
-                        const uint8_t *a = lr + x0[x] * 3;
-                        int w = wx[x];
+                    for (int lx = 0; lx < LOW; lx++) {
+                        uint64_t next = lx + 1 < LOW ? UPLANES(lr + (lx + 1) * 3) : cur;
+                        uint64_t c3 = cur * 3;
 
-                        h[x * 3] = (uint16_t)(a[0] * (256 - w) + a[3] * w);
-                        h[x * 3 + 1] = (uint16_t)(a[1] * (256 - w) + a[4] * w);
-                        h[x * 3 + 2] = (uint16_t)(a[2] * (256 - w) + a[5] * w);
+                        h[lx * 2] = c3 + prev;
+                        h[lx * 2 + 1] = c3 + next;
+                        prev = cur;
+                        cur = next;
                     }
                     cached[slot] = ly;
                 }
             }
-            h0 = hrow + (size_t)(y0 & 1) * FROST * 3;
-            h1 = hrow + (size_t)((y0 + 1) & 1) * FROST * 3;
+            hn = hrow + (size_t)(near % 3) * FROST;
+            hf = hrow + (size_t)(far % 3) * FROST;
             for (int x = 0; x < FROST; x++) {
-                int r = (h0[x * 3] * (256 - wy) + h1[x * 3] * wy) >> 16;
-                int g = (h0[x * 3 + 1] * (256 - wy) + h1[x * 3 + 1] * wy) >> 16;
-                int b = (h0[x * 3 + 2] * (256 - wy) + h1[x * 3 + 2] * wy) >> 16;
+                uint64_t v = hn[x] * 3 + hf[x]; /* 16 x the colour per lane */
 
-                out[x] = pack(r, g, b, x, y);
+                out[x] = pack((int)(v >> 4) & 0xFFF, (int)(v >> 20) & 0xFFF, (int)(v >> 36) & 0xFFF, x, y);
             }
         }
     }
     GLASS_PERF_STEP("up");
     lv_free(low);
-    lv_free(tmp);
     lv_free(hrow);
     s_frost_ok = true;
     s_generation++;
