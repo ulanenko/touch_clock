@@ -92,6 +92,8 @@ void ui_ppa_blend_install(void);
 /* Registers a mostly transparent ARGB8888 image so blends of it touch only its visible
  * pixels; unregister before freeing it. */
 void ui_sparse_image_register(const lv_draw_buf_t *buf);
+/* Whether data is a registered sparse image's pixels (the simulator's cost model). */
+bool ui_sparse_image_known(const void *data);
 void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 lv_obj_t *ui_backdrop_create(lv_obj_t *overlay);
 void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop, bool moving, lv_opa_t dim_opa);

@@ -161,7 +161,41 @@ SHOW_FACE_CALL(9)
 SHOW_FACE_CALL(10)
 #endif
 
-#if CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR_MICROBENCH
+#include "ui/ui_microbench.h"
+
+/* Each scene redrawn every frame for a while; the segment's render times are its cost. */
+#define MB_CALL(i)                                                                                 \
+    static void call_mb_##i(clock_ui_context_t *ctx)                                              \
+    {                                                                                              \
+        LV_UNUSED(ctx);                                                                            \
+        if (strcmp(ui_microbench_name(i), "cpu_loop") == 0) {                                      \
+            ui_microbench_hide();                                                                  \
+            printf("PERF cpu_loop us=%lld\n", (long long)ui_microbench_cpu_loop(esp_timer_get_time)); \
+        } else {                                                                                   \
+            ui_microbench_show(i, true);                                                           \
+        }                                                                                          \
+    }
+MB_CALL(0) MB_CALL(1) MB_CALL(2) MB_CALL(3) MB_CALL(4) MB_CALL(5) MB_CALL(6) MB_CALL(7) MB_CALL(8) MB_CALL(9)
+MB_CALL(10) MB_CALL(11) MB_CALL(12) MB_CALL(13) MB_CALL(14) MB_CALL(15) MB_CALL(16) MB_CALL(17) MB_CALL(18)
+MB_CALL(19) MB_CALL(20) MB_CALL(21) MB_CALL(22)
+static void call_mb_end(clock_ui_context_t *ctx)
+{
+    LV_UNUSED(ctx);
+    ui_microbench_hide();
+}
+#define MB(i, name) CALL("mb_" name, call_mb_##i, 1500)
+
+static const perf_step_t s_steps[] = {
+    IDLE("idle_face", 2000),
+    MB(0, "base"), MB(1, "img565_full"), MB(2, "img565_part"), MB(3, "img565_round"), MB(4, "img565_opa"),
+    MB(5, "imgargb_full"), MB(6, "argb_sparse"), MB(7, "fill_plain"), MB(8, "fill_round"), MB(9, "fill_opa"),
+    MB(10, "fill_grad"), MB(11, "border"), MB(12, "shadow"), MB(13, "label_small"), MB(14, "label_big"),
+    MB(15, "arc"), MB(16, "line"), MB(17, "layer_opa"), MB(18, "transform"), MB(19, "img565_part8"),
+    MB(20, "fill_plain_big"), MB(21, "label_many"), MB(22, "cpu_loop"),
+    CALL("mb_end", call_mb_end, 1000),
+};
+#elif CONFIG_TOUCH_CLOCK_PERF_TOUR_FACE_GALLERY
 #define GALLERY_FACE(id) CALL("gallery", call_show_face_##id, 2500), THUMB("face_" #id)
 
 /* Full-resolution screenshots of every face, for design mockups. */

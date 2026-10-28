@@ -114,6 +114,16 @@ void ui_sparse_image_register(const lv_draw_buf_t *buf)
     }
 }
 
+bool ui_sparse_image_known(const void *data)
+{
+    for (int i = 0; i < s_sparse_count; i++) {
+        if (s_sparse[i].data == data) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void ui_sparse_image_unregister(const lv_draw_buf_t *buf)
 {
     for (int i = 0; i < s_sparse_count; i++) {
