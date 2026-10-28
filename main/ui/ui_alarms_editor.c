@@ -185,7 +185,6 @@ static void pager_scroll_cb(lv_event_t *e)
         for (int i = 0; i < 2; i++) {
             bool cur = (i == 1) == details;
 
-            lv_obj_set_size(a->editor_dots[i], 8, cur ? 20 : 8);
             lv_obj_set_style_bg_color(a->editor_dots[i], cur ? sk->text : sk->text_3, 0);
         }
     }
@@ -478,7 +477,8 @@ static void create_orbit(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(dots, details_cb, LV_EVENT_CLICKED, ctx);
     for (int i = 0; i < 2; i++) {
         a->editor_dots[i] = alm_box(dots);
-        lv_obj_set_size(a->editor_dots[i], 8, i == 0 ? 20 : 8);
+        /* Two equal capsules: a long one over a dot read as "!". */
+        lv_obj_set_size(a->editor_dots[i], 8, 20);
         lv_obj_set_style_radius(a->editor_dots[i], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_opa(a->editor_dots[i], LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(a->editor_dots[i], i == 0 ? sk->text : sk->text_3, 0);

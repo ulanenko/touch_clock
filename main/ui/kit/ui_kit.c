@@ -1173,9 +1173,11 @@ static void atelier_rim_cb(lv_event_t *e)
 static void scrim_band(int32_t *solid, int32_t *height, int32_t *threshold)
 {
     if (kit_is_orbit()) {
-        *solid = 60;
-        *height = 96;
-        *threshold = 0;
+        /* Solid just past the floating back key (y 24-88): rows scrolled up must not show
+         * beside it. Shown once scrolled, so titles at rest are not dimmed. */
+        *solid = 92;
+        *height = 128;
+        *threshold = 12;
     } else if (kit_is_instrument()) {
         *solid = 126;
         *height = 160;
