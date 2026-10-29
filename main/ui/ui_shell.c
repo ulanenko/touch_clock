@@ -904,6 +904,7 @@ static void create_face_swipe_layer(clock_ui_context_t *ctx)
 void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enable_t anim)
 {
     int visible_index;
+    bool changed;
 
     if (!clock_face_is_valid(face)) {
         face = clock_face_first_enabled();
@@ -919,7 +920,8 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
     }
 
     /* A refresh re-applies the same face: only a real face change closes the theme sheet. */
-    if (ctx->tileview != NULL && face != tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview))) {
+    changed = ctx->tileview != NULL && face != tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview));
+    if (changed) {
         face_themes_close(ctx, true);
         ui_sunrise_before_face_change(ctx);
     }
@@ -931,6 +933,13 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
     ui_alarms_on_face_changed(ctx, face);
     face_night_sync(ctx, face_now(), false);
     ctx->suppress_events = false;
+    /* Liquid Glass: a sheet left open over a face that changed under it (night mode from the
+     * quick sheet) still showed the old face through its glass; the idle capture waits for
+     * the sheets to close. */
+    if (changed && face_quick_visible(ctx)) {
+        update_face(ctx, face);
+        face_glass_capture(ctx, UI_GLASS_FACE);
+    }
 }
 
 static void tileview_value_changed_cb(lv_event_t *event)
