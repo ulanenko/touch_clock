@@ -64,6 +64,10 @@ void ui_glass_draw_ground(lv_layer_t *layer, const lv_area_t *area);
 lv_draw_buf_t *ui_glass_arc_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, float a0, float a1,
                                   ui_glass_kind_t kind, lv_color_t tint, lv_area_t *area);
 void ui_glass_image_free(lv_draw_buf_t *image);
+/* The same band as smoked glass, the look of the face controls: nothing of the backdrop in it,
+ * so it is made once and kept. */
+lv_draw_buf_t *ui_glass_arc_shell(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, float a0, float a1,
+                                  ui_glass_kind_t kind, lv_color_t tint, lv_area_t *area);
 /* The same band blended straight into an RGB565 buffer (a canvas: the ringing screen). */
 void ui_glass_arc_blend(lv_draw_buf_t *dst, int32_t dst_x, int32_t dst_y, int32_t cx, int32_t cy, int32_t r_mid,
                         int32_t width, float a0, float a1, ui_glass_kind_t kind, lv_color_t tint);
@@ -73,27 +77,6 @@ void ui_glass_frost_blit(lv_draw_buf_t *dst, int32_t dst_x, int32_t dst_y);
 /* A page coming up: its controls rise into place one after another, and (from_face) its
  * ground fades from the face to the dimmed face. targets: the objects that rise, in order. */
 void ui_glass_page_enter(lv_obj_t *root, lv_obj_t *const *targets, int count, bool from_face);
-
-/* A face slide under the face controls: their glass follows what slides under it. The
- * neighbours' frost (slide slots 1 and 2) is built ahead, at idle, for a stamp that says
- * which face it shows; each frame names the two faces and where they are. */
-void ui_glass_side_frost(int slot, const lv_draw_buf_t *face, uint32_t stamp);
-bool ui_glass_side_frost_ready(int slot, uint32_t stamp);
-void ui_glass_live_frame(const lv_draw_buf_t *a, int32_t ax, const lv_draw_buf_t *b, int32_t bx, int b_slot,
-                         uint32_t b_stamp);
-void ui_glass_live_end(void);
-/* The slide is over with face at rest (slot: the side it came from, 0 if it is the face the
- * slide began on): instead of building its backdrop, the neighbour's frost made at idle
- * becomes it, the face left behind (now at back_slot) keeps its own, and the controls keep
- * what the next frame draws of them live. False if that frost is not ready: build as usual. */
-bool ui_glass_live_finish(const lv_draw_buf_t *face, int slot, uint32_t slot_stamp, int back_slot, uint32_t back_stamp);
-bool ui_glass_live_active(void);
-/* During such a slide, for an arc image from ui_glass_arc_image (at box, of the same shape):
- * the clear glass to draw under it, and how much of the image (frost_opa) to draw over that.
- * NULL when no slide is under way (draw the image as it is). */
-const lv_draw_buf_t *ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int32_t cy, int32_t r_mid,
-                                       int32_t width, float a0, float a1, ui_glass_kind_t kind, lv_color_t tint,
-                                       lv_opa_t *frost_opa);
 
 /* Bakes, while the face is idle, the glass of everything under root that has none current yet
  * (hidden pages included), so opening them does not wait; returns true once all is baked. */

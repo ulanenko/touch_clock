@@ -131,12 +131,6 @@ static bool face_slide_snapshot(clock_ui_context_t *ctx, clock_face_id_t face, i
     return true;
 }
 
-/* Which face a slot's snapshot shows, to the minute (the frost of it is no finer). */
-static uint32_t face_slide_stamp(const ui_face_slide_shot_t *shot)
-{
-    return 1u + ((uint32_t)shot->face | (uint32_t)shot->theme << 8 | ((uint32_t)shot->minute & 0xFFFFu) << 16);
-}
-
 /* The slot of the neighbour on a side: 1 the next face, 2 the previous one. */
 static int face_slide_side_slot(int8_t dir)
 {
@@ -159,14 +153,6 @@ static void face_slide_draw_cb(lv_event_t *event)
     lv_area_t gap;
 
     lv_event_stop_processing(event);
-    if (ui_skin_is_glass() && ctx->faces.face_slide_controls_were_visible) {
-        int side = face_slide_side_slot(ctx->faces.face_slide_dir);
-
-        /* The controls stay over the slide: their glass shows what slides under them. */
-        ui_glass_live_frame(ctx->faces.face_slide_bufs[0], xs[0],
-                            ctx->faces.face_slide_dir != 0 ? ctx->faces.face_slide_bufs[side] : NULL, xs[1], side,
-                            face_slide_stamp(&ctx->faces.face_slide_shots[side]));
-    }
     lv_draw_rect_dsc_init(&black);
     black.bg_color = lv_color_black();
     black.bg_opa = LV_OPA_COVER;
@@ -274,13 +260,11 @@ static void face_slide_prepare_side(clock_ui_context_t *ctx, int32_t offset)
 
 /* Liquid Glass: snapshots the face and builds the glass backdrop for mode, unless it already
  * shows this face as it is now. */
-/* Which face (minute, theme) the glass backdrop was built from. */
-static clock_face_id_t s_face = CLOCK_FACE_COUNT;
-static long s_minute = -1;
-static uint8_t s_theme;
-
 void face_glass_capture(clock_ui_context_t *ctx, int mode_in)
 {
+    static clock_face_id_t s_face = CLOCK_FACE_COUNT;
+    static long s_minute = -1;
+    static uint8_t s_theme;
     ui_glass_mode_t mode = (ui_glass_mode_t)mode_in;
     clock_face_id_t face;
     long minute = (long)(face_now() / 60);
@@ -345,16 +329,6 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         update_face(ctx, current);
         return;
     }
-    /* Liquid Glass: the neighbours' frost too, for the controls' glass over a slide. */
-    for (int8_t dir = 1; ui_skin_is_glass() && dir >= -1; dir -= 2) {
-        int slot = face_slide_side_slot(dir);
-        uint32_t stamp = face_slide_stamp(&ctx->faces.face_slide_shots[slot]);
-
-        if (ctx->faces.face_slide_shots[slot].face != CLOCK_FACE_COUNT && !ui_glass_side_frost_ready(slot, stamp)) {
-            ui_glass_side_frost(slot, ctx->faces.face_slide_bufs[slot], stamp);
-            return;
-        }
-    }
     /* Liquid Glass: keep the face's glass ready, so the controls come up at once, and bake
      * what the chrome will show a little at a time (one tick does at most a few shapes). */
     if (!face_controls_visible(ctx)) {
@@ -365,41 +339,12 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
     }
 }
 
-/* Liquid Glass, the controls up over the slide: the face it ends on becomes the backdrop from
- * the frost built for it at idle, and the controls keep their live glass, so they are right
- * the moment the slide stops (building the backdrop and baking them again takes a while). */
-static bool face_slide_glass_finish(clock_ui_context_t *ctx, bool changed, clock_face_id_t face)
-{
-    int8_t dir = ctx->faces.face_slide_dir;
-    bool kept;
-
-    if (!ui_skin_is_glass() || !ctx->faces.face_slide_controls_were_visible) {
-        return false;
-    }
-    if (!changed) {
-        return ui_glass_live_finish(ctx->faces.face_slide_bufs[0], 0, 0, 0, 0);
-    }
-    kept = ui_glass_live_finish(ctx->faces.face_slide_bufs[face_slide_side_slot(dir)], face_slide_side_slot(dir),
-                                face_slide_stamp(&ctx->faces.face_slide_shots[face_slide_side_slot(dir)]),
-                                face_slide_side_slot((int8_t)-dir), face_slide_stamp(&ctx->faces.face_slide_shots[0]));
-    if (kept) {
-        s_face = face;
-        s_minute = ctx->faces.face_slide_shots[face_slide_side_slot(dir)].minute;
-        s_theme = ctx->settings->face_themes[face];
-        ui_glass_backdrop_identity((uint32_t)face | (uint32_t)ctx->settings->face_themes[face] << 8);
-    }
-    return kept;
-}
-
 static void face_slide_finish(lv_anim_t *anim)
 {
     clock_ui_context_t *ctx = (clock_ui_context_t *)lv_anim_get_user_data(anim);
     bool changed = LV_ABS(ctx->faces.face_slide_offset) >= FACE_SLIDE_SPAN && ctx->faces.face_slide_dir != 0;
     clock_face_id_t face = changed ? ctx->faces.face_slide_to : ctx->faces.face_slide_from;
 
-    if (!face_slide_glass_finish(ctx, changed, face)) {
-        ui_glass_live_end();
-    }
     /* Snapshotting the neighbour may have drawn into buffers this face shares with it
      * (the hand-drawn faces): bring the face up to date before the layer goes. */
     update_face(ctx, face);
@@ -430,8 +375,8 @@ static void face_slide_finish(lv_anim_t *anim)
             request_set_current_face(ctx, face);
         }
     }
-    /* The controls stayed up through the slide: now they show the new face (its glass, its
-     * page dot) and their hide timer runs again. */
+    /* The controls stayed up through the slide: their page dot moves on, their hide timer
+     * runs again. */
     if (ctx->faces.face_slide_controls_were_visible) {
         face_controls_show_still(ctx);
     }

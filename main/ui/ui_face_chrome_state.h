@@ -155,5 +155,4 @@ typedef struct {
     bool night_visible;
     lv_draw_buf_t *rim_band[2]; /* Instrument tabs / Orbit bands at 12 and 6, built on first show */
     lv_area_t rim_band_area[2];
-    uint32_t rim_band_glass;   /* Liquid Glass: the backdrop generation the bands were baked from */
 } clock_ui_face_chrome_state_t;

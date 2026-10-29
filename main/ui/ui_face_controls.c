@@ -357,21 +357,13 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
 {
     lv_draw_image_dsc_t img;
 
-    /* Pre-rendered once: wide round-capped arcs cost a per-row angle mask every frame. Glass
-     * bands refract the face, so they are baked again when the glass backdrop changes. */
-    if (ui_skin_is_glass() && fc->rim_band_glass != ui_glass_backdrop_generation()) {
-        /* Over a face slide (and its last frame) the bands are drawn live instead. */
-        for (int i = 0; i < 2 && !ui_glass_live_active(); i++) {
-            ui_glass_image_free(fc->rim_band[i]);
-            fc->rim_band[i] = NULL;
-        }
-        fc->rim_band_glass = ui_glass_backdrop_generation();
-    }
+    /* Pre-rendered once: wide round-capped arcs cost a per-row angle mask every frame. In Liquid
+     * Glass they are smoked glass like the other face controls, holding nothing of the face. */
     for (int i = 0; i < 2; i++) {
         if (fc->rim_band[i] == NULL && ui_skin_is_glass()) {
             float mid = i == 0 ? 270.0f : 90.0f;
 
-            fc->rim_band[i] = ui_glass_arc_image(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
+            fc->rim_band[i] = ui_glass_arc_shell(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
                                                  UI_GLASS_RAISED, lv_color_black(), &fc->rim_band_area[i]);
         }
         if (fc->rim_band[i] == NULL && !ui_skin_is_glass()) {
@@ -383,31 +375,13 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
         if (fc->rim_band[i] != NULL) {
             lv_area_t area = fc->rim_band_area[i];
             float rx = reveal_x(fc, i == 0 ? 0.0f : 180.0f);
-            lv_opa_t frost_opa = LV_OPA_COVER;
-            const lv_draw_buf_t *shell = NULL;
 
-            if (ui_skin_is_glass() && ui_glass_live_active()) {
-                float mid = i == 0 ? 270.0f : 90.0f;
-
-                /* Over a face slide: clear glass, the frosted band faded over it. */
-                shell = ui_glass_arc_live(fc->rim_band[i], &fc->rim_band_area[i], KIT_CENTER, KIT_CENTER, r_mid,
-                                          width, mid - half_span, mid + half_span, UI_GLASS_RAISED,
-                                          lv_color_black(), &frost_opa);
-            }
             /* The bands spring down (12) and up (6) from the rim. */
             lv_area_move(&area, 0, (i == 0 ? -1 : 1) * (int32_t)lroundf(reveal_glide(fc, rx)));
-            if (shell != NULL) {
-                lv_draw_image_dsc_init(&img);
-                img.src = shell;
-                img.opa = reveal_opa(fc, rx);
-                lv_draw_image(layer, &img, &area);
-            }
-            if (frost_opa > LV_OPA_MIN) {
-                lv_draw_image_dsc_init(&img);
-                img.src = fc->rim_band[i];
-                img.opa = (lv_opa_t)((reveal_opa(fc, rx) * frost_opa) / 255);
-                lv_draw_image(layer, &img, &area);
-            }
+            lv_draw_image_dsc_init(&img);
+            img.src = fc->rim_band[i];
+            img.opa = reveal_opa(fc, rx);
+            lv_draw_image(layer, &img, &area);
         }
     }
 }
@@ -721,6 +695,13 @@ static void build_instrument(clock_ui_context_t *ctx)
     LV_UNUSED(label);
 }
 
+/* Liquid Glass: the face controls are smoked glass on any dial, so their icons are white (a
+ * coloured icon vanishes on a dial of its colour). */
+static lv_color_t glass_ink(lv_color_t color)
+{
+    return ui_skin_is_glass() ? ui_skin()->text : color;
+}
+
 static lv_obj_t *orbit_float_key(clock_ui_context_t *ctx, kit_icon_t icon, lv_color_t tint, int32_t x, int32_t y,
                                  lv_event_cb_t cb)
 {
@@ -758,7 +739,7 @@ static void build_orbit(clock_ui_context_t *ctx)
     lv_obj_align(fc->actions_tab, LV_ALIGN_TOP_MID, 0, 657);
 
     /* Alarms and Settings on the rim at 10:30 and 1:30. */
-    fc->alarms_key = orbit_float_key(ctx, KIT_ICON_ALARM, sk->tint_alarms, 112, 112, alarms_click_cb);
+    fc->alarms_key = orbit_float_key(ctx, KIT_ICON_ALARM, glass_ink(sk->tint_alarms), 112, 112, alarms_click_cb);
     fc->settings_key = orbit_float_key(ctx, KIT_ICON_GEAR, sk->text, 536, 112, settings_click_cb);
     fc->badge = face_plain(fc->layer);
     lv_obj_set_size(fc->badge, 20, 20);
@@ -790,13 +771,13 @@ static void build_orbit(clock_ui_context_t *ctx)
 
     fc->status_alarm_row = row_flex(fc->status, 6);
     lv_obj_set_height(fc->status_alarm_row, 24);
-    kit_icon_small(fc->status_alarm_row, KIT_ICON_ALARM, sk->tint_alarms);
+    kit_icon_small(fc->status_alarm_row, KIT_ICON_ALARM, glass_ink(sk->tint_alarms));
     fc->status_alarm_time = face_text(fc->status_alarm_row, sk->font_label, sk->text, "");
     fc->status_alarm_note = face_text(fc->status_alarm_row, sk->font_label, sk->text_2, "");
 
     fc->status_update_row = row_flex(fc->status, 6);
     lv_obj_set_height(fc->status_update_row, 24);
-    kit_icon_small(fc->status_update_row, KIT_ICON_DOWNLOAD, sk->accent);
+    kit_icon_small(fc->status_update_row, KIT_ICON_DOWNLOAD, glass_ink(sk->accent));
     fc->status_update_text = face_text(fc->status_update_row, sk->font_label, sk->text, "");
 }
 
@@ -1029,49 +1010,6 @@ static void reveal_start(clock_ui_context_t *ctx, uint8_t mode)
 
 /* Liquid Glass over a light face: the controls' text and plain icons in dark ink, and back
  * to light over a dark one. Coloured icons keep their colour. */
-static void glass_ink_tree(lv_obj_t *obj, lv_color_t from1, lv_color_t to1, lv_color_t from2, lv_color_t to2)
-{
-    uint32_t n = lv_obj_get_child_count(obj);
-
-    if (lv_obj_check_type(obj, &lv_label_class)) {
-        lv_color_t c = lv_obj_get_style_text_color(obj, LV_PART_MAIN);
-
-        if (lv_color_eq(c, from1)) {
-            lv_obj_set_style_text_color(obj, to1, 0);
-        } else if (lv_color_eq(c, from2)) {
-            lv_obj_set_style_text_color(obj, to2, 0);
-        }
-    } else if (lv_obj_check_type(obj, &lv_image_class)) {
-        lv_color_t c = lv_obj_get_style_image_recolor(obj, LV_PART_MAIN);
-
-        if (lv_color_eq(c, from1)) {
-            lv_obj_set_style_image_recolor(obj, to1, 0);
-        } else if (lv_color_eq(c, from2)) {
-            lv_obj_set_style_image_recolor(obj, to2, 0);
-        }
-    }
-    for (uint32_t i = 0; i < n; i++) {
-        glass_ink_tree(lv_obj_get_child(obj, (int32_t)i), from1, to1, from2, to2);
-    }
-}
-
-static void glass_ink(clock_ui_context_t *ctx)
-{
-    const ui_skin_t *sk = ui_skin();
-    clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
-    lv_color_t dark = lv_color_hex(0x1C1C1E);
-    lv_color_t dark_2 = lv_color_hex(0x48484A);
-
-    if (!sk->glass || fc->layer == NULL) {
-        return;
-    }
-    if (ui_glass_backdrop_light()) {
-        glass_ink_tree(fc->layer, sk->text, dark, sk->text_2, dark_2);
-    } else {
-        glass_ink_tree(fc->layer, dark, sk->text, dark_2, sk->text_2);
-    }
-}
-
 static void controls_show(clock_ui_context_t *ctx, bool reveal);
 
 void face_controls_show(clock_ui_context_t *ctx)
@@ -1090,11 +1028,6 @@ static void controls_show(clock_ui_context_t *ctx, bool reveal)
 
     if (!controls_allowed(ctx)) {
         return;
-    }
-    if (!fc->visible || !reveal) {
-        /* Still: back after a face slide, maybe on another face: its glass and ink. */
-        face_glass_capture(ctx, 0 /* UI_GLASS_FACE */);
-        glass_ink(ctx);
     }
     face_controls_sync(ctx, face_now(), !fc->visible || !reveal);
     if (!fc->visible) {
@@ -1203,7 +1136,7 @@ void face_controls_set_face(clock_ui_context_t *ctx, clock_face_id_t face)
                 continue;
             }
             lv_obj_set_width(fc->dots[i], on ? 12 : 6);
-            lv_obj_set_style_bg_color(fc->dots[i], on ? sk->accent : sk->text_3, 0);
+            lv_obj_set_style_bg_color(fc->dots[i], on ? glass_ink(sk->accent) : sk->text_3, 0);
         }
     } else {
         lv_obj_invalidate(fc->layer);
