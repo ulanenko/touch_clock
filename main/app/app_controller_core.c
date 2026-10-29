@@ -399,13 +399,21 @@ static void apply_audio_preferences(app_controller_core_t *core)
 
 static void reconcile_settings_side_effects(app_controller_core_t *core, time_t now)
 {
-    if (core->config.clock_service != NULL && core->config.clock_service->apply_timezone != NULL) {
-        core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_id);
+    app_state_t *s = &core->state;
+    bool auto_sync = s->settings.wifi.time_sync_mode == TIME_SYNC_MODE_AUTO;
+
+    if (core->config.clock_service != NULL && core->config.clock_service->apply_timezone != NULL &&
+        (!s->applied_time_known || s->applied_timezone_id != s->settings.wifi.timezone_id)) {
+        core->config.clock_service->apply_timezone(s->settings.wifi.timezone_id);
+        s->applied_timezone_id = s->settings.wifi.timezone_id;
     }
 
-    if (core->config.wifi_service != NULL && core->config.wifi_service->set_auto_sync != NULL) {
-        core->config.wifi_service->set_auto_sync(core->state.settings.wifi.time_sync_mode == TIME_SYNC_MODE_AUTO);
+    if (core->config.wifi_service != NULL && core->config.wifi_service->set_auto_sync != NULL &&
+        (!s->applied_time_known || s->applied_auto_sync != auto_sync) &&
+        core->config.wifi_service->set_auto_sync(auto_sync) == 0) {
+        s->applied_auto_sync = auto_sync;
     }
+    s->applied_time_known = true;
 
     core->state.runtime.effective_brightness =
         brightness_policy_get_target(&core->state.runtime, &core->state.settings, now);
@@ -462,6 +470,10 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
             return err;
         }
     }
+    /* Both are as the settings say now (the Wi-Fi takes its sync mode at init). */
+    core->state.applied_timezone_id = core->state.settings.wifi.timezone_id;
+    core->state.applied_auto_sync = core->state.settings.wifi.time_sync_mode == TIME_SYNC_MODE_AUTO;
+    core->state.applied_time_known = true;
 
     if (core->config.ota_service != NULL && core->config.ota_service->init != NULL) {
         err = core->config.ota_service->init();

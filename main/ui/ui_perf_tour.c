@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "esp_heap_caps.h"
+#include "src/display/lv_display_private.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -70,6 +71,7 @@ typedef struct {
     uint32_t render_sample_count;
     size_t internal_free_min;
     int64_t flush_wait_sum; /* part of render: waiting for the previous frame's flush */
+    uint64_t inv_px;        /* invalidated pixels, all frames */
     uint32_t ppa_ops_start;
     uint32_t ppa_us_start;
 } perf_segment_t;
@@ -126,6 +128,8 @@ DEBUG_CALL(call_alarm_sound_next, "alarm_sound_next")
 DEBUG_CALL(call_alarm_test_stop, "alarm_test_stop")
 DEBUG_CALL(call_close_theme, "close_theme")
 DEBUG_CALL(call_close_brightness, "close_quick")
+DEBUG_CALL(call_open_quick, "open_quick")
+DEBUG_CALL(call_night_brightness, "night_brightness")
 DEBUG_CALL(call_show_controls, "show_controls")
 DEBUG_CALL(call_join_dialog, "join_dialog")
 DEBUG_CALL(call_night_face_picker, "night_face_picker")
@@ -229,6 +233,15 @@ static const perf_step_t s_steps[] = {
     CALL("alarms_open", call_open_alarms, 1200),
     FLICK_BURST("alarms_scroll"),
     CALL("alarms_close", call_close_alarms, 1200),
+    /* Slider drags, each back to where it started. */
+    CALL("quick_open", call_open_quick, 1500),
+    DRAG("brightness_drag", 207, 602, 515, 602, 1500, 600),
+    DRAG("brightness_drag", 515, 602, 207, 602, 1500, 600),
+    CALL("quick_close", call_close_brightness, 1200),
+    CALL("night_bright_open", call_night_brightness, 1500),
+    DRAG("night_slider", 190, 280, 540, 280, 1500, 600),
+    DRAG("night_slider", 540, 280, 190, 280, 1500, 600),
+    CALL("settings_close", call_close_settings, 1200),
     IDLE("idle_face_end", 4000),
 };
 #else
@@ -467,8 +480,10 @@ static void segment_report(void)
     }
     report_task_cpu(s_seg.name);
     ui_ppa_blend_stats(&ppa_ops, &ppa_us);
-    printf("PERF segx loop=%d name=%s frames=%lu flush_wait_avg=%lld ppa_ops=%lu ppa_us_avg=%lu psram_free_kb=%u\n",
+    printf("PERF segx loop=%d name=%s frames=%lu flush_wait_avg=%lld inv_kpx_avg=%llu ppa_ops=%lu ppa_us_avg=%lu "
+           "psram_free_kb=%u\n",
            s_loop, s_seg.name, (unsigned long)s_seg.frames, s_seg.frames ? s_seg.flush_wait_sum / s_seg.frames : 0,
+           (unsigned long long)(s_seg.frames ? s_seg.inv_px / s_seg.frames / 1000 : 0),
            (unsigned long)(ppa_ops - s_seg.ppa_ops_start),
            (unsigned long)(s_seg.frames ? (ppa_us - s_seg.ppa_us_start) / s_seg.frames : 0),
            (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
@@ -526,6 +541,14 @@ static void display_event_cb(lv_event_t *event)
         s_last_refr_start = now;
         s_refr_start = now;
         s_render_start = 0;
+        if (s_seg.name[0] != '\0') {
+            /* What the frame redraws (the areas as invalidated, before LVGL joins them). */
+            lv_display_t *disp = lv_event_get_target(event);
+
+            for (uint32_t i = 0; i < disp->inv_p; i++) {
+                s_seg.inv_px += (uint64_t)lv_area_get_size(&disp->inv_areas[i]);
+            }
+        }
     } else if (code == LV_EVENT_RENDER_START) {
         s_render_start = now;
     } else if (code == LV_EVENT_FLUSH_WAIT_START) {

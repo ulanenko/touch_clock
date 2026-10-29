@@ -19,6 +19,12 @@ typedef struct {
     /* The sunrise's preview (Settings > Night > Sunrise): how far through it (above 1000, the
      * alarm), and its chime played. */
     uint16_t sunrise_preview_progress;
+    /* The time zone and automatic time sync last handed to the services: applied again only
+     * when they change (a sync restart on every settings change, every slider step, sent the
+     * network a time request each). */
+    uint8_t applied_timezone_id;
+    bool applied_auto_sync;
+    bool applied_time_known;
     bool sunrise_preview;
     bool sunrise_preview_chimed;
     uint8_t brightness_fade_start;

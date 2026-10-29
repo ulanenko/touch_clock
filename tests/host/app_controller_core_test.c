@@ -13,6 +13,7 @@ typedef struct {
     uint8_t applied_timezone;
     bool auto_sync_enabled;
     int wifi_set_auto_sync_calls;
+    int apply_timezone_calls;
     uint8_t brightness_value;
     int display_set_calls;
     int audio_init_calls;
@@ -67,6 +68,7 @@ static void fake_set_epoch(time_t epoch)
 
 static void fake_apply_timezone(uint8_t timezone_id)
 {
+    g_env->apply_timezone_calls += 1;
     g_env->applied_timezone = timezone_id;
 }
 
@@ -381,6 +383,20 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_EQ_INT(0, env.audio_set_volume_calls);
     EXPECT_EQ_INT(1, env.ui_refresh_calls);
     EXPECT_EQ_INT(77, env.brightness_value);
+
+    /* A brightness step leaves the time zone and the time sync alone; a sync mode change does not. */
+    result = app_action_set_base_brightness(&core.state, 78, env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(1, env.apply_timezone_calls);
+    EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
+    result = app_action_set_time_sync_mode(&core.state, TIME_SYNC_MODE_MANUAL, env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(1, env.wifi_set_auto_sync_calls);
+    EXPECT_FALSE(env.auto_sync_enabled);
+    result = app_action_set_timezone(&core.state, timezone_id_from_legacy_offset(3), env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(2, env.apply_timezone_calls);
+    EXPECT_EQ_INT(timezone_id_from_legacy_offset(3), env.applied_timezone);
 
     result = app_action_set_ascending_alarm_enabled(&core.state, true);
     app_controller_core_apply_action_result(&core, &result, env.now);

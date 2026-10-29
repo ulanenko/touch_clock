@@ -2006,14 +2006,36 @@ static void sheet_draw(lv_layer_t *layer, const bake_t *b, const lv_area_t *area
     }
     for (int i = 0; i < 8; i++) {
         lv_draw_image_dsc_t d;
+        /* Only the corners reach the rounding: the sides and the middle of the bands are plain
+         * copies, without the radius mask the renderer otherwise works out row by row. */
+        bool rounded = i >= 2 && i < 6;
 
+        if (i < 2) {
+            lv_area_t mid = {area->x1 + k, parts[i].y1, area->x2 - k, parts[i].y2};
+            lv_area_t ends[2] = {{area->x1, parts[i].y1, area->x1 + k - 1, parts[i].y2},
+                                 {area->x2 - k + 1, parts[i].y1, area->x2, parts[i].y2}};
+
+            for (int j = 0; j < 3; j++) {
+                const lv_area_t *piece = j == 0 ? &mid : &ends[j - 1];
+
+                if (!lv_area_intersect(&layer->_clip_area, &clip_was, piece)) {
+                    continue;
+                }
+                lv_draw_image_dsc_init(&d);
+                d.src = b->buf;
+                d.image_area = *area;
+                d.clip_radius = j == 0 ? 0 : radius;
+                lv_draw_image(layer, &d, area);
+            }
+            continue;
+        }
         if (!lv_area_intersect(&layer->_clip_area, &clip_was, &parts[i])) {
             continue;
         }
         lv_draw_image_dsc_init(&d);
         d.src = b->buf;
         d.image_area = *area;
-        d.clip_radius = radius;
+        d.clip_radius = rounded ? radius : 0;
         lv_draw_image(layer, &d, area);
     }
     layer->_clip_area = clip_was;

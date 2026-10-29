@@ -567,11 +567,19 @@ esp_err_t clock_ui_begin_boot(const app_settings_t *settings,
     return ESP_OK;
 }
 
+/* Debug call (simulator timecall): the whole refresh an app action asks for. */
+static void debug_ui_refresh(clock_ui_context_t *ctx)
+{
+    LV_UNUSED(ctx);
+    clock_ui_refresh();
+}
+
 esp_err_t clock_ui_finish_boot(void)
 {
     clock_ui_context_t *ctx = &s_ctx;
 
     build_root_ui(ctx);
+    ui_debug_register("ui_refresh", debug_ui_refresh);
     ui_boot_step(ctx);
     prewarm_face_previews(ctx);
     ui_chrome_refresh(ctx);

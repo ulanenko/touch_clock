@@ -201,6 +201,16 @@ it is, is baked again only once nothing has been touched for 600 ms. The tour's 
 was also opening the first alarm: a list too short to scroll took a swipe across a row as a tap
 on release. Alarm flicks on the clock: 13 frames over 33 ms (max 68) -> none (max 21.7).
 
+Sliders (29 Oct). The whole UI refresh each slider step asks for costs under 0.1 ms (it sets only
+what changed), and the display redraws the whole frame anyway (`TRIPLE_FULL`: 518 k pixels a
+frame, now `inv_kpx_avg` in the tour), so a drag costs what its screen costs: the Night
+brightness slider 12.6 ms a frame, the quick panel's brightness arc 36.9. What each step did
+waste: every settings change applied the time zone again and restarted SNTP (a time request to
+the network per slider step); both now go only when they change. The glass sheets' rim no
+longer draws its sides and the middle of its bands through the radius mask: quick panel drag
+36.9 -> 34.1 ms. Still open: under the quick panel the face is drawn whole each frame, though
+the panel's ground covers most of it.
+
 ### Checking Liquid Glass on the clock
 
 1. Glass tour against the 20261028-213305 baseline:
@@ -259,7 +269,6 @@ rest of the chrome, under one 20 ms budget a tick.
 - The swipe-to-delete animation changes width and `translate_x`, which re-lays out the list every frame.
 - The brightness panel and Wi-Fi dialog use a 70% scrim, so the live page underneath is redrawn every frame (keyboard cursor blink included). The keyboard keys use the light theme.
 - `CONFIG_LV_DRAW_THREAD_PRIO=3` is below `ota_task`, `wifi_scan` and `alarm_audio` (4).
-- Synchronous `clock_ui_refresh` (refresh_settings_controls + update_brightness_ui + `set_active_face`) runs on every settings action, including slider steps.
 
 ### Low
 - The Wi-Fi list is rebuilt with `lv_obj_clean` on every scan.
