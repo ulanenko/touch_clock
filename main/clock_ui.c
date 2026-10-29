@@ -344,6 +344,13 @@ void request_set_night_sunrise_options(clock_ui_context_t *ctx, uint8_t minutes,
     }
 }
 
+void request_sunrise_preview(clock_ui_context_t *ctx, int16_t progress)
+{
+    if (ctx->callbacks.on_sunrise_preview != NULL) {
+        ctx->callbacks.on_sunrise_preview(ctx->user_ctx, progress);
+    }
+}
+
 void request_set_night_sunrise_brightness_enabled(clock_ui_context_t *ctx, bool enabled)
 {
     if (ctx->callbacks.on_set_night_sunrise_brightness_enabled != NULL) {

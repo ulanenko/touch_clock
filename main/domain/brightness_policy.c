@@ -36,17 +36,24 @@ static uint8_t get_night_mode_brightness(const app_runtime_state_t *runtime,
 
 /* The sunrise's backlight (per mille of full): from the night's level up to its brightest,
  * slowly at first (the cube of the way through), as daylight comes. */
-static uint32_t sunrise_permille(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)
+uint16_t brightness_policy_sunrise_permille(const app_runtime_state_t *runtime,
+                                           const app_settings_t *settings,
+                                           uint32_t p)
 {
-    uint32_t p = alarm_scheduler_sunrise_progress(runtime, settings, now); /* 0..1000 */
     uint32_t from = (uint32_t)clamp_brightness(get_night_mode_brightness(runtime, settings)) * 10U;
     uint32_t to = (uint32_t)brightness_policy_ui_to_hw(settings->night_mode.sunrise_peak) * 10U;
     uint64_t eased = (uint64_t)p * p * p; /* x 10^9 */
 
     if (to <= from) {
-        return from;
+        return (uint16_t)from;
     }
-    return from + (uint32_t)(((uint64_t)(to - from) * eased) / 1000000000ULL);
+    return (uint16_t)(from + (uint32_t)(((uint64_t)(to - from) * eased) / 1000000000ULL));
+}
+
+static uint32_t sunrise_permille(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)
+{
+    return brightness_policy_sunrise_permille(runtime, settings,
+                                              alarm_scheduler_sunrise_progress(runtime, settings, now));
 }
 
 static bool sunrise_lights(const app_runtime_state_t *runtime, time_t now)

@@ -625,6 +625,50 @@ static int test_sunrise_rises_finely_and_chimes_once(void)
     return 0;
 }
 
+static int test_sunrise_preview(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+    uint16_t last;
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    env.stored_settings.night_mode.brightness = 25;
+    env.stored_settings.alarm_volume = 60;
+    env.now = make_utc_time(2026, 3, 12, 14, 0, 0);
+    core = make_core(&env);
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    core.state.audio_available = true;
+    core.config.wifi_service = NULL;
+    app_controller_core_tick(&core);
+
+    /* From the night's level, finely, up; the chime where a minute before falls (950 of 20 min). */
+    app_controller_core_sunrise_preview(&core, 0);
+    EXPECT_TRUE(env.permille_value >= 250 && env.permille_value < 260);
+    last = env.permille_value;
+    app_controller_core_sunrise_preview(&core, 900);
+    EXPECT_TRUE(env.permille_value > last);
+    EXPECT_EQ_INT(0, env.sunrise_chime_calls);
+    app_controller_core_sunrise_preview(&core, 960);
+    app_controller_core_sunrise_preview(&core, 990);
+    EXPECT_EQ_INT(1, env.sunrise_chime_calls);
+
+    /* A tick in the middle keeps the preview's level. */
+    last = env.permille_value;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(last, env.permille_value);
+
+    /* Its alarm: full brightness. Then back to the clock's own level. */
+    app_controller_core_sunrise_preview(&core, 1001);
+    EXPECT_EQ_INT(DISPLAY_BRIGHTNESS_MAX_PERCENT * 10, env.permille_value);
+    app_controller_core_sunrise_preview(&core, -1);
+    EXPECT_FALSE(core.state.sunrise_preview);
+    env.now += 5;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(core.state.runtime.effective_brightness, env.brightness_value);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -652,6 +696,11 @@ int main(void)
     }
 
     status = test_sunrise_rises_finely_and_chimes_once();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_sunrise_preview();
     if (status != 0) {
         return status;
     }

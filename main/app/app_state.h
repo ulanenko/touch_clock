@@ -16,6 +16,11 @@ typedef struct {
     int64_t brightness_fade_duration_ms;
     uint8_t applied_brightness;
     uint16_t applied_permille; /* the sunrise's finer level last set; 0 when not rising */
+    /* The sunrise's preview (Settings > Night > Sunrise): how far through it (above 1000, the
+     * alarm), and its chime played. */
+    uint16_t sunrise_preview_progress;
+    bool sunrise_preview;
+    bool sunrise_preview_chimed;
     uint8_t brightness_fade_start;
     uint8_t brightness_fade_target;
     uint8_t temporary_brightness_floor;

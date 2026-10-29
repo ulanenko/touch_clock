@@ -51,6 +51,9 @@ void ui_sunrise_tick(clock_ui_context_t *ctx, time_t now);
 void ui_sunrise_before_face_change(clock_ui_context_t *ctx);
 /* True while Daybreak covers the faces: the night overlay and the alarm banner stand aside. */
 bool ui_sunrise_covers_face(void);
+/* Plays the sunrise in under a minute (Settings > Night > Sunrise), done called when it is over
+ * (or tapped away); false while a real one or an alarm is on. */
+bool ui_sunrise_preview(clock_ui_context_t *ctx, void (*done)(clock_ui_context_t *ctx));
 
 /* Daybreak, the wake-up face (ui_faces_evening.c), drawn whole into a 720x720 RGB565 buffer. */
 typedef struct {

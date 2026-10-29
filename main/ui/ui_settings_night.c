@@ -33,6 +33,11 @@ static const ui_l10n_str_t s_sunrise_chime = UI_L10N_STR("Soft chime", "Cichy dz
 static const ui_l10n_str_t s_sunrise_chime_sub = UI_L10N_STR("A minute before the alarm", "Minutę przed alarmem",
                                                              "За хвилину до будильника", "За минуту до будильника",
                                                              "Een minuut voor de wekker");
+static const ui_l10n_str_t s_sunrise_preview = UI_L10N_STR("Watch it now", "Zobacz teraz", "Переглянути зараз",
+                                                          "Посмотреть сейчас", "Nu bekijken");
+static const ui_l10n_str_t s_sunrise_preview_sub = UI_L10N_STR("The whole sunrise in a minute", "Cały wschód w minutę",
+                                                              "Увесь світанок за хвилину", "Весь рассвет за минуту",
+                                                              "De hele zonsopkomst in een minuut");
 static const ui_l10n_str_t s_sunrise_face = UI_L10N_STR("Wake-up face", "Tarcza na pobudkę", "Циферблат пробудження",
                                                        "Циферблат пробуждения", "Wekscherm");
 static const ui_l10n_str_t s_sunrise_faces[4] = {
@@ -473,6 +478,18 @@ static void sunrise_chime_cb(lv_event_t *e)
     sunrise_set(ctx, -1, -1, lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0, -1);
 }
 
+/* Back on the Sunrise page once the preview is over. */
+static void sunrise_preview_done(clock_ui_context_t *ctx)
+{
+    ui_settings_open_page(ctx, UI_SETTINGS_PAGE_NIGHT);
+    st_show_page(ctx, UI_ST_SUNRISE);
+}
+
+static void sunrise_preview_cb(lv_event_t *e)
+{
+    ui_sunrise_preview(lv_event_get_user_data(e), sunrise_preview_done);
+}
+
 void st_sunrise_build(clock_ui_context_t *ctx)
 {
     const ui_skin_t *sk = ui_skin();
@@ -486,6 +503,12 @@ void st_sunrise_build(clock_ui_context_t *ctx)
 
     p = st_page_begin(ctx, UI_ST_SUNRISE, st_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_STR(&s_sunrise),
                       KIT_NAV_BACK);
+    group = kit_group(p->content);
+    o.icon = KIT_ICON_PLAY;
+    o.tint = sk->tint_night;
+    o.on_click = sunrise_preview_cb;
+    o.user_data = ctx;
+    st_row(ctx, &row, group, &o, ST_STR(&s_sunrise_preview), ST_STR(&s_sunrise_preview_sub));
     label = kit_section_label(p->content, "");
     st_bind(ctx, label, ST_STR(&s_sunrise_length));
     group = kit_group(p->content);

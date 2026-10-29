@@ -69,7 +69,21 @@ static bool apply_sunrise_brightness(app_controller_core_t *core, time_t now)
     const display_service_t *display = core->config.display_service;
     uint16_t permille;
 
-    if (display->set_level_permille == NULL || core->state.runtime.alarm_ringing ||
+    if (core->state.sunrise_preview) {
+        permille = core->state.sunrise_preview_progress > 1000
+                       ? DISPLAY_BRIGHTNESS_MAX_PERCENT * 10U
+                       : brightness_policy_sunrise_permille(&core->state.runtime, &core->state.settings,
+                                                            core->state.sunrise_preview_progress);
+        if (display->set_level_permille == NULL) {
+            permille = (uint16_t)((permille + 5U) / 10U * 10U);
+            if (permille != core->state.applied_permille &&
+                display->set_brightness((uint8_t)(permille / 10U)) == 0) {
+                core->state.applied_permille = permille;
+                core->state.applied_brightness = (uint8_t)(permille / 10U);
+            }
+            return true;
+        }
+    } else if (display->set_level_permille == NULL || core->state.runtime.alarm_ringing ||
         !core->state.runtime.sunrise_active || !core->state.runtime.sunrise_from_night ||
         core->state.temporary_brightness_floor_active) {
         if (core->state.applied_permille != 0) {
@@ -77,8 +91,9 @@ static bool apply_sunrise_brightness(app_controller_core_t *core, time_t now)
             core->state.applied_brightness = UCHAR_MAX; /* set again, in percent */
         }
         return false;
+    } else {
+        permille = brightness_policy_get_target_permille(&core->state.runtime, &core->state.settings, now);
     }
-    permille = brightness_policy_get_target_permille(&core->state.runtime, &core->state.settings, now);
     if (permille != core->state.applied_permille && display->set_level_permille(permille) == 0) {
         core->state.applied_permille = permille;
         core->state.applied_brightness = (uint8_t)((permille + 5U) / 10U);
@@ -276,22 +291,59 @@ static void maybe_request_periodic_ota_check(app_controller_core_t *core)
     core->config.ota_service->request_check();
 }
 
+static void play_sunrise_chime(app_controller_core_t *core)
+{
+    const audio_service_t *audio = core->config.audio_service;
+
+    if (core->state.audio_available && audio != NULL && audio->play_sunrise_chime != NULL &&
+        core->state.settings.alarm_volume > 0) {
+        /* Well under the alarm: it is there to be half heard. */
+        (void)audio->play_sunrise_chime((uint8_t)(core->state.settings.alarm_volume / 3U));
+    }
+}
+
 /* The sunrise's soft chime, once, a minute before its alarm. */
 static void maybe_play_sunrise_chime(app_controller_core_t *core, time_t now)
 {
     app_runtime_state_t *rt = &core->state.runtime;
-    const audio_service_t *audio = core->config.audio_service;
 
     if (!rt->sunrise_active || !rt->sunrise_from_night || !core->state.settings.night_mode.sunrise_chime ||
         rt->next_alarm_epoch - now > 60 || rt->next_alarm_epoch <= now || rt->sunrise_chimed_epoch == rt->next_alarm_epoch) {
         return;
     }
     rt->sunrise_chimed_epoch = rt->next_alarm_epoch;
-    if (core->state.audio_available && audio != NULL && audio->play_sunrise_chime != NULL &&
-        core->state.settings.alarm_volume > 0) {
-        /* Well under the alarm: it is there to be half heard. */
-        (void)audio->play_sunrise_chime((uint8_t)(core->state.settings.alarm_volume / 3U));
+    play_sunrise_chime(core);
+}
+
+void app_controller_core_sunrise_preview(app_controller_core_t *core, int16_t progress)
+{
+    app_state_t *s = &core->state;
+    uint32_t window = alarm_scheduler_sunrise_seconds(&s->settings);
+
+    if (progress < 0) {
+        if (!s->sunrise_preview) {
+            return;
+        }
+        /* Back to the clock's own level, down from the preview's as after an alarm. */
+        s->sunrise_preview = false;
+        s->applied_permille = 0;
+        start_brightness_fade_down(core, s->runtime.effective_brightness, 1500);
+        apply_runtime_brightness(core);
+        return;
     }
+    if (!s->sunrise_preview) {
+        s->sunrise_preview = true;
+        s->sunrise_preview_chimed = false;
+        s->brightness_fade_active = false;
+    }
+    s->sunrise_preview_progress = (uint16_t)progress;
+    /* Its chime where a minute before the alarm falls in the real one. */
+    if (!s->sunrise_preview_chimed && s->settings.night_mode.sunrise_chime && window > 60 &&
+        (uint32_t)progress >= 1000U - 60U * 1000U / window) {
+        s->sunrise_preview_chimed = true;
+        play_sunrise_chime(core);
+    }
+    apply_runtime_brightness(core);
 }
 
 static void reconcile_alarm_audio(app_controller_core_t *core)

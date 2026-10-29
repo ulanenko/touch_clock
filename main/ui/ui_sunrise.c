@@ -14,6 +14,10 @@
  * The layers sit over the faces and under the chrome; only Daybreak takes touches. The glow is
  * a narrow strip tiled across the screen, its alpha dithered: a plain gradient bands in RGB565
  * over the white faces.
+ *
+ * The preview (Settings > Night > Sunrise) plays it all in under a minute over whatever face is
+ * up, the backlight rising with it (the app drives it) and the clock's time running fast to the
+ * alarm; a tap ends it, and it hands back to the page it came from.
  */
 #include <math.h>
 
@@ -30,6 +34,10 @@
 #define SUNRISE_CROSSFADE_MS 3000    /* the night face into the day face */
 #define DAYBREAK_DISSOLVE_MS 3000    /* Daybreak in over the night face, out to the day face */
 #define DAYBREAK_STEP 5              /* progress (of 1000) between redraws: the sun moves under a pixel */
+#define PREVIEW_RISE_MS 45000        /* the preview's sunrise */
+#define PREVIEW_RING_MS 7000         /* then its alarm ("Good morning", full brightness) */
+#define PREVIEW_STEP 20              /* Daybreak's redraws in it: about one a second */
+#define PREVIEW_PERIOD_MS 40         /* the backlight's steps in it */
 
 typedef struct {
     lv_obj_t *glow;
@@ -47,6 +55,11 @@ typedef struct {
     time_t day_alarm;        /* the alarm it wakes for */
     time_t day_dismissed;    /* the alarm whose Daybreak a tap put away */
     uint32_t day_key;        /* what its pixels show */
+    lv_obj_t *catcher;       /* over the preview: a tap ends it */
+    lv_timer_t *preview;     /* runs the preview */
+    uint32_t preview_start;  /* its lv_tick */
+    time_t preview_now;      /* the time it started */
+    void (*preview_done)(clock_ui_context_t *ctx);
 } ui_sunrise_state_t;
 
 static ui_sunrise_state_t s_sun;
@@ -127,6 +140,9 @@ static void day_hide(void)
     day_dissolve(lv_obj_get_style_image_opa(s_sun.day, 0), LV_OPA_TRANSP, day_gone);
 }
 
+static void preview_end(clock_ui_context_t *ctx, bool hand_back);
+static void preview_tap_cb(lv_event_t *e);
+
 static void day_tap_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
@@ -137,10 +153,14 @@ static void day_tap_cb(lv_event_t *e)
 /* Draws Daybreak when what it shows moved on: the sun by a step, the minute, the alarm. */
 static void day_draw(clock_ui_context_t *ctx, uint32_t progress, time_t now, bool ringing)
 {
-    struct tm ti = get_local_time_now();
+    struct tm ti;
+    uint32_t step = s_sun.preview != NULL ? PREVIEW_STEP : DAYBREAK_STEP;
     uint8_t theme = (uint8_t)(ctx->settings->night_mode.sunrise_face - 1);
-    uint32_t key = progress / DAYBREAK_STEP | (uint32_t)(ti.tm_hour * 60 + ti.tm_min) << 8 | (uint32_t)ringing << 19 |
-                   (uint32_t)theme << 20 | (uint32_t)ctx->settings->language << 22;
+    uint32_t key;
+
+    localtime_r(&now, &ti);
+    key = progress / step | (uint32_t)(ti.tm_hour * 60 + ti.tm_min) << 8 | (uint32_t)ringing << 19 |
+          (uint32_t)theme << 20 | (uint32_t)ctx->settings->language << 22;
     ui_daybreak_view_t view = {
         .theme = theme,
         .progress = (uint16_t)progress,
@@ -220,6 +240,11 @@ static void debug_daybreak_render(clock_ui_context_t *ctx)
     }
 }
 
+static void debug_sunrise_preview(clock_ui_context_t *ctx)
+{
+    ui_sunrise_preview(ctx, NULL);
+}
+
 void ui_sunrise_create(clock_ui_context_t *ctx)
 {
     s_sun = (ui_sunrise_state_t) {0};
@@ -231,8 +256,12 @@ void ui_sunrise_create(clock_ui_context_t *ctx)
     s_sun.day = layer_create(ctx, lv_image_create(ctx->screen));
     lv_obj_add_flag(s_sun.day, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(s_sun.day, day_tap_cb, LV_EVENT_CLICKED, NULL);
+    s_sun.catcher = layer_create(ctx, lv_obj_create(ctx->screen));
+    lv_obj_add_flag(s_sun.catcher, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(s_sun.catcher, preview_tap_cb, LV_EVENT_CLICKED, ctx);
     s_sun.was_night = ctx->runtime->in_night_mode;
     ui_debug_register("daybreak_render", debug_daybreak_render);
+    ui_debug_register("sunrise_preview", debug_sunrise_preview);
 }
 
 /* --- The glow ---------------------------------------------------------------------------- */
@@ -387,6 +416,9 @@ void ui_sunrise_tick(clock_ui_context_t *ctx, time_t now)
         return;
     }
     s_sun.was_night = rt->in_night_mode;
+    if (s_sun.preview != NULL) {
+        return; /* the preview's timer has it */
+    }
     if (day_wanted(ctx, now, &progress)) {
         if (s_sun.day_up && !s_sun.day_leaving) {
             day_draw(ctx, progress, now, rt->alarm_ringing);
@@ -409,4 +441,93 @@ void ui_sunrise_tick(clock_ui_context_t *ctx, time_t now)
     } else {
         glow_hide();
     }
+}
+
+/* --- The preview ---------------------------------------------------------------------------- */
+
+static void preview_tick_cb(lv_timer_t *timer)
+{
+    clock_ui_context_t *ctx = lv_timer_get_user_data(timer);
+    const app_runtime_state_t *rt = ctx->runtime;
+    uint32_t elapsed = lv_tick_elaps(s_sun.preview_start);
+    uint32_t window = alarm_scheduler_sunrise_seconds(ctx->settings);
+    uint32_t progress = elapsed >= PREVIEW_RISE_MS ? 1000 : elapsed * 1000U / PREVIEW_RISE_MS;
+    bool ringing = elapsed >= PREVIEW_RISE_MS;
+    time_t now = s_sun.preview_now + (time_t)(window * progress / 1000U);
+
+    /* A real sunrise or alarm, or a page opened over it, ends it. */
+    if (rt->alarm_ringing || rt->sunrise_active || ui_settings_is_open(ctx) || ui_alarms_is_open(ctx)) {
+        preview_end(ctx, false);
+        return;
+    }
+    if (elapsed >= PREVIEW_RISE_MS + PREVIEW_RING_MS) {
+        preview_end(ctx, true);
+        return;
+    }
+    request_sunrise_preview(ctx, (int16_t)(ringing ? 1001 : progress));
+    if (ctx->settings->night_mode.sunrise_face != 0 && (s_sun.day_up || day_show(ctx, progress, now, ringing))) {
+        if (!s_sun.day_leaving) {
+            day_draw(ctx, progress, now, ringing);
+        }
+        return;
+    }
+    glow_set(LV_MAX(progress, 1U));
+}
+
+static void preview_tap_cb(lv_event_t *e)
+{
+    preview_end(lv_event_get_user_data(e), true);
+}
+
+/* Ends the preview; hand_back returns to the page it was started from, at once. */
+static void preview_end(clock_ui_context_t *ctx, bool hand_back)
+{
+    void (*done)(clock_ui_context_t *ctx) = s_sun.preview_done;
+
+    if (s_sun.preview == NULL) {
+        return;
+    }
+    lv_timer_delete(s_sun.preview);
+    s_sun.preview = NULL;
+    s_sun.preview_done = NULL;
+    lv_obj_add_flag(s_sun.catcher, LV_OBJ_FLAG_HIDDEN);
+    request_sunrise_preview(ctx, -1);
+    if (hand_back && done != NULL) {
+        /* The page covers it all: no dissolve under it. */
+        lv_anim_delete(s_sun.day, day_opa_exec);
+        if (s_sun.day_up) {
+            day_gone(NULL);
+        }
+        lv_anim_delete(s_sun.glow, glow_out_exec);
+        lv_obj_add_flag(s_sun.glow, LV_OBJ_FLAG_HIDDEN);
+        s_sun.glow_shown = false;
+        done(ctx);
+        return;
+    }
+    day_hide();
+    glow_hide();
+}
+
+bool ui_sunrise_preview(clock_ui_context_t *ctx, void (*done)(clock_ui_context_t *ctx))
+{
+    const app_runtime_state_t *rt = ctx->runtime;
+
+    if (s_sun.catcher == NULL || s_sun.preview != NULL || s_sun.day_up || rt->alarm_ringing || rt->sunrise_active) {
+        return false;
+    }
+    s_sun.preview = lv_timer_create(preview_tick_cb, PREVIEW_PERIOD_MS, ctx);
+    if (s_sun.preview == NULL) {
+        return false;
+    }
+    ui_settings_close_all(ctx);
+    ui_alarms_close_all(ctx);
+    ui_face_chrome_close_all(ctx);
+    s_sun.preview_start = lv_tick_get();
+    s_sun.preview_now = face_now();
+    s_sun.preview_done = done;
+    s_sun.day_alarm = s_sun.preview_now + (time_t)alarm_scheduler_sunrise_seconds(ctx->settings);
+    lv_obj_remove_flag(s_sun.catcher, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_move_foreground(s_sun.catcher);
+    preview_tick_cb(s_sun.preview);
+    return true;
 }

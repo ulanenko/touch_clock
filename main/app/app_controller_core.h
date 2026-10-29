@@ -36,6 +36,8 @@ void app_controller_core_set_temporary_brightness_floor(app_controller_core_t *c
                                                         uint8_t floor_brightness);
 void app_controller_core_toggle_alarm_test(app_controller_core_t *core, time_t now, uint8_t sound);
 void app_controller_core_stop_alarm_test(app_controller_core_t *core);
+/* The sunrise's preview: progress 0..1000 through it, above 1000 the alarm, negative over. */
+void app_controller_core_sunrise_preview(app_controller_core_t *core, int16_t progress);
 void app_controller_core_arm_cancel_revert_window(app_controller_core_t *core, int64_t duration_ms);
 bool app_controller_core_cancel_revert_window_active(const app_controller_core_t *core);
 time_t app_controller_core_tick(app_controller_core_t *core);

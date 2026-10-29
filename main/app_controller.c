@@ -332,6 +332,13 @@ static void on_set_night_sunrise_brightness_enabled(void *user_ctx, bool enabled
     app_controller_core_apply_action_result(&app->core, &result, now);
 }
 
+static void on_sunrise_preview(void *user_ctx, int16_t progress)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+
+    app_controller_core_sunrise_preview(&app->core, progress);
+}
+
 static void on_set_night_sunrise_options(void *user_ctx, uint8_t minutes, uint8_t peak, bool chime, uint8_t face)
 {
     app_controller_t *app = (app_controller_t *)user_ctx;
@@ -493,6 +500,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_set_night_brightness = on_set_night_brightness,
         .on_set_night_sunrise_brightness_enabled = on_set_night_sunrise_brightness_enabled,
         .on_set_night_sunrise_options = on_set_night_sunrise_options,
+        .on_sunrise_preview = on_sunrise_preview,
         .on_set_alarm_volume = on_set_alarm_volume,
         .on_set_ascending_alarm_enabled = on_set_ascending_alarm_enabled,
         .on_set_snooze_minutes = on_set_snooze_minutes,

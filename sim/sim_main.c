@@ -191,6 +191,16 @@ static void cb_sunrise_options(void *u, uint8_t m, uint8_t p, bool c, uint8_t f)
     s_settings.night_mode.sunrise_face = f;
     mark_refresh();
 }
+static void cb_sunrise_preview(void *u, int16_t progress)
+{
+    static int16_t last = -1;
+
+    (void)u;
+    if ((progress < 0) != (last < 0) || (progress > 1000) != (last > 1000)) {
+        printf("sunrise preview: %d\n", progress);
+    }
+    last = progress;
+}
 static void cb_alarm_volume(void *u, uint8_t v) { (void)u; s_settings.alarm_volume = v; mark_refresh(); }
 static void cb_ascending(void *u, bool e) { (void)u; s_settings.ascending_alarm_enabled = e; mark_refresh(); }
 static void cb_snooze(void *u, uint8_t m) { (void)u; s_settings.snooze_minutes = m; mark_refresh(); }
@@ -228,6 +238,7 @@ static const clock_ui_callbacks_t s_callbacks = {
     .on_set_night_brightness = cb_night_brightness,
     .on_set_night_sunrise_brightness_enabled = cb_sunrise,
     .on_set_night_sunrise_options = cb_sunrise_options,
+    .on_sunrise_preview = cb_sunrise_preview,
     .on_set_alarm_volume = cb_alarm_volume,
     .on_set_ascending_alarm_enabled = cb_ascending,
     .on_set_snooze_minutes = cb_snooze,

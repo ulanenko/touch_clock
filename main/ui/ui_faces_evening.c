@@ -1246,13 +1246,14 @@ void ui_daybreak_render(clock_ui_context_t *ctx, lv_draw_buf_t *buf, const ui_da
     db_rgb_t navy = db_hex(0x1C2442);
     db_rgb_t behind;
     db_rgb_t ink;
-    struct tm ti = get_local_time_now();
+    struct tm ti;
     lv_obj_t *canvas;
     lv_layer_t layer;
     char text[64];
     char upper[96];
     char clock[8];
 
+    localtime_r(&view->now, &ti); /* the preview's time runs fast */
     for (int i = 0; i < 4; i++) {
         stops[i] = db_mix(db_hex(pal->sky[ki][i]), db_hex(pal->sky[ki + 1][i]), kf);
     }
