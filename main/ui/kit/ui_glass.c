@@ -235,6 +235,8 @@ static int circle_half(int y)
 
 /* What the glass refracts: the face itself over the face, the face frosted and dimmed on pages
  * (also their ground). A copy: the snapshot's buffer is the screen scratch, soon reused. */
+static void page_ground_kick(void);
+
 static void back_build(const lv_draw_buf_t *face, ui_glass_mode_t mode)
 {
     s_back_ok = false;
@@ -273,6 +275,8 @@ static void back_build(const lv_draw_buf_t *face, ui_glass_mode_t mode)
     s_mode = mode;
     if (mode == UI_GLASS_FACE) {
         s_generation++; /* the sharp face behind: a new snapshot is a new look */
+    } else {
+        page_ground_kick();
     }
 }
 
@@ -1087,6 +1091,9 @@ static lv_draw_buf_t *s_sheet_ground;
 static uint32_t s_sheet_ground_gen;
 static int32_t s_sheet_ground_row = -1; /* rows done; -1 none */
 static bool s_hollow;                   /* drawing a moving sheet's snapshot: no body */
+/* On a page (no sheet then) the same buffer holds the page ground: what the page's clear glass
+ * shows of the ground behind it, screen-fixed, for rows while they scroll. */
+static bool s_ground_is_page;
 
 static bool sheet_ground_build(uint32_t budget_ms)
 {
@@ -1097,9 +1104,10 @@ static bool sheet_ground_build(uint32_t budget_ms)
     if (!s_frost_ok || !s_back_ok || s_mode != UI_GLASS_FACE || screen_buf(&s_sheet_ground) == NULL) {
         return false;
     }
-    if (s_sheet_ground_gen != s_generation || s_sheet_ground_row < 0) {
+    if (s_sheet_ground_gen != s_generation || s_sheet_ground_row < 0 || s_ground_is_page) {
         s_sheet_ground_gen = s_generation;
         s_sheet_ground_row = 0;
+        s_ground_is_page = false;
     }
     if (s_sheet_ground_row >= SCREEN) {
         return true;
@@ -1326,6 +1334,111 @@ static inline uint16_t flat_px(bake_scratch_t *sc, const ilook_t *il, const uint
         sc->flat_fy[fx] = (int16_t)(sy >> 1);
     }
     return pack(c[0], c[1], c[2], sx, sy);
+}
+
+/* --- Page ground ---------------------------------------------------------------------------- */
+
+/* A page's clear glass over the whole screen, as its rows show it on their flat tops (the same
+ * colours from the same frost, by flat_px): screen-fixed. A row scrolling over it shows the
+ * ground behind staying put, as it will once the row is baked where it stops, rather than the
+ * ground where it was baked moving along with it. Built a band at a time as a page opens, into
+ * the sheet ground's buffer (no sheet is up over a page). */
+static int32_t s_page_ground_row = -1; /* rows done; -1 none */
+static uint32_t s_page_ground_gen;
+static lv_timer_t *s_page_ground_timer;
+
+static bool page_ground_build(uint32_t budget_ms)
+{
+    uint32_t start = lv_tick_get();
+    look_t l;
+    ilook_t il;
+
+    if (!s_frost_ok || !s_back_ok || s_mode != UI_GLASS_PAGE || screen_buf(&s_sheet_ground) == NULL) {
+        return false;
+    }
+    if (!s_ground_is_page || s_page_ground_gen != s_generation || s_page_ground_row < 0) {
+        s_ground_is_page = true; /* the sheet's ground is made again when a sheet next needs it */
+        s_page_ground_gen = s_generation;
+        s_page_ground_row = 0;
+    }
+    if (s_page_ground_row >= SCREEN) {
+        return true;
+    }
+    l = look_of(UI_GLASS_CLEAR, lv_color_black(), UI_GLASS_PAGE);
+    il = ilook_of(&l, UI_GLASS_PAGE);
+    s_scratch[0].frosted = false;
+    GLASS_PERF_START();
+    int32_t row_from = s_page_ground_row;
+
+    (void)row_from;
+    /* As flat_px: one colour per 2 x 2 pixels (the frost's own grain), each pixel dithered. Rows
+     * go in pairs, so a slice starts on an even row. */
+    while (s_page_ground_row < SCREEN) {
+        int32_t y = s_page_ground_row++;
+        uint16_t *out = (uint16_t *)(s_sheet_ground->data + (size_t)y * s_sheet_ground->header.stride);
+        int16_t(*c)[3] = s_scratch[0].flat;
+
+        if (circle_half(y) < 0 && circle_half(y ^ 1) < 0) {
+            memset(out, 0, SCREEN * 2);
+            continue;
+        }
+        if (!(y & 1)) {
+            const uint16_t *brow = back_row(&s_scratch[0], y);
+            const uint16_t *frow = frost_row(y);
+
+            for (int32_t fx = 0; fx < FROST; fx++) {
+                uint16_t v = brow[fx << 1];
+                uint16_t f = frow[fx];
+                int k[3];
+
+                body(&il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[f >> 11], s_e6[(f >> 5) & 63],
+                     s_e5[f & 31], k);
+                c[fx][0] = (int16_t)k[0];
+                c[fx][1] = (int16_t)k[1];
+                c[fx][2] = (int16_t)k[2];
+            }
+        }
+        for (int32_t x = 0; x < SCREEN; x++) {
+            const int16_t *k = c[x >> 1];
+
+            out[x] = pack(k[0], k[1], k[2], x, y);
+        }
+        if ((y & 1) && lv_tick_elaps(start) >= budget_ms) {
+            break;
+        }
+    }
+    for (int i = 0; i < FROST; i++) {
+        s_scratch[0].flat_fy[i] = -1; /* the bakes' cache of flat colours was used here */
+    }
+    GLASS_PERF_END("page_ground", SCREEN, s_page_ground_row - row_from);
+    return s_page_ground_row >= SCREEN;
+}
+
+static bool page_ground_ready(void)
+{
+    return s_mode == UI_GLASS_PAGE && s_ground_is_page && s_page_ground_gen == s_generation &&
+           s_page_ground_row >= SCREEN && s_sheet_ground != NULL;
+}
+
+/* About 125 ms of work on the clock: a few milliseconds a tick between the frames of the
+ * page's entrance, more once nothing moves; done within about half a second of the page. */
+static void page_ground_timer_cb(lv_timer_t *t)
+{
+    uint32_t budget = lv_anim_count_running() > 0 ? 4 : 16;
+
+    if (s_mode != UI_GLASS_PAGE || !s_back_ok || !s_frost_ok || page_ground_build(budget) || s_sheet_ground == NULL) {
+        lv_timer_pause(t);
+    }
+}
+
+static void page_ground_kick(void)
+{
+    if (s_page_ground_timer == NULL) {
+        s_page_ground_timer = lv_timer_create(page_ground_timer_cb, 30, NULL);
+    }
+    if (s_page_ground_timer != NULL) {
+        lv_timer_resume(s_page_ground_timer);
+    }
 }
 
 /* One bake under way: what both halves of it need. */
@@ -1689,6 +1802,8 @@ void ui_glass_release(void)
         lv_draw_buf_destroy(s_back);
         s_back = NULL;
     }
+    s_ground_is_page = false;
+    s_page_ground_row = -1;
     if (s_sheet_ground != NULL) {
         lv_draw_buf_destroy(s_sheet_ground);
         s_sheet_ground = NULL;
@@ -1882,6 +1997,45 @@ static void sheet_draw(lv_layer_t *layer, const bake_t *b, const lv_area_t *area
         d.src = b->buf;
         d.image_area = *area;
         d.clip_radius = radius;
+        lv_draw_image(layer, &d, area);
+    }
+    layer->_clip_area = clip_was;
+}
+
+/* A page's row while it scrolls: its flat top from the page ground where it is now (the
+ * ground behind it stays put), then its rim and corners from its bake (they move with it, as a
+ * rim does). Baked again where it stops, it shows the same top. */
+static void row_draw_moving(lv_layer_t *layer, const bake_t *b, const lv_area_t *area)
+{
+    int32_t e = b->bez;
+    int32_t k = b->corner;
+    lv_area_t clip_was = layer->_clip_area;
+    lv_area_t top = {area->x1 + e, area->y1 + e, area->x2 - e, area->y2 - e};
+    /* The rim's bands, and the corner squares inside them (their curve reaches in past it). */
+    lv_area_t parts[8] = {
+        {area->x1, area->y1, area->x2, area->y1 + e - 1},
+        {area->x1, area->y2 - e + 1, area->x2, area->y2},
+        {area->x1, area->y1 + e, area->x1 + k - 1, area->y1 + k - 1},
+        {area->x2 - k + 1, area->y1 + e, area->x2, area->y1 + k - 1},
+        {area->x1, area->y2 - k + 1, area->x1 + k - 1, area->y2 - e},
+        {area->x2 - k + 1, area->y2 - k + 1, area->x2, area->y2 - e},
+        {area->x1, area->y1 + k, area->x1 + e - 1, area->y2 - k},
+        {area->x2 - e + 1, area->y1 + k, area->x2, area->y2 - k},
+    };
+
+    if (top.x1 <= top.x2 && top.y1 <= top.y2) {
+        draw_view(layer, s_sheet_ground, &top, 0);
+    }
+    for (int i = 0; i < 8; i++) {
+        lv_draw_image_dsc_t d;
+
+        if (parts[i].x1 > parts[i].x2 || parts[i].y1 > parts[i].y2 ||
+            !lv_area_intersect(&layer->_clip_area, &clip_was, &parts[i])) {
+            continue;
+        }
+        lv_draw_image_dsc_init(&d);
+        d.src = b->buf;
+        d.image_area = *area;
         lv_draw_image(layer, &d, area);
     }
     layer->_clip_area = clip_was;
@@ -2131,6 +2285,9 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     }
     if (b != NULL && kind == UI_GLASS_SHEET) {
         sheet_draw(layer, b, area, radius);
+    } else if (b != NULL && kind == UI_GLASS_CLEAR && b->opaque && b->mode == UI_GLASS_PAGE && !b->deep &&
+               w * h <= 100000 && (b->x != rest.x1 || b->y != rest.y1) && page_ground_ready()) {
+        row_draw_moving(layer, b, area);
     } else if (b != NULL) {
         lv_draw_image_dsc_t d;
 

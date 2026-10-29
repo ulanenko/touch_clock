@@ -180,6 +180,14 @@ a worker task the bottom; the other core is mostly idle while a page opens), and
 past the rim on the flat-top path. A 500 x 88 row bakes in 11 ms (was 20); a page opened right
 after a face change 105-115 ms (was 146-178), settings reopened 81 ms, alarms 97 ms.
 
+Scrolling rows (2026-10-29, tour 20261029-164612): a page's glass row kept its baked image while
+it scrolled, so the blurred face inside it moved with the row and jumped back into place when the
+row was baked again where it stopped. A scrolling row now draws its flat top from a screen-fixed
+page ground (the same colours as its baked top, built into the sheet ground's buffer as the page
+opens: about 125 ms of work in slices, 4 ms while the entrance plays, 16 ms after) and only its rim
+and corners from its bake. Night page scrolling 24.0 -> 27.8 ms a frame (p95 31.7 -> 34.3): the
+row is eight pieces of its bake and one of the ground instead of one image.
+
 Still open: a page opened right after the face changed still bakes its rows then; a scrolling
 page draws its ground and rows as images (about 20-25 ms a frame against Orbit's fills, about
 13 ms), which is memory bandwidth, not work that can be skipped.
