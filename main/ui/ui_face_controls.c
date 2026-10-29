@@ -380,23 +380,34 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
             fc->rim_band[i] = kit_arc_band_image(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
                                                  fill, fill_opa, edge, LV_OPA_COVER, &fc->rim_band_area[i]);
         }
-        if (fc->rim_band[i] != NULL && ui_skin_is_glass() && ui_glass_live_active()) {
-            float mid = i == 0 ? 270.0f : 90.0f;
-
-            /* Over a face slide: the band shows what slides under it. */
-            ui_glass_arc_live(fc->rim_band[i], &fc->rim_band_area[i], KIT_CENTER, KIT_CENTER, r_mid, width,
-                              mid - half_span, mid + half_span, UI_GLASS_RAISED, lv_color_black());
-        }
         if (fc->rim_band[i] != NULL) {
             lv_area_t area = fc->rim_band_area[i];
             float rx = reveal_x(fc, i == 0 ? 0.0f : 180.0f);
+            lv_opa_t frost_opa = LV_OPA_COVER;
+            const lv_draw_buf_t *shell = NULL;
 
+            if (ui_skin_is_glass() && ui_glass_live_active()) {
+                float mid = i == 0 ? 270.0f : 90.0f;
+
+                /* Over a face slide: clear glass, the frosted band faded over it. */
+                shell = ui_glass_arc_live(fc->rim_band[i], &fc->rim_band_area[i], KIT_CENTER, KIT_CENTER, r_mid,
+                                          width, mid - half_span, mid + half_span, UI_GLASS_RAISED,
+                                          lv_color_black(), &frost_opa);
+            }
             /* The bands spring down (12) and up (6) from the rim. */
             lv_area_move(&area, 0, (i == 0 ? -1 : 1) * (int32_t)lroundf(reveal_glide(fc, rx)));
-            lv_draw_image_dsc_init(&img);
-            img.src = fc->rim_band[i];
-            img.opa = reveal_opa(fc, rx);
-            lv_draw_image(layer, &img, &area);
+            if (shell != NULL) {
+                lv_draw_image_dsc_init(&img);
+                img.src = shell;
+                img.opa = reveal_opa(fc, rx);
+                lv_draw_image(layer, &img, &area);
+            }
+            if (frost_opa > LV_OPA_MIN) {
+                lv_draw_image_dsc_init(&img);
+                img.src = fc->rim_band[i];
+                img.opa = (lv_opa_t)((reveal_opa(fc, rx) * frost_opa) / 255);
+                lv_draw_image(layer, &img, &area);
+            }
         }
     }
 }

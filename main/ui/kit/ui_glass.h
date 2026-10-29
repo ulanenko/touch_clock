@@ -88,10 +88,12 @@ void ui_glass_live_end(void);
  * what the next frame draws of them live. False if that frost is not ready: build as usual. */
 bool ui_glass_live_finish(const lv_draw_buf_t *face, int slot, uint32_t slot_stamp, int back_slot, uint32_t back_stamp);
 bool ui_glass_live_active(void);
-/* During such a slide: an arc image from ui_glass_arc_image (at box, with the same shape)
- * drawn again over what is under it now. */
-void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int32_t cy, int32_t r_mid, int32_t width,
-                       float a0, float a1, ui_glass_kind_t kind, lv_color_t tint);
+/* During such a slide, for an arc image from ui_glass_arc_image (at box, of the same shape):
+ * the clear glass to draw under it, and how much of the image (frost_opa) to draw over that.
+ * NULL when no slide is under way (draw the image as it is). */
+const lv_draw_buf_t *ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int32_t cy, int32_t r_mid,
+                                       int32_t width, float a0, float a1, ui_glass_kind_t kind, lv_color_t tint,
+                                       lv_opa_t *frost_opa);
 
 /* Bakes, while the face is idle, the glass of everything under root that has none current yet
  * (hidden pages included), so opening them does not wait; returns true once all is baked. */
