@@ -37,8 +37,8 @@ bool ui_debug_call(clock_ui_context_t *ctx, const char *name);
 
 /* --- Boot ------------------------------------------------------------------------------- */
 
-/* The boot screen over everything, its ring in steps parts (the build holds the UI thread:
- * each step draws at once); finish opens it onto the face and then shows the controls. */
+/* The boot screen over everything, its line in steps parts (the build holds the UI thread:
+ * each step draws at once); finish fades it and brings the face up out of the dark. */
 void ui_boot_create(clock_ui_context_t *ctx, uint8_t steps);
 void ui_boot_step(clock_ui_context_t *ctx);
 void ui_boot_finish(clock_ui_context_t *ctx);

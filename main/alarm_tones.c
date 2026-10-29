@@ -46,6 +46,7 @@ typedef struct {
 
 /* Notes (equal temperament, A4 = 440 Hz). */
 #define N_C4 261.63f
+#define N_D4 293.66f
 #define N_E4 329.63f
 #define N_G4 392.00f
 #define N_A4 440.00f
@@ -59,7 +60,6 @@ typedef struct {
 #define N_B5 987.77f
 #define N_C6 1046.50f
 #define N_D6 1174.66f
-#define N_G6 1567.98f
 
 /* --- Wind chimes: tuned tubes, D major pentatonic, a loose breezy cascade ---------------- */
 
@@ -135,27 +135,76 @@ static const tone_def_t s_tones[ALARM_SOUND_COUNT] = {
     [ALARM_SOUND_SINGING_BOWL] = {&s_bowl, s_bowl_strikes, sizeof(s_bowl_strikes) / sizeof(s_bowl_strikes[0]), 14.0f},
 };
 
-/* --- Start chime: glass bells rolling up a G major chord as the face opens --------------- */
+/* --- Start chime ------------------------------------------------------------------------ */
 
-static const tone_instrument_t s_glass_bell = {
+/* Dawn (the default): a soft chord swelling in as the face brightens out of the dark, warm,
+ * D major with a ninth on top, no strike to it. The fundamentals have no twin: all the notes
+ * would beat together and the chord would swell a second time as it fades. */
+static const tone_instrument_t s_dawn_pad = {
     .partials =
         {
-            {1.000f, 1.00f, 1.10f, 0.6f},
-            {2.000f, 0.22f, 0.60f, 0.0f},
-            {3.010f, 0.10f, 0.35f, 0.9f},
-            {4.160f, 0.05f, 0.18f, 0.0f},
+            {1.000f, 1.00f, 1.60f, 0.00f},
+            {2.000f, 0.16f, 0.90f, 0.70f},
+            {3.000f, 0.04f, 0.50f, 0.00f},
+            {0.500f, 0.10f, 1.40f, 0.00f},
         },
-    .attack_s = 0.003f,
-    .decay_ref_hz = N_G5,
+    .attack_s = 0.32f,
+    .decay_ref_hz = N_A4,
 };
 
-static const tone_strike_t s_start_strikes[] = {
-    {0.00f, N_G4, 0.40f}, {0.00f, N_D5, 0.26f}, {0.07f, N_G5, 0.50f},
-    {0.14f, N_B5, 0.46f}, {0.21f, N_D6, 0.50f}, {0.36f, N_G6, 0.30f},
+static const tone_strike_t s_dawn_strikes[] = {
+    {0.00f, N_D4, 0.46f}, {0.06f, N_A4, 0.36f}, {0.12f, N_FS5, 0.30f}, {0.20f, N_E5, 0.24f}, {0.42f, N_A5, 0.14f},
 };
 
-static const tone_def_t s_start = {&s_glass_bell, s_start_strikes, sizeof(s_start_strikes) / sizeof(s_start_strikes[0]),
-                                   2.4f};
+/* Two notes: a soft wooden mallet, a rising fifth. */
+static const tone_instrument_t s_mallet = {
+    .partials =
+        {
+            {1.000f, 1.00f, 0.80f, 0.00f},
+            {3.990f, 0.22f, 0.14f, 0.00f},
+            {9.920f, 0.04f, 0.05f, 0.00f},
+            {2.000f, 0.10f, 0.40f, 0.00f},
+        },
+    .attack_s = 0.004f,
+    .decay_ref_hz = N_C5,
+};
+
+static const tone_strike_t s_mallet_strikes[] = {
+    {0.00f, N_C5, 0.60f},
+    {0.18f, N_G5, 0.55f},
+    {0.18f, N_C4, 0.22f},
+};
+
+/* One warm bell and its fifth, a breath apart. */
+static const tone_instrument_t s_warm_bell = {
+    .partials =
+        {
+            {1.000f, 1.00f, 2.00f, 0.00f},
+            {2.000f, 0.30f, 1.10f, 0.00f},
+            {2.990f, 0.08f, 0.50f, 0.60f},
+            {0.500f, 0.18f, 1.80f, 0.00f},
+        },
+    .attack_s = 0.012f,
+    .decay_ref_hz = N_E5,
+};
+
+static const tone_strike_t s_warm_bell_strikes[] = {
+    {0.00f, N_E5, 0.55f},
+    {0.14f, N_B5, 0.28f},
+};
+
+static const tone_def_t s_start_variants[] = {
+    {&s_dawn_pad, s_dawn_strikes, sizeof(s_dawn_strikes) / sizeof(s_dawn_strikes[0]), 2.8f},
+    {&s_mallet, s_mallet_strikes, sizeof(s_mallet_strikes) / sizeof(s_mallet_strikes[0]), 1.6f},
+    {&s_warm_bell, s_warm_bell_strikes, sizeof(s_warm_bell_strikes) / sizeof(s_warm_bell_strikes[0]), 2.6f},
+};
+static unsigned s_start_variant; /* 0: Dawn; others for listening (scripts/alarm_tones) */
+#define s_start (s_start_variants[s_start_variant])
+
+void alarm_tone_select_start(unsigned variant)
+{
+    s_start_variant = variant < sizeof(s_start_variants) / sizeof(s_start_variants[0]) ? variant : 0;
+}
 
 /* Loudness of the recorded tone (RMS about 2200 of 32767), a little gentler, with headroom
  * for the strikes' peaks. */

@@ -146,13 +146,13 @@ typedef struct {
 } ui_l10n_binding_t;
 
 typedef struct {
-    lv_obj_t *overlay; /* the boot screen, drawn by ui_boot.c */
+    lv_obj_t *overlay; /* the boot screen (ui_boot.c) */
     lv_obj_t *title;
+    lv_obj_t *bar;     /* the line under the wordmark, and its filled part */
+    lv_obj_t *fill;
     uint8_t step;      /* build steps done, of steps */
     uint8_t steps;
-    uint16_t intro_ms; /* time into the intro (the face opening) */
-    bool intro;
-    bool chimed;
+    bool revealing;    /* the wordmark fading, the face to come up */
 } clock_ui_boot_state_t;
 
 

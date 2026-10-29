@@ -39,6 +39,9 @@ typedef struct {
 
 typedef struct {
     int (*set_brightness)(uint8_t hw_percent);
+    /* The backlight from off up to hw_percent over ms (0: off at once), smoothly and off the
+     * UI thread. set_brightness ends one under way. */
+    void (*fade_in)(uint8_t hw_percent, uint32_t ms);
 } display_service_t;
 
 typedef struct {

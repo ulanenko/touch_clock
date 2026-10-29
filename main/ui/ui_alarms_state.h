@@ -141,6 +141,7 @@ typedef struct {
     lv_obj_t *ring_hold_btn;    /* Instrument */
     lv_obj_t *ring_hold_arc;
     lv_obj_t *ring_knob;        /* Orbit, Atelier slide */
+    lv_obj_t *ring_track;       /* Orbit: the band, taking a press near the knob too */
     bool ring_holding;
     bool ring_sliding;
     bool ring_done;

@@ -371,9 +371,10 @@ static void face_slide_finish(lv_anim_t *anim)
             request_set_current_face(ctx, face);
         }
     }
-    /* After a change the page dots show which face this is. */
-    if (changed || ctx->faces.face_slide_controls_were_visible) {
-        face_controls_show(ctx);
+    /* The controls come back only if they were up, as they were: a swipe through the faces
+     * is not met by the chrome flying in again each time. */
+    if (ctx->faces.face_slide_controls_were_visible) {
+        face_controls_show_still(ctx);
     }
 }
 

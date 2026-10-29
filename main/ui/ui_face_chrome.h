@@ -101,6 +101,8 @@ bool face_sheet_click_blocked(const face_sheet_t *sheet);
 
 void face_controls_create(clock_ui_context_t *ctx);
 void face_controls_show(clock_ui_context_t *ctx);
+/* The same without the entrance: back as they were (after a face slide). */
+void face_controls_show_still(clock_ui_context_t *ctx);
 void face_controls_hide(clock_ui_context_t *ctx);
 void face_controls_toggle(clock_ui_context_t *ctx);
 bool face_controls_visible(const clock_ui_context_t *ctx);

@@ -1,5 +1,6 @@
 #include "platform/platform_esp_services.h"
 
+#include <math.h>
 #include <stdio.h>
 #include <sys/time.h>
 #include <time.h>
@@ -7,7 +8,10 @@
 #include "alarm_audio.h"
 #include "app_settings.h"
 #include "bsp/esp-bsp.h"
+#include "driver/ledc.h"
 #include "esp_err.h"
+#include "esp_timer.h"
+#include "sdkconfig.h"
 #include "ota_update.h"
 #include "telemetry_update.h"
 #include "wifi_time.h"
@@ -124,8 +128,62 @@ static int esp_wifi_set_auto_sync_service(bool enabled)
     return wifi_time_set_auto_sync(enabled);
 }
 
+/* The boot reveal: the backlight's duty stepped every 8 ms on an esp_timer, perceptually even
+ * (an ease-out in perceived light, the duty that light squared and a bit). */
+static esp_timer_handle_t s_fade_timer;
+static int64_t s_fade_start_us;
+static uint32_t s_fade_ms;
+static uint32_t s_fade_duty; /* the duty at the end, as bsp_display_brightness_set makes it */
+
+static void fade_set_duty(uint32_t duty)
+{
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, CONFIG_BSP_DISPLAY_BRIGHTNESS_LEDC_CH, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, CONFIG_BSP_DISPLAY_BRIGHTNESS_LEDC_CH);
+}
+
+static void fade_timer_cb(void *arg)
+{
+    float t = (float)(esp_timer_get_time() - s_fade_start_us) / (1000.0f * (float)s_fade_ms);
+    float u;
+    float light;
+
+    (void)arg;
+    if (t >= 1.0f) {
+        esp_timer_stop(s_fade_timer);
+        fade_set_duty(s_fade_duty);
+        return;
+    }
+    u = 1.0f - t;
+    light = 1.0f - u * u * u;
+    fade_set_duty((uint32_t)((float)s_fade_duty * powf(light, 2.2f) + 0.5f));
+}
+
+static void esp_display_fade_in(uint8_t hw_percent, uint32_t ms)
+{
+    if (s_fade_timer == NULL) {
+        const esp_timer_create_args_t args = {.callback = fade_timer_cb, .name = "bl_fade"};
+
+        if (esp_timer_create(&args, &s_fade_timer) != ESP_OK) {
+            bsp_display_brightness_set(hw_percent);
+            return;
+        }
+    }
+    esp_timer_stop(s_fade_timer);
+    s_fade_duty = (1023u * (hw_percent > 100 ? 100u : hw_percent)) / 100u;
+    if (ms == 0) {
+        fade_set_duty(0);
+        return;
+    }
+    s_fade_ms = ms;
+    s_fade_start_us = esp_timer_get_time();
+    esp_timer_start_periodic(s_fade_timer, 8000);
+}
+
 static int esp_display_set_brightness(uint8_t hw_percent)
 {
+    if (s_fade_timer != NULL) {
+        esp_timer_stop(s_fade_timer);
+    }
     return bsp_display_brightness_set(hw_percent);
 }
 
@@ -202,6 +260,7 @@ static const wifi_service_t s_wifi_service = {
 
 static const display_service_t s_display_service = {
     .set_brightness = esp_display_set_brightness,
+    .fade_in = esp_display_fade_in,
 };
 
 static const ota_service_t s_ota_service = {

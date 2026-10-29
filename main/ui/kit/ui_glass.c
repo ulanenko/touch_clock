@@ -12,6 +12,8 @@
 #include <math.h>
 #include <string.h>
 
+#include "esp_heap_caps.h"
+
 #if defined(ESP_PLATFORM)
 #include "sdkconfig.h"
 #endif
@@ -61,6 +63,7 @@ static ui_glass_mode_t s_mode;
 static uint32_t s_generation; /* counts changes to what the glass refracts over the face */
 static uint32_t s_identity;   /* which face (and theme) the backdrop shows */
 
+static uint32_t s_unweight[256]; /* c * 255 / max(w, COVER_MIN) as (c * s_unweight[w]) >> 16, exact */
 static const uint8_t s_bayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
 
 static float clampf(float v, float lo, float hi)
@@ -162,10 +165,10 @@ static void unweight_grade(uint8_t *img, int n, float gain, float lift, float sa
     for (int i = 0; i < n * n; i++) {
         /* Far outside the circle the coverage is a few counts, its colours rounding noise:
          * dividing by at least COVER_MIN fades them to black instead. */
-        int w = LV_MAX(img[i * 4 + 3], COVER_MIN);
-        float r = (float)LV_MIN(255, img[i * 4] * 255 / w);
-        float g = (float)LV_MIN(255, img[i * 4 + 1] * 255 / w);
-        float b = (float)LV_MIN(255, img[i * 4 + 2] * 255 / w);
+        uint32_t u = s_unweight[img[i * 4 + 3]];
+        float r = (float)LV_MIN(255u, (img[i * 4] * u) >> 16);
+        float g = (float)LV_MIN(255u, (img[i * 4 + 1] * u) >> 16);
+        float b = (float)LV_MIN(255u, (img[i * 4 + 2] * u) >> 16);
         float y = 0.21f * r + 0.72f * g + 0.07f * b;
 
         img[i * 3] = (uint8_t)clampf((y + (r - y) * sat) * gain + lift, 0.0f, 255.0f);
@@ -199,11 +202,16 @@ static void tables_init(void)
             s_q6[d][c] = (uint8_t)LV_MIN(63, (c * 63 + d * 16) / 255);
         }
     }
+    for (int w = 0; w < 256; w++) {
+        uint32_t d = (uint32_t)LV_MAX(w, COVER_MIN);
+
+        s_unweight[w] = ((255u << 16) + d - 1) / d;
+    }
     s_tables = true;
 }
 
-/* Three 8-bit channels in 16-bit lanes of one word. */
-#define UPLANES(p) ((uint64_t)(p)[0] | (uint64_t)(p)[1] << 16 | (uint64_t)(p)[2] << 32)
+/* Red and blue in the 16-bit lanes of one 32-bit word (the clock has no 64-bit ops). */
+#define RBLANES(p) ((uint32_t)(p)[0] | (uint32_t)(p)[2] << 16)
 
 static inline uint16_t pack(int r, int g, int b, int x, int y)
 {
@@ -270,7 +278,7 @@ bool ui_glass_backdrop_to_page(lv_draw_buf_t *keep_sharp)
 void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bool frost_too)
 {
     uint8_t *low = NULL;
-    uint64_t *hrow = NULL;
+    uint32_t *hrow = NULL;
     lv_draw_buf_t *frost;
     float gain;
     float lift;
@@ -295,10 +303,14 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         return;
     }
     low = lv_malloc(LOW * LOW * 4);
-    hrow = lv_malloc(3 * FROST * sizeof(uint64_t));
+    /* Three widened rows (red and blue, then green), small and hot: internal RAM if there is room. */
+    hrow = heap_caps_malloc(3 * 2 * FROST * sizeof(uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (hrow == NULL) {
+        hrow = heap_caps_malloc(3 * 2 * FROST * sizeof(uint32_t), MALLOC_CAP_DEFAULT);
+    }
     if (low == NULL || hrow == NULL) {
         lv_free(low);
-        lv_free(hrow);
+        heap_caps_free(hrow);
         return;
     }
     /* Down to a quarter: the sum of each 4x4 block's pixels inside the screen's circle, and
@@ -311,7 +323,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
 
         if (acc == NULL) {
             lv_free(low);
-            lv_free(hrow);
+            heap_caps_free(hrow);
             return;
         }
         for (int ly = 0; ly < LOW; ly++) {
@@ -372,10 +384,10 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
     GLASS_PERF_STEP("blur");
     /* Undo the weighting: colour over coverage. */
     for (int i = 0; i < LOW * LOW; i++) {
-        int w = low[i * 4 + 3];
+        uint32_t u = s_unweight[low[i * 4 + 3]];
 
         for (int c = 0; c < 3; c++) {
-            low[i * 3 + c] = (uint8_t)LV_MIN(255, low[i * 4 + c] * 255 / LV_MAX(w, COVER_MIN));
+            low[i * 3 + c] = (uint8_t)LV_MIN(255u, (low[i * 4 + c] * u) >> 16);
         }
     }
     for (int i = 0; i < LOW * LOW; i++) {
@@ -410,11 +422,12 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
             s_deep_row_y[k] = -1;
         }
     }
+    GLASS_PERF_STEP("grade");
     /* Up to half resolution bilinearly. A frost pixel sits a quarter of the way between two
-     * low ones each way, so it is (3 near + 1 far) / 4 across and down: shifts and adds, the
-     * three channels at once in 16-bit lanes. Each low row is widened once (three are kept:
-     * an output row needs its own and the one above or below); dithered so gradients do not
-     * band. */
+     * low ones each way, so it is (3 near + 1 far) / 4 across and down: shifts and adds, red
+     * and blue at once in 16-bit lanes, green on its own. Each low row is widened once (three
+     * are kept: an output row needs its own and the one above or below); dithered so
+     * gradients do not band. */
     {
         int cached[3] = {-1, -1, -1};
 
@@ -422,8 +435,8 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
             int near = y >> 1;
             int far = LV_CLAMP(0, (y & 1) ? near + 1 : near - 1, LOW - 1);
             uint16_t *out = (uint16_t *)(frost->data + (size_t)y * frost->header.stride);
-            const uint64_t *hn;
-            const uint64_t *hf;
+            const uint32_t *hn;
+            const uint32_t *hf;
 
             for (int k = 0; k < 2; k++) {
                 int ly = k == 0 ? near : far;
@@ -431,34 +444,45 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
 
                 if (cached[slot] != ly) {
                     const uint8_t *lr = low + (size_t)ly * LOW * 3;
-                    uint64_t *h = hrow + (size_t)slot * FROST;
-                    uint64_t prev = UPLANES(lr);
-                    uint64_t cur = prev;
+                    uint32_t *rb = hrow + (size_t)slot * 2 * FROST;
+                    uint32_t *g = rb + FROST;
+                    uint32_t prev = RBLANES(lr);
+                    uint32_t cur = prev;
+                    uint32_t gprev = lr[1];
+                    uint32_t gcur = gprev;
 
                     for (int lx = 0; lx < LOW; lx++) {
-                        uint64_t next = lx + 1 < LOW ? UPLANES(lr + (lx + 1) * 3) : cur;
-                        uint64_t c3 = cur * 3;
+                        const uint8_t *np = lr + (lx + 1 < LOW ? lx + 1 : lx) * 3;
+                        uint32_t next = RBLANES(np);
+                        uint32_t gnext = np[1];
+                        uint32_t c3 = cur * 3;
+                        uint32_t g3 = gcur * 3;
 
-                        h[lx * 2] = c3 + prev;
-                        h[lx * 2 + 1] = c3 + next;
+                        rb[lx * 2] = c3 + prev;
+                        rb[lx * 2 + 1] = c3 + next;
+                        g[lx * 2] = g3 + gprev;
+                        g[lx * 2 + 1] = g3 + gnext;
                         prev = cur;
                         cur = next;
+                        gprev = gcur;
+                        gcur = gnext;
                     }
                     cached[slot] = ly;
                 }
             }
-            hn = hrow + (size_t)(near % 3) * FROST;
-            hf = hrow + (size_t)(far % 3) * FROST;
+            hn = hrow + (size_t)(near % 3) * 2 * FROST;
+            hf = hrow + (size_t)(far % 3) * 2 * FROST;
             for (int x = 0; x < FROST; x++) {
-                uint64_t v = hn[x] * 3 + hf[x]; /* 16 x the colour per lane */
+                uint32_t v = hn[x] * 3 + hf[x];                 /* 16 x red and blue */
+                uint32_t g = hn[FROST + x] * 3 + hf[FROST + x]; /* 16 x green */
 
-                out[x] = pack((int)(v >> 4) & 0xFFF, (int)(v >> 20) & 0xFFF, (int)(v >> 36) & 0xFFF, x, y);
+                out[x] = pack((int)(v >> 4) & 0xFFF, (int)(g >> 4), (int)(v >> 20) & 0xFFF, x, y);
             }
         }
     }
     GLASS_PERF_STEP("up");
     lv_free(low);
-    lv_free(hrow);
+    heap_caps_free(hrow);
     s_frost_ok = true;
     s_generation++;
 
@@ -586,7 +610,7 @@ static look_t look_of(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mod
         l.spec = 0.3f;
         break;
     case UI_GLASS_SHEET:
-        l.frost = 1.0f; /* material: no sharp face through it, only the bend at its edge */
+        l.frost = 0.62f; /* clear enough to see the face behind, which stays put as it moves */
         l.tint_a = s_light && face ? 0.12f : 0.20f;
         if (s_light && face) {
             l.tint[0] = l.tint[1] = l.tint[2] = 255.0f;
@@ -762,6 +786,7 @@ typedef struct {
     int16_t pend_x, pend_y;
     uint32_t pend_since;
     bool opaque; /* corners baked against the ground: drawn as a plain image */
+    int16_t bez, corner; /* the rim's width and the corners' size (a sheet bakes only these) */
 } bake_t;
 
 static bake_t s_bakes[BAKE_MAX];
@@ -915,14 +940,99 @@ static const uint16_t *deep_row(int32_t fy)
     return out;
 }
 
+/* The deep frost at the frost's size, made whole the first time a bake asks for it: a bake's
+ * rim reads rows above and below the one it is on, more than a few cached rows hold. */
+static lv_draw_buf_t *s_deep_full;
+static uint32_t s_deep_full_gen;
+static bool s_deep_full_ok;
+
+static const uint16_t *deep_full_row(int32_t fy)
+{
+    if (!s_deep_full_ok || s_deep_full_gen != s_generation) {
+        if (s_deep_full == NULL) {
+            s_deep_full = lv_draw_buf_create(FROST, FROST, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+        }
+        if (s_deep_full == NULL) {
+            return deep_row(fy);
+        }
+        for (int32_t y = 0; y < FROST; y++) {
+            memcpy(s_deep_full->data + (size_t)y * s_deep_full->header.stride, deep_row(y), FROST * 2);
+        }
+        s_deep_full_gen = s_generation;
+        s_deep_full_ok = true;
+    }
+    return (const uint16_t *)(s_deep_full->data + (size_t)fy * s_deep_full->header.stride);
+}
+
 static inline const uint16_t *frost_row(int32_t y)
 {
     int32_t fy = LV_CLAMP(0, y, SCREEN - 1) >> 1;
 
     if (s_use_deep) {
-        return deep_row(fy);
+        return deep_full_row(fy);
     }
     return (const uint16_t *)(s_frost->data + (size_t)fy * s_frost->header.stride);
+}
+
+/* --- Sheet ground ------------------------------------------------------------------------ */
+
+/* A sheet's body over the whole screen: the face as the sheet's glass shows it, some of it
+ * sharp through the frost. It stays put while a sheet moves over it (the face behind does not
+ * move with the glass); only the sheet's rim, keys and labels move. Built a band of rows at a
+ * time (at idle). */
+static lv_draw_buf_t *s_sheet_ground;
+static uint32_t s_sheet_ground_gen;
+static int32_t s_sheet_ground_row = -1; /* rows done; -1 none */
+static bool s_hollow;                   /* drawing a moving sheet's snapshot: no body */
+
+static bool sheet_ground_build(uint32_t budget_ms)
+{
+    uint32_t start = lv_tick_get();
+    look_t l;
+    ilook_t il;
+
+    if (!s_frost_ok || !s_back_ok || s_mode != UI_GLASS_FACE || screen_buf(&s_sheet_ground) == NULL) {
+        return false;
+    }
+    if (s_sheet_ground_gen != s_generation || s_sheet_ground_row < 0) {
+        s_sheet_ground_gen = s_generation;
+        s_sheet_ground_row = 0;
+    }
+    if (s_sheet_ground_row >= SCREEN) {
+        return true;
+    }
+    l = look_of(UI_GLASS_SHEET, lv_color_black(), UI_GLASS_FACE);
+    il = ilook_of(&l, UI_GLASS_FACE);
+    GLASS_PERF_START();
+    int32_t row_from = s_sheet_ground_row;
+
+    (void)row_from;
+    while (s_sheet_ground_row < SCREEN) {
+        int32_t y = s_sheet_ground_row++;
+        const uint16_t *bk = back_row(y);
+        const uint16_t *f = (const uint16_t *)(s_frost->data + (size_t)(y >> 1) * s_frost->header.stride);
+        uint16_t *out = (uint16_t *)(s_sheet_ground->data + (size_t)y * s_sheet_ground->header.stride);
+        int half = circle_half(y);
+
+        if (half < 0) {
+            memset(out, 0, SCREEN * 2);
+            continue;
+        }
+        for (int32_t x = 0; x < SCREEN; x++) {
+            uint16_t v = bk[x];
+            uint16_t fv = f[x >> 1];
+            int c[3];
+
+            body(&il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[fv >> 11], s_e6[(fv >> 5) & 63],
+                 s_e5[fv & 31], c);
+            out[x] = pack(c[0], c[1], c[2], x, y);
+        }
+        if ((y & 15) == 15 && lv_tick_elaps(start) >= budget_ms) {
+            break;
+        }
+    }
+    GLASS_PERF_END("sheet_ground", SCREEN, s_sheet_ground_row - row_from);
+    return s_sheet_ground_row >= SCREEN;
 }
 
 /* One pixel the slow way (corners): exact distance and normal, the ground outside the shape. */
@@ -968,10 +1078,11 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
     rim_t side[2][32];
     GLASS_PERF_START();
 
-    /* Sheets and large panels are material: the deep frost only, the face bent at their edge
-     * but nowhere seen sharp through them. Glass on them (the sheet's keys) sees the same: the
-     * sheet is what is behind it, not the face under the sheet. */
-    s_use_deep = s_deep_ok && (b->deep || kind == UI_GLASS_SHEET || w * h > 100000);
+    /* Large panels are material: the deep frost only, the face bent at their edge but nowhere
+     * seen sharp through them. Glass on them and on sheets (the sheet's keys) sees the same: the
+     * panel is what is behind it, not the face under it. A sheet itself is clearer glass: its
+     * body is the sheet ground (drawn under it, where it is), so only its rim is baked. */
+    s_use_deep = s_deep_ok && (b->deep || (kind != UI_GLASS_SHEET && w * h > 100000));
     if (s_use_deep) {
         l.frost = 1.0f;
     }
@@ -1029,6 +1140,10 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
             int32_t sx = area->x1 + x;
             int32_t dx = LV_MIN(x, w - 1 - x);
 
+            if (dx >= bez && kind == UI_GLASS_SHEET) {
+                x = w - 1 - bez; /* the body: the sheet ground; on to the right rim */
+                continue;
+            }
             if (dx < bez) {
                 const rim_t *rp = &side[x < w / 2 ? 0 : 1][dx];
                 int32_t dir = x < w / 2 ? 1 : -1; /* inward */
@@ -1046,6 +1161,8 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
     }
     b->x = (int16_t)area->x1;
     b->y = (int16_t)area->y1;
+    b->bez = (int16_t)bez;
+    b->corner = (int16_t)corner;
     b->gen = s_generation;
     b->identity = s_identity;
     b->pend_x = b->x;
@@ -1174,6 +1291,16 @@ void ui_glass_release(void)
         lv_draw_buf_destroy(s_back);
         s_back = NULL;
     }
+    if (s_sheet_ground != NULL) {
+        lv_draw_buf_destroy(s_sheet_ground);
+        s_sheet_ground = NULL;
+    }
+    if (s_deep_full != NULL) {
+        lv_draw_buf_destroy(s_deep_full);
+        s_deep_full = NULL;
+    }
+    s_deep_full_ok = false;
+    s_sheet_ground_row = -1;
     lv_free(s_deep);
     s_deep = NULL;
     s_deep_ok = false;
@@ -1217,6 +1344,96 @@ static void draw_view(lv_layer_t *layer, const lv_draw_buf_t *src, const lv_area
     lv_draw_image(layer, &d, &vis);
 }
 
+void ui_glass_draw_sheet_ground(lv_layer_t *layer, const lv_area_t *area, int32_t radius)
+{
+    if (s_frost_ok && sheet_ground_build(UINT32_MAX)) {
+        draw_view(layer, s_sheet_ground, area, radius);
+    }
+}
+
+void ui_glass_set_hollow(bool hollow)
+{
+    s_hollow = hollow;
+}
+
+void ui_glass_hollow_corners(const void *key, lv_draw_buf_t *snap, int32_t ext)
+{
+    const bake_t *b = NULL;
+
+    for (int i = 0; i < BAKE_MAX && b == NULL; i++) {
+        if (s_bakes[i].buf != NULL && s_bakes[i].key == key && s_bakes[i].kind == UI_GLASS_SHEET) {
+            b = &s_bakes[i];
+        }
+    }
+    if (b == NULL || snap == NULL || snap->header.cf != LV_COLOR_FORMAT_ARGB8888) {
+        return;
+    }
+    /* Inside the corner squares the bake has the body too, as it was where the sheet rests:
+     * cleared past the rim, so the ground shows there as everywhere else. */
+    for (int32_t y = 0; y < b->corner; y++) {
+        for (int32_t x = 0; x < b->corner; x++) {
+            float dx = LV_MAX(0.0f, (float)b->r - ((float)x + 0.5f));
+            float dy = LV_MAX(0.0f, (float)b->r - ((float)y + 0.5f));
+            float inside;
+
+            if (dx > 0.0f && dy > 0.0f) {
+                inside = (float)b->r - sqrtf(dx * dx + dy * dy);
+            } else {
+                inside = (float)LV_MIN(x, y) + 0.5f;
+            }
+            if (inside <= (float)b->bez + 1.0f) {
+                continue;
+            }
+            for (int c = 0; c < 4; c++) {
+                int32_t px = ext + ((c & 1) ? b->w - 1 - x : x);
+                int32_t py = ext + ((c & 2) ? b->h - 1 - y : y);
+
+                if (px >= 0 && py >= 0 && px < (int32_t)snap->header.w && py < (int32_t)snap->header.h) {
+                    snap->data[(size_t)py * snap->header.stride + (size_t)px * 4 + 3] = 0;
+                }
+            }
+        }
+    }
+}
+
+/* A sheet: the ground where it is, then its baked rim (the bands along its edges and its
+ * corners) over it. A moving sheet's snapshot is taken hollow: the rim alone, the ground drawn
+ * under the snapshot wherever it is. */
+static void sheet_draw(lv_layer_t *layer, const bake_t *b, const lv_area_t *area, int32_t radius)
+{
+    int32_t e = b->bez;
+    int32_t k = b->corner;
+    lv_area_t clip_was = layer->_clip_area;
+    /* The bands top and bottom, the corners between them and the sides (what the bake has). */
+    lv_area_t parts[8] = {
+        {area->x1, area->y1, area->x2, area->y1 + e - 1},
+        {area->x1, area->y2 - e + 1, area->x2, area->y2},
+        {area->x1, area->y1 + e, area->x1 + k - 1, area->y1 + k - 1},
+        {area->x2 - k + 1, area->y1 + e, area->x2, area->y1 + k - 1},
+        {area->x1, area->y2 - k + 1, area->x1 + k - 1, area->y2 - e},
+        {area->x2 - k + 1, area->y2 - k + 1, area->x2, area->y2 - e},
+        {area->x1, area->y1 + k, area->x1 + e - 1, area->y2 - k},
+        {area->x2 - e + 1, area->y1 + k, area->x2, area->y2 - k},
+    };
+
+    if (!s_hollow) {
+        ui_glass_draw_sheet_ground(layer, area, radius);
+    }
+    for (int i = 0; i < 8; i++) {
+        lv_draw_image_dsc_t d;
+
+        if (!lv_area_intersect(&layer->_clip_area, &clip_was, &parts[i])) {
+            continue;
+        }
+        lv_draw_image_dsc_init(&d);
+        d.src = b->buf;
+        d.image_area = *area;
+        d.clip_radius = radius;
+        lv_draw_image(layer, &d, area);
+    }
+    layer->_clip_area = clip_was;
+}
+
 /* Whether a glass object sits inside another glass object (its corners must show that glass,
  * not the ground). */
 static bool nested_in_glass(lv_obj_t *obj, bool *material);
@@ -1224,6 +1441,7 @@ static bool nested_in_glass(lv_obj_t *obj, bool *material);
 /* Whether an object sits on a page (its glass refracts the dimmed face) rather than over the
  * face. */
 static bool on_page(lv_obj_t *obj);
+static bool on_scrim(lv_obj_t *obj);
 
 /* How an object's glass is baked: where it rests (an object gliding into place, translated,
  * keeps one image while it moves), whether its corners are baked against the ground (large, not
@@ -1255,7 +1473,7 @@ static void plan(const void *key, const lv_area_t *area, int32_t radius, ui_glas
     }
     *mode = on_page((lv_obj_t *)key) ? UI_GLASS_PAGE : UI_GLASS_FACE;
     nested = nested_in_glass((lv_obj_t *)key, deep);
-    *opaque = *opaque && !nested;
+    *opaque = *opaque && !nested && !on_scrim((lv_obj_t *)key);
 }
 
 /* A bake can be made when the backdrop has what it needs: page glass from either back (the
@@ -1286,7 +1504,9 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     if (can_bake(mode)) {
         b = bake_get(key, &rest, radius, kind, tint, opaque, mode, deep);
     }
-    if (b != NULL) {
+    if (b != NULL && kind == UI_GLASS_SHEET) {
+        sheet_draw(layer, b, area, radius);
+    } else if (b != NULL) {
         lv_draw_image_dsc_t d;
 
         lv_draw_image_dsc_init(&d);
@@ -1679,6 +1899,24 @@ static bool nested_in_glass(lv_obj_t *obj, bool *material)
     return false;
 }
 
+/* Whether obj sits on a scrim (a dialog's dim layer): its corners show the dim, not the
+ * ground they would be baked against. */
+static bool on_scrim(lv_obj_t *obj)
+{
+    for (lv_obj_t *p = lv_obj_get_parent(obj); p != NULL; p = lv_obj_get_parent(p)) {
+        ui_glass_kind_t kind;
+        lv_area_t c;
+
+        if (lv_obj_get_style_bg_opa(p, LV_PART_MAIN) < LV_OPA_50) {
+            continue;
+        }
+        lv_obj_get_coords(p, &c);
+        return classify(p, lv_obj_get_style_bg_color(p, LV_PART_MAIN), lv_area_get_width(&c), lv_area_get_height(&c), 0,
+                        &kind) == MAT_NONE;
+    }
+    return false;
+}
+
 static bool on_page(lv_obj_t *obj)
 {
     for (lv_obj_t *p = lv_obj_get_parent(obj); p != NULL; p = lv_obj_get_parent(p)) {
@@ -1757,6 +1995,9 @@ bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms)
 
     if (!ui_skin_is_glass() || root == NULL || !s_frost_ok || !s_back_ok) {
         return true;
+    }
+    if (s_mode == UI_GLASS_FACE && !sheet_ground_build(budget_ms)) {
+        return false;
     }
     stack[depth++] = root;
     while (depth > 0) {

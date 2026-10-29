@@ -188,6 +188,8 @@ def parse(log_path, out_dir):
         m = SEG_RE.search(line)
         if m:
             kv = dict(KV_RE.findall(m.group(1)))
+            if "name" not in kv or "t_ms" not in kv:
+                continue  # cut short by another task's output on the same line
             name = kv["name"]
             if name not in segments:
                 segments[name] = []

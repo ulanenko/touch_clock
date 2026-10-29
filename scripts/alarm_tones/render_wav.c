@@ -83,17 +83,23 @@ int main(int argc, char **argv)
         }
         free(pcm);
     }
-    /* The start chime plays once. */
-    n = alarm_tone_start_samples();
-    pcm = malloc(n * sizeof(int16_t));
-    if (pcm == NULL || !alarm_tone_render_start(pcm, block)) {
-        fprintf(stderr, "render failed for the start chime\n");
-        return 1;
+    /* The start chimes play once: the one used (Dawn) and the others to compare. */
+    for (unsigned v = 0; v < 3; v++) {
+        static const char *const start_names[3] = {"start_dawn", "start_mallet", "start_warm_bell"};
+
+        alarm_tone_select_start(v);
+        n = alarm_tone_start_samples();
+        pcm = malloc(n * sizeof(int16_t));
+        if (pcm == NULL || !alarm_tone_render_start(pcm, block)) {
+            fprintf(stderr, "render failed for %s\n", start_names[v]);
+            return 1;
+        }
+        snprintf(path, sizeof(path), "%s/%s.wav", argv[1], start_names[v]);
+        if (write_wav(path, pcm, n, 1) != 0) {
+            return 1;
+        }
+        free(pcm);
     }
-    snprintf(path, sizeof(path), "%s/start_chime.wav", argv[1]);
-    if (write_wav(path, pcm, n, 1) != 0) {
-        return 1;
-    }
-    free(pcm);
+    alarm_tone_select_start(0);
     return 0;
 }

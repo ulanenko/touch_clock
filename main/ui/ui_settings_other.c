@@ -48,6 +48,68 @@ static const ui_l10n_str_t s_progress = UI_L10N_STR("%s: %u%%", "%s: %u%%", "%s:
 
 /* --- Callbacks ------------------------------------------------------------------------- */
 
+static const ui_l10n_str_t s_restart = UI_L10N_STR("Restart", "Uruchom ponownie", "Перезапустити", "Перезапустить",
+                                                   "Herstarten");
+static const ui_l10n_str_t s_restart_ask = UI_L10N_STR("Restart the clock?", "Uruchomić zegar ponownie?",
+                                                       "Перезапустити годинник?", "Перезапустить часы?",
+                                                       "De klok herstarten?");
+static const ui_l10n_str_t s_restart_note = UI_L10N_STR("Settings and alarms are kept.",
+                                                        "Ustawienia i alarmy zostaną zachowane.",
+                                                        "Налаштування й будильники збережуться.",
+                                                        "Настройки и будильники сохранятся.",
+                                                        "Instellingen en wekkers blijven bewaard.");
+static lv_obj_t *s_other_root; /* the Other page, for the restart dialog over it */
+
+static void restart_cancel_cb(lv_event_t *e)
+{
+    lv_obj_t *dim = lv_event_get_user_data(e);
+
+    lv_obj_delete_async(dim);
+}
+
+static void restart_confirm_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+
+    if (ctx->callbacks.on_restart_requested != NULL) {
+        ctx->callbacks.on_restart_requested(ctx->user_ctx);
+    }
+}
+
+static void restart_row_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+    lv_obj_t *card;
+    lv_obj_t *dim;
+    lv_obj_t *r;
+    lv_obj_t *b;
+    lv_obj_t *l;
+
+    if (s_other_root == NULL) {
+        return;
+    }
+    card = kit_dialog(s_other_root, 520);
+    dim = lv_obj_get_parent(card);
+    lv_obj_add_event_cb(dim, restart_cancel_cb, LV_EVENT_CLICKED, dim);
+    lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    l = kit_label(card, KIT_TEXT_TITLE, ui_l10n_str(ctx, &s_restart_ask));
+    lv_obj_set_width(l, lv_pct(100));
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    l = kit_label(card, KIT_TEXT_CAPTION, ui_l10n_str(ctx, &s_restart_note));
+    lv_obj_set_width(l, lv_pct(100));
+    lv_obj_set_style_text_align(l, LV_TEXT_ALIGN_CENTER, 0);
+    lv_label_set_long_mode(l, LV_LABEL_LONG_MODE_WRAP);
+    r = st_hbox(card, 16);
+    lv_obj_set_width(r, lv_pct(100));
+    lv_obj_set_style_margin_top(r, 12, 0);
+    b = kit_button(r, KIT_BUTTON_SECONDARY, KIT_ICON_NONE, ui_l10n_text(ctx, L10N_CANCEL));
+    lv_obj_set_flex_grow(b, 1);
+    lv_obj_add_event_cb(b, restart_cancel_cb, LV_EVENT_CLICKED, dim);
+    b = kit_button(r, KIT_BUTTON_PRIMARY, KIT_ICON_NONE, ui_l10n_str(ctx, &s_restart));
+    lv_obj_set_flex_grow(b, 1);
+    lv_obj_add_event_cb(b, restart_confirm_cb, LV_EVENT_CLICKED, ctx);
+}
+
 static void language_row_cb(lv_event_t *e)
 {
     st_show_page(lv_event_get_user_data(e), UI_ST_LANGUAGE);
@@ -376,6 +438,20 @@ void st_other_build(clock_ui_context_t *ctx)
     }
 
     build_update(ctx, p);
+
+    /* Restart, with a question first. */
+    group = kit_group(p->content);
+    o = (kit_row_opts_t) {0};
+    o.trail = KIT_TRAIL_NONE;
+    o.on_click = restart_row_cb;
+    o.user_data = ctx;
+    if (st_orbit()) {
+        o.icon = KIT_ICON_RESTART;
+        o.tint = sk->tint_other;
+    }
+    st_row(ctx, &row, group, &o, ST_STR(&s_restart), ST_NONE);
+    s_other_root = p->root;
+
     build_about(ctx, p);
 }
 

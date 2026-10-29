@@ -1053,7 +1053,19 @@ static void glass_ink(clock_ui_context_t *ctx)
     }
 }
 
+static void controls_show(clock_ui_context_t *ctx, bool reveal);
+
 void face_controls_show(clock_ui_context_t *ctx)
+{
+    controls_show(ctx, true);
+}
+
+void face_controls_show_still(clock_ui_context_t *ctx)
+{
+    controls_show(ctx, false);
+}
+
+static void controls_show(clock_ui_context_t *ctx, bool reveal)
 {
     clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
 
@@ -1071,7 +1083,13 @@ void face_controls_show(clock_ui_context_t *ctx)
         lv_obj_move_foreground(fc->layer);
         lv_obj_remove_flag(fc->layer, LV_OBJ_FLAG_HIDDEN);
         lv_obj_update_layout(fc->layer);
-        reveal_start(ctx, 1);
+        if (reveal) {
+            reveal_start(ctx, 1);
+        } else {
+            lv_anim_delete(ctx, reveal_anim_cb);
+            fc->reveal_mode = 0;
+            reveal_apply(ctx);
+        }
         face_night_sync(ctx, face_now(), false);
     }
     if (fc->hide_timer != NULL) {

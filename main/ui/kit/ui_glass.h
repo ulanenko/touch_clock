@@ -48,6 +48,13 @@ void ui_glass_release(void);
 /* Draws a glass shape over area (screen coordinates), baked for key (the object it is). */
 void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind,
                    lv_color_t tint);
+/* A sheet's body where area is: the frost as the sheet shows it, fixed to the screen (a moving
+ * sheet's snapshot is drawn over it). */
+void ui_glass_draw_sheet_ground(lv_layer_t *layer, const lv_area_t *area, int32_t radius);
+/* While true, sheets draw only their rim (the snapshot of a sheet about to move). */
+void ui_glass_set_hollow(bool hollow);
+/* Clears the body inside a hollow snapshot's corners (key: the sheet; ext: its margin). */
+void ui_glass_hollow_corners(const void *key, lv_draw_buf_t *snap, int32_t ext);
 /* Draws a page's ground: the dimmed face (black before the first backdrop). */
 void ui_glass_draw_ground(lv_layer_t *layer, const lv_area_t *area);
 

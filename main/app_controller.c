@@ -1,5 +1,6 @@
 #include "app_controller.h"
 
+#include <limits.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
@@ -10,6 +11,7 @@
 #include "clock_ui.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_system.h"
 #include "esp_timer.h"
 #include "lvgl.h"
 #include "platform/platform_esp_services.h"
@@ -203,6 +205,36 @@ static void on_boot_chime(void *user_ctx)
         return;
     }
     (void)audio->play_start_chime(ui_click_volume(app));
+}
+
+/* The boot reveal: the backlight off, then up to the level the clock is at. */
+static void on_boot_backlight(void *user_ctx, uint32_t ms)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+    const display_service_t *display = app->core.config.display_service;
+    uint8_t level = app->core.state.applied_brightness;
+
+    if (display == NULL || display->fade_in == NULL || level == UCHAR_MAX) {
+        return;
+    }
+    display->fade_in(level, ms);
+}
+
+/* Restart asked for in the settings: what is pending is saved first, and the tap's sound and
+ * the dialog's last frame get a moment before the chip resets. */
+static void restart_timer_cb(lv_timer_t *timer)
+{
+    (void)timer;
+    ESP_LOGI(TAG, "restart requested from settings");
+    esp_restart();
+}
+
+static void on_restart_requested(void *user_ctx)
+{
+    app_controller_t *app = (app_controller_t *)user_ctx;
+
+    app_controller_core_force_save(&app->core);
+    lv_timer_set_repeat_count(lv_timer_create(restart_timer_cb, 250, NULL), 1);
 }
 
 static void on_set_ui_click_sound_enabled(void *user_ctx, bool enabled)
@@ -438,6 +470,8 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .on_ota_install_requested = on_ota_install_requested,
         .on_ui_click_feedback = on_ui_click_feedback,
         .on_boot_chime = on_boot_chime,
+        .on_restart_requested = on_restart_requested,
+        .on_boot_backlight = on_boot_backlight,
         .on_set_ui_click_sound_enabled = on_set_ui_click_sound_enabled,
         .on_set_ui_click_volume = on_set_ui_click_volume,
         .on_set_language = on_set_language,

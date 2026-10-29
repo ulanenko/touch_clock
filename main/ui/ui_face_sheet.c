@@ -9,7 +9,12 @@
  * - At rest the panel is live over the live face under a translucent overlay, so the face
  *   keeps ticking (and a theme picked in the sheet shows at once below it).
  */
+#include "sdkconfig.h"
 #include "ui/kit/ui_glass.h"
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+#include <stdio.h>
+#include "esp_timer.h"
+#endif
 #include "ui/ui_face_chrome.h"
 #include "ui/ui_areas.h"
 
@@ -80,10 +85,30 @@ static void sheet_apply(face_sheet_t *s, int32_t y)
 static lv_draw_buf_t *s_snapshot_pool;
 static face_sheet_t *s_snapshot_owner;
 
+static bool sheet_take_snapshot_now(face_sheet_t *s);
+
+/* Timed for the perf tour. */
 static bool sheet_take_snapshot(face_sheet_t *s)
+{
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    int64_t t0 = esp_timer_get_time();
+    bool ok = sheet_take_snapshot_now(s);
+
+    printf("PERF sheet_snapshot ok=%d sparse=%d us=%d\n", (int)ok,
+           (int)(ok && s->snapshot_buf != NULL && ui_sparse_image_known(s->snapshot_buf->data)),
+           (int)(esp_timer_get_time() - t0));
+    return ok;
+#else
+    return sheet_take_snapshot_now(s);
+#endif
+}
+
+static bool sheet_take_snapshot_now(face_sheet_t *s)
 {
     lv_draw_buf_t **buf = &s_snapshot_pool;
     int32_t y_was = LV_COORD_MAX;
+    bool glass = ui_skin_is_glass();
+    lv_color_format_t cf = glass ? LV_COLOR_FORMAT_ARGB8888 : LV_COLOR_FORMAT_RGB565;
     bool ok;
 
     if (s_snapshot_owner != s && s_snapshot_owner != NULL) {
@@ -95,24 +120,35 @@ static bool sheet_take_snapshot(face_sheet_t *s)
     }
     s_snapshot_owner = s;
     s->snapshot_buf = NULL;
-    /* Liquid Glass: the glass refracts what is behind it where the sheet comes to rest, so the
-     * snapshot is taken there (a closed sheet sits off the screen, with nothing behind it). */
-    if (ui_skin_is_glass()) {
+    if (*buf != NULL) {
+        ui_sparse_image_unregister(*buf);
+    }
+    /* Liquid Glass: the rim refracts what is behind it where the sheet comes to rest, so the
+     * snapshot is taken there (a closed sheet sits off the screen, with nothing behind it). It
+     * is taken hollow, with only the rim, keys and labels: the sheet's body is drawn under it,
+     * fixed to the screen, so the face seen through the glass stays put while the sheet moves. */
+    if (glass) {
         y_was = lv_obj_get_y(s->panel);
         lv_obj_set_y(s->panel, s->open_y);
     }
     lv_obj_update_layout(s->panel);
     ok = true;
+    if (*buf != NULL && (*buf)->header.cf != cf) {
+        lv_draw_buf_destroy(*buf);
+        *buf = NULL;
+    }
     if (*buf == NULL || lv_snapshot_reshape_draw_buf(s->panel, *buf) != LV_RESULT_OK) {
         if (*buf != NULL) {
             lv_draw_buf_destroy(*buf);
         }
-        *buf = lv_snapshot_create_draw_buf(s->panel, LV_COLOR_FORMAT_RGB565);
+        *buf = lv_snapshot_create_draw_buf(s->panel, cf);
         ok = *buf != NULL;
     }
-    if (ok && lv_snapshot_take_to_draw_buf(s->panel, LV_COLOR_FORMAT_RGB565, *buf) != LV_RESULT_OK) {
+    ui_glass_set_hollow(glass);
+    if (ok && lv_snapshot_take_to_draw_buf(s->panel, cf, *buf) != LV_RESULT_OK) {
         ok = false;
     }
+    ui_glass_set_hollow(false);
     if (y_was != LV_COORD_MAX) {
         lv_obj_set_y(s->panel, y_was);
         lv_obj_update_layout(s->panel);
@@ -120,8 +156,16 @@ static bool sheet_take_snapshot(face_sheet_t *s)
     if (!ok) {
         return false;
     }
+    if (glass) {
+        ui_glass_hollow_corners(s->panel, *buf, ((int32_t)(*buf)->header.w - lv_obj_get_width(s->panel)) / 2);
+        /* Mostly see-through: only its visible pixels are blended. */
+        ui_sparse_image_register(*buf);
+    }
     s->snapshot_glass = ui_glass_backdrop_generation();
     s->snapshot_buf = *buf;
+    /* The hollow snapshot has its corners transparent already: clipping them again would take
+     * its corner rows off the fast (sparse) blend. */
+    lv_obj_set_style_radius(s->snapshot_img, glass ? 0 : lv_obj_get_style_radius(s->panel, LV_PART_MAIN), 0);
     lv_image_set_src(s->snapshot_img, *buf);
     lv_obj_invalidate(s->snapshot_img);
     return true;
@@ -476,6 +520,21 @@ static void sheet_auto_close_cb(lv_timer_t *timer)
     face_sheet_close(s, true);
 }
 
+/* Liquid Glass: the sheet's body under its moving (hollow) snapshot, fixed to the screen. */
+static void sheet_snapshot_ground_cb(lv_event_t *e)
+{
+    face_sheet_t *s = (face_sheet_t *)lv_event_get_user_data(e);
+    lv_area_t area;
+    int32_t ext = sheet_ext(s);
+
+    if (!ui_skin_is_glass() || s->snapshot_buf == NULL || s->snapshot_buf->header.cf != LV_COLOR_FORMAT_ARGB8888) {
+        return;
+    }
+    lv_obj_get_coords(s->snapshot_img, &area);
+    lv_area_increase(&area, -ext, -ext);
+    ui_glass_draw_sheet_ground(lv_event_get_layer(e), &area, lv_obj_get_style_radius(s->panel, LV_PART_MAIN));
+}
+
 void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_sheet_opts_t *o)
 {
     s->ui = ctx;
@@ -502,7 +561,8 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
     lv_obj_remove_style_all(s->panel);
     lv_obj_set_size(s->panel, o->width, o->height);
     lv_obj_set_pos(s->panel, o->x, s->closed_y);
-    lv_obj_set_style_bg_color(s->panel, o->color, 0);
+    /* Liquid Glass (Orbit's layouts) paints its sheets as sheet glass, whatever the card colour. */
+    lv_obj_set_style_bg_color(s->panel, ui_skin_is_glass() ? ui_skin()->sheet : o->color, 0);
     lv_obj_set_style_bg_opa(s->panel, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(s->panel, o->radius, 0);
     if (o->border_side != LV_BORDER_SIDE_NONE) {
@@ -520,6 +580,7 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
     lv_obj_add_flag(s->snapshot_img, LV_OBJ_FLAG_HIDDEN | LV_OBJ_FLAG_FLOATING);
     /* The panel's rounded corners (Orbit) are clipped from the RGB565 snapshot when drawn. */
     lv_obj_set_style_radius(s->snapshot_img, o->radius, 0);
+    lv_obj_add_event_cb(s->snapshot_img, sheet_snapshot_ground_cb, LV_EVENT_DRAW_MAIN_BEGIN, s);
 
     s->auto_close_timer = ui_chrome_timer_create(ctx, sheet_auto_close_cb, o->auto_close_ms, s);
     if (s->auto_close_timer != NULL) {
@@ -531,6 +592,7 @@ void face_sheet_destroy(face_sheet_t *s)
 {
     if (s_snapshot_owner == s) {
         if (s_snapshot_pool != NULL) {
+            ui_sparse_image_unregister(s_snapshot_pool);
             lv_draw_buf_destroy(s_snapshot_pool);
             s_snapshot_pool = NULL;
         }

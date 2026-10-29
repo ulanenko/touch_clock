@@ -29,7 +29,8 @@
 #define BANNER_CENTER_Y 548
 
 /* Slide geometry: polar angles in 0.1 degree, 0 = twelve o'clock, clockwise. */
-#define O_SLIDE_R 292
+#define O_SLIDE_R 282
+#define O_SLIDE_W 108 /* the band: wide enough to find and keep under a sleepy thumb */
 #define O_SLIDE_START 2300
 #define O_SLIDE_END 1300
 #define A_SLIDE_R 300
@@ -231,7 +232,7 @@ static void render_orbit_bg(clock_ui_context_t *ctx)
     render_glow(ctx->alarms.ring_bg_buf, KIT_SCREEN, KIT_SCREEN - O_GLOW_Y, O_GLOW_Y);
     lv_canvas_init_layer(ctx->alarms.ring_bg, &layer);
     /* The band: LVGL angles, 0 = three o'clock. */
-    draw_arc(&layer, KIT_CENTER, cy, O_SLIDE_R, 76, 40, 140, lv_color_hex(0x1C1C1E), LV_OPA_COVER, true);
+    draw_arc(&layer, KIT_CENTER, cy, O_SLIDE_R, O_SLIDE_W, 40, 140, lv_color_hex(0x1C1C1E), LV_OPA_COVER, true);
     draw_curved_text(&layer, alm_str(ctx, &alm_s_slide_to_stop), &or_medium_22, sk->text_2, KIT_CENTER, cy, O_SLIDE_R,
                      1);
     lv_canvas_finish_layer(ctx->alarms.ring_bg, &layer);
@@ -266,7 +267,7 @@ static void render_glass_bg(clock_ui_context_t *ctx)
         }
     }
     /* The tube spans exactly the knob's travel (O_SLIDE_END..O_SLIDE_START, as LVGL angles). */
-    ui_glass_arc_blend(buf, 0, 0, KIT_CENTER, KIT_CENTER, O_SLIDE_R, 76, O_SLIDE_END / 10 - 90, O_SLIDE_START / 10 - 90,
+    ui_glass_arc_blend(buf, 0, 0, KIT_CENTER, KIT_CENTER, O_SLIDE_R, O_SLIDE_W, O_SLIDE_END / 10 - 90, O_SLIDE_START / 10 - 90,
                        UI_GLASS_CLEAR, lv_color_black());
     lv_canvas_init_layer(ctx->alarms.ring_bg, &layer);
     draw_curved_text(&layer, alm_str(ctx, &alm_s_slide_to_stop), &or_medium_22, sk->text_2, KIT_CENTER, KIT_CENTER,
@@ -528,6 +529,20 @@ static void slide_cb(lv_event_t *e)
     int32_t angle;
 
     if (code == LV_EVENT_PRESSED) {
+        if (lv_event_get_current_target(e) == ctx->alarms.ring_track) {
+            /* On the band, within its first third: the knob comes to the finger. Further along
+             * it is not taken, so a stray touch cannot stop the alarm. */
+            int32_t r;
+
+            if (indev == NULL) {
+                return;
+            }
+            lv_indev_get_point(indev, &p);
+            angle = alm_angle_of(KIT_CENTER, KIT_CENTER, p.x, p.y, &r);
+            if (LV_ABS(r - O_SLIDE_R) > O_SLIDE_W / 2 + 20 || angle > start + 60 || angle < start - (start - end) / 3) {
+                return;
+            }
+        }
         lv_anim_delete(ctx, slide_exec_cb);
         ctx->alarms.ring_sliding = true;
         return;
@@ -849,6 +864,12 @@ static void build_orbit_main(clock_ui_context_t *ctx, lv_obj_t *m)
     a->ring_time = label_at(m, sk->font_display, sk->text, 220, 640);
     a->ring_sub = label_at(m, sk->font_body, sk->text_2, 324, 520);
 
+    /* The band itself takes a press near the knob's end too (under the snooze key). */
+    a->ring_track = alm_box(m);
+    lv_obj_set_size(a->ring_track, KIT_SCREEN, KIT_SCREEN - 400);
+    lv_obj_set_pos(a->ring_track, 0, 400);
+    lv_obj_add_flag(a->ring_track, LV_OBJ_FLAG_CLICKABLE);
+
     btn = kit_round_button(m, KIT_BUTTON_PRIMARY, KIT_ICON_NONE, 184);
     kit_set_tint(btn, sk->tint_alarms);
     lv_obj_set_pos(btn, 268, 364);
@@ -860,7 +881,7 @@ static void build_orbit_main(clock_ui_context_t *ctx, lv_obj_t *m)
     a->ring_snooze = btn;
 
     a->ring_knob = alm_box(m);
-    lv_obj_set_size(a->ring_knob, 64, 64);
+    lv_obj_set_size(a->ring_knob, O_SLIDE_W - 16, O_SLIDE_W - 16);
     lv_obj_set_style_radius(a->ring_knob, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(a->ring_knob, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(a->ring_knob, lv_color_white(), 0);
@@ -870,11 +891,12 @@ static void build_orbit_main(clock_ui_context_t *ctx, lv_obj_t *m)
     lv_obj_set_style_shadow_color(a->ring_knob, lv_color_black(), 0);
     icon = lv_image_create(a->ring_knob);
     lv_image_set_src(icon, &ui_alarms_arrow_right_32);
+    lv_image_set_scale(icon, 352); /* 44 px */
     lv_obj_set_style_image_recolor(icon, lv_color_black(), 0);
     lv_obj_set_style_image_recolor_opa(icon, LV_OPA_COVER, 0);
     lv_obj_center(icon);
     lv_obj_add_flag(a->ring_knob, LV_OBJ_FLAG_CLICKABLE);
-    lv_obj_set_ext_click_area(a->ring_knob, 16);
+    lv_obj_set_ext_click_area(a->ring_knob, 28);
 }
 
 static void build_atelier_main(clock_ui_context_t *ctx, lv_obj_t *m)
@@ -1147,6 +1169,13 @@ void alm_ring_create(clock_ui_context_t *ctx)
         build_orbit_main(ctx, a->ring_main);
     } else {
         build_atelier_main(ctx, a->ring_main);
+    }
+    if (a->ring_track != NULL) {
+        lv_obj_add_event_cb(a->ring_track, slide_cb, LV_EVENT_PRESSED, ctx);
+        lv_obj_add_event_cb(a->ring_track, slide_cb, LV_EVENT_PRESSING, ctx);
+        lv_obj_add_event_cb(a->ring_track, slide_cb, LV_EVENT_RELEASED, ctx);
+        lv_obj_add_event_cb(a->ring_track, slide_cb, LV_EVENT_PRESS_LOST, ctx);
+        lv_obj_remove_flag(a->ring_track, LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER);
     }
     if (a->ring_knob != NULL) {
         lv_obj_add_event_cb(a->ring_knob, slide_cb, LV_EVENT_PRESSED, ctx);
