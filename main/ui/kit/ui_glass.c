@@ -43,6 +43,7 @@ void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 #define DEEP 90   /* sheets and large panels: blurred again at an eighth (about 30 px at full size) */
 #define VIEWS 256
 #define COVER_MIN 24 /* the least coverage a blurred colour is divided by */
+#define PAGE_GROUND 80 /* a page's ground: the frost at 80 / 256 */
 
 /* --- Backdrop ---------------------------------------------------------------------------- */
 
@@ -229,8 +230,8 @@ static int circle_half(int y)
     return dy * dy >= r * r ? -1 : (int)sqrtf(r * r - dy * dy);
 }
 
-/* What the glass refracts: the face itself over the face, the face at 3/8 on pages (also
- * their ground). A copy: the snapshot's buffer is the screen scratch, soon reused. */
+/* What the glass refracts: the face itself over the face, the face frosted and dimmed on pages
+ * (also their ground). A copy: the snapshot's buffer is the screen scratch, soon reused. */
 static void back_build(const lv_draw_buf_t *face, ui_glass_mode_t mode)
 {
     s_back_ok = false;
@@ -245,7 +246,20 @@ static void back_build(const lv_draw_buf_t *face, ui_glass_mode_t mode)
             memcpy(out, in, SCREEN * 2);
             continue;
         }
-        /* v * 3/8 per channel on the packed pixel: half less an eighth, no carries. */
+        if (s_frost_ok) {
+            /* Pages stand on the face frosted and dimmed (PAGE_GROUND / 256): its shapes and
+             * colour stay, none of its detail competes with what the page says. */
+            const uint16_t *f = (const uint16_t *)(s_frost->data + (size_t)(y >> 1) * s_frost->header.stride);
+
+            for (int x = 0; x < SCREEN; x++) {
+                uint16_t v = f[x >> 1];
+
+                out[x] = pack((s_e5[v >> 11] * PAGE_GROUND) >> 8, (s_e6[(v >> 5) & 63] * PAGE_GROUND) >> 8,
+                              (s_e5[v & 31] * PAGE_GROUND) >> 8, x, y);
+            }
+            continue;
+        }
+        /* No frost yet: v * 3/8 per channel on the packed pixel, half less an eighth. */
         for (int x = 0; x < SCREEN; x++) {
             uint16_t v = in[x];
 
@@ -275,11 +289,12 @@ bool ui_glass_backdrop_to_page(lv_draw_buf_t *keep_sharp)
     return true;
 }
 
-void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bool frost_too)
+/* The frost of face into frost (FROST x FROST): down to a quarter, blurred, graded, up to
+ * half. With deep, the deep frost (s_deep) too. light: whether the face is mostly light. */
+static bool frost_make(const lv_draw_buf_t *face, lv_draw_buf_t *frost, bool deep, bool *light)
 {
     uint8_t *low = NULL;
     uint32_t *hrow = NULL;
-    lv_draw_buf_t *frost;
     float gain;
     float lift;
     float sat;
@@ -287,21 +302,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
 
     GLASS_PERF_START();
 
-    if (s_frost == NULL) {
-        s_frost = lv_draw_buf_create(FROST, FROST, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
-    }
-    frost = s_frost;
-    if (face == NULL || face->data == NULL || frost == NULL || face->header.cf != LV_COLOR_FORMAT_RGB565) {
-        return;
-    }
     tables_init();
-    s_sharp = face;
-    s_sharp_ok = true;
-    if (!frost_too && s_frost_ok) {
-        back_build(face, mode);
-        GLASS_PERF_END("backdrop_back", SCREEN, SCREEN);
-        return;
-    }
     low = lv_malloc(LOW * LOW * 4);
     /* Three widened rows (red and blue, then green), small and hot: internal RAM if there is room. */
     hrow = heap_caps_malloc(3 * 2 * FROST * sizeof(uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -311,7 +312,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
     if (low == NULL || hrow == NULL) {
         lv_free(low);
         heap_caps_free(hrow);
-        return;
+        return false;
     }
     /* Down to a quarter: the sum of each 4x4 block's pixels inside the screen's circle, and
      * how many there are as a fourth channel. Colours stay weighted by it through the blur, so
@@ -324,7 +325,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         if (acc == NULL) {
             lv_free(low);
             heap_caps_free(hrow);
-            return;
+            return false;
         }
         for (int ly = 0; ly < LOW; ly++) {
             memset(acc, 0, LOW * 4 * sizeof(uint16_t));
@@ -361,11 +362,13 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
      * then, for the deep frost, down by two more and three passes again (about 30 px): a sheet
      * as wide as the screen shows no tick or numeral through it, and the picture it carries
      * along while dragged has nothing in it to give the move away. */
-    s_deep_ok = false;
-    if (s_deep == NULL) {
-        s_deep = lv_malloc(DEEP * DEEP * 4);
+    if (deep) {
+        s_deep_ok = false;
+        if (s_deep == NULL) {
+            s_deep = lv_malloc(DEEP * DEEP * 4);
+        }
     }
-    if (blur_rgba(low, LOW, 3) && s_deep != NULL) {
+    if (blur_rgba(low, LOW, 3) && deep && s_deep != NULL) {
         for (int dy = 0; dy < DEEP; dy++) {
             for (int dx = 0; dx < DEEP; dx++) {
                 const uint8_t *a = low + ((size_t)dy * 2 * LOW + (size_t)dx * 2) * 4;
@@ -394,8 +397,8 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         luma += (uint32_t)(low[i * 3] * 54 + low[i * 3 + 1] * 183 + low[i * 3 + 2] * 19) >> 8;
     }
     /* Light: Sternglas and Modern Silver (white dials), not Avenir's orange. */
-    s_light = luma / (LOW * LOW) > 165;
-    if (s_light) {
+    *light = luma / (LOW * LOW) > 165;
+    if (*light) {
         gain = 0.90f;
         lift = 22.0f;
         sat = 1.05f;
@@ -415,7 +418,7 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
         low[i * 3 + 1] = (uint8_t)clampf((y + (g - y) * sat) * gain + lift, 0.0f, 255.0f);
         low[i * 3 + 2] = (uint8_t)clampf((y + (b - y) * sat) * gain + lift, 0.0f, 255.0f);
     }
-    if (s_deep != NULL) {
+    if (deep && s_deep != NULL) {
         unweight_grade(s_deep, DEEP, gain, lift, sat);
         s_deep_ok = true;
         for (int k = 0; k < 4; k++) {
@@ -483,6 +486,30 @@ void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bo
     GLASS_PERF_STEP("up");
     lv_free(low);
     heap_caps_free(hrow);
+    return true;
+}
+
+void ui_glass_backdrop_build(const lv_draw_buf_t *face, ui_glass_mode_t mode, bool frost_too)
+{
+    GLASS_PERF_START();
+
+    if (s_frost == NULL) {
+        s_frost = lv_draw_buf_create(FROST, FROST, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    }
+    if (face == NULL || face->data == NULL || s_frost == NULL || face->header.cf != LV_COLOR_FORMAT_RGB565) {
+        return;
+    }
+    tables_init();
+    s_sharp = face;
+    s_sharp_ok = true;
+    if (!frost_too && s_frost_ok) {
+        back_build(face, mode);
+        GLASS_PERF_END("backdrop_back", SCREEN, SCREEN);
+        return;
+    }
+    if (!frost_make(face, s_frost, true, &s_light)) {
+        return;
+    }
     s_frost_ok = true;
     s_generation++;
 
@@ -505,9 +532,11 @@ ui_glass_mode_t ui_glass_backdrop_mode(void)
     return s_mode;
 }
 
+static uint32_t s_live_epoch; /* counts face slides drawn live: what they drew is stale after */
+
 uint32_t ui_glass_backdrop_generation(void)
 {
-    return s_generation;
+    return s_generation + (s_live_epoch << 20);
 }
 
 bool ui_glass_backdrop_light(void)
@@ -683,7 +712,7 @@ typedef struct {
 static ilook_t ilook_of(const look_t *l, ui_glass_mode_t mode)
 {
     ilook_t i = {(int)(l->frost * 256.0f), mode == UI_GLASS_PAGE ? 150 : 256,
-                 mode == UI_GLASS_PAGE && s_mode == UI_GLASS_FACE ? 96 : 256, (int)(l->vibrance * 256.0f),
+                 mode == UI_GLASS_PAGE && s_mode == UI_GLASS_FACE ? PAGE_GROUND : 256, (int)(l->vibrance * 256.0f),
                  (int)(l->tint_a * 256.0f), {(int)l->tint[0], (int)l->tint[1], (int)l->tint[2]}};
 
     return i;
@@ -787,6 +816,8 @@ typedef struct {
     uint32_t pend_since;
     bool opaque; /* corners baked against the ground: drawn as a plain image */
     int16_t bez, corner; /* the rim's width and the corners' size (a sheet bakes only these) */
+    uint32_t live_frame; /* during a face slide: the frame its image was last drawn live for */
+    bool live;           /* drawn live in a slide: baked again once it is over */
 } bake_t;
 
 static bake_t s_bakes[BAKE_MAX];
@@ -1276,6 +1307,8 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
     return slot;
 }
 
+static void live_release(void);
+
 void ui_glass_release(void)
 {
     for (int i = 0; i < BAKE_MAX; i++) {
@@ -1299,6 +1332,7 @@ void ui_glass_release(void)
         lv_draw_buf_destroy(s_deep_full);
         s_deep_full = NULL;
     }
+    live_release();
     s_deep_full_ok = false;
     s_sheet_ground_row = -1;
     lv_free(s_deep);
@@ -1483,6 +1517,442 @@ static bool can_bake(ui_glass_mode_t mode)
     return s_frost_ok && s_back_ok && (mode == UI_GLASS_PAGE || s_mode == UI_GLASS_FACE);
 }
 
+/* --- Live glass: the face controls over a face slide -------------------------------------- */
+
+/* While the faces slide under the controls, each control's glass is drawn again every frame
+ * from what is under it then: the two faces at their offsets (each with its frost). The
+ * optics of every pixel (where the rim bends the face from, the highlight, the edge shade)
+ * are worked out once per control and kept, so a frame costs a lookup and a mix per pixel. */
+#define LIVE_LENSES 24
+#define LENS_OUT INT8_MIN /* outside the shape */
+
+typedef struct {
+    int8_t dx, dy; /* where the bent ray meets the face, from the pixel */
+    uint8_t spec;  /* the highlight, 0..255 */
+    uint8_t shade; /* the light glass's edge shade, 0 none */
+} lens_px_t;
+
+typedef struct {
+    const void *key;
+    int16_t w, h, r;
+    uint8_t kind;
+    bool light;
+    lens_px_t *px;
+} lens_t;
+
+static lens_t s_lenses[LIVE_LENSES];
+static int s_lens_next;
+
+static float arc_sdf(float px, float py, float rm, float hw, float a0, float a1, float *nx, float *ny);
+
+/* The rim tabs during a slide: their image drawn again over what slides under them. */
+typedef struct {
+    const void *img;
+    int32_t w, h;
+    lens_px_t *px;
+    uint8_t *cov;
+} arc_lens_t;
+
+static arc_lens_t s_arc_lenses[4];
+static uint32_t s_arc_frame[4];
+static bool s_arc_live[4]; /* drawn live in this slide already */
+
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+static int64_t s_live_us;   /* time drawing live, this slide */
+static uint32_t s_live_px;  /* lens pixels drawn live, this slide */
+static uint32_t s_live_frame0; /* the frame count when this slide began */
+#endif
+
+static struct {
+    bool on;
+    uint32_t frame;
+    const lv_draw_buf_t *face[2];
+    const lv_draw_buf_t *frost[2]; /* NULL: the face itself, unfrosted */
+    int32_t x[2];
+} s_live;
+
+/* The neighbours' frost (slots 1 and 2 of the face slide), built at idle. */
+static lv_draw_buf_t *s_side_frost[3];
+static uint32_t s_side_stamp[3];
+
+static const lens_t *lens_get(const bake_t *b, ui_glass_kind_t kind, lv_color_t tint)
+{
+    lens_t *e = NULL;
+    look_t l;
+    bezel_t bz;
+    float hx;
+    float hy;
+
+    for (int i = 0; i < LIVE_LENSES; i++) {
+        lens_t *c = &s_lenses[i];
+
+        if (c->px != NULL && c->key == b->key && c->w == b->w && c->h == b->h && c->r == b->r &&
+            c->kind == (uint8_t)kind && c->light == s_light) {
+            return c;
+        }
+    }
+    e = &s_lenses[s_lens_next];
+    s_lens_next = (s_lens_next + 1) % LIVE_LENSES;
+    lv_free(e->px);
+    e->px = lv_malloc((size_t)b->w * (size_t)b->h * sizeof(lens_px_t));
+    if (e->px == NULL) {
+        return NULL;
+    }
+    e->key = b->key;
+    e->w = b->w;
+    e->h = b->h;
+    e->r = b->r;
+    e->kind = (uint8_t)kind;
+    e->light = s_light;
+    l = look_of(kind, tint, UI_GLASS_FACE);
+    bezel_for(&bz, b->w, b->h);
+    hx = (float)b->w / 2.0f;
+    hy = (float)b->h / 2.0f;
+    for (int32_t y = 0; y < b->h; y++) {
+        for (int32_t x = 0; x < b->w; x++) {
+            lens_px_t *p = &e->px[y * b->w + x];
+            float nx;
+            float ny;
+            float d = rrect_sdf((float)x + 0.5f - hx, (float)y + 0.5f - hy, hx, hy, (float)b->r, &nx, &ny);
+            float s;
+            float disp;
+            float slope;
+            float lit;
+            float refl;
+            float spec;
+
+            if (d >= 0.5f) {
+                p->dx = LENS_OUT;
+                continue;
+            }
+            s = LV_MAX(0.0f, -d);
+            bezel_at(&bz, s, &disp, &slope);
+            p->dx = (int8_t)LV_CLAMP(-127, lroundf(-nx * disp), 127);
+            p->dy = (int8_t)LV_CLAMP(-127, lroundf(-ny * disp), 127);
+            lit = LV_MAX(0.0f, -0.6f * nx - 0.8f * ny);
+            refl = LV_MAX(0.0f, 0.6f * nx + 0.8f * ny);
+            spec = slope == 0.0f ? 0.0f : l.spec * slope * slope * (0.25f + 0.85f * lit * lit + 0.45f * refl * refl);
+            spec += l.spec * 0.35f * clampf(1.4f - s, 0.0f, 1.0f);
+            p->spec = (uint8_t)lroundf(clampf(spec, 0.0f, 1.0f) * 255.0f);
+            p->shade = (uint8_t)lroundf(255.0f * l.edge_dark * clampf(1.0f - s / 5.0f, 0.0f, 1.0f) *
+                                        (0.55f + 0.45f * LV_MAX(0.0f, ny)));
+        }
+    }
+    return e;
+}
+
+/* What is on the screen at (x, y) during the slide, sharp or frosted. */
+static inline uint16_t live_at(int32_t x, int32_t y, bool frosted)
+{
+    y = LV_CLAMP(0, y, SCREEN - 1);
+    for (int i = 0; i < 2; i++) {
+        const lv_draw_buf_t *f = s_live.face[i];
+        int32_t lx = x - s_live.x[i];
+
+        if (f == NULL || lx < 0 || lx >= SCREEN) {
+            continue;
+        }
+        if (frosted && s_live.frost[i] != NULL) {
+            return ((const uint16_t *)(s_live.frost[i]->data + (size_t)(y >> 1) * s_live.frost[i]->header.stride))[lx >> 1];
+        }
+        return ((const uint16_t *)(f->data + (size_t)y * f->header.stride))[lx];
+    }
+    return 0;
+}
+
+/* One lens pixel's colour over what is under it now (8 bit per channel). */
+static inline void live_colour(const ilook_t *il, const lens_px_t *lp, int32_t sx, int32_t sy, int *c)
+{
+    uint16_t v = live_at(sx + lp->dx, sy + lp->dy, false);
+    uint16_t f = live_at(sx + lp->dx, sy + lp->dy, true);
+
+    body(il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[f >> 11], s_e6[(f >> 5) & 63], s_e5[f & 31], c);
+    for (int k = 0; k < 3; k++) {
+        int u = LV_CLAMP(0, c[k], 255);
+        int hl = 191 + LV_MIN(64, (u * 2) / 5);
+
+        u += ((hl - u) * lp->spec) >> 8;
+        c[k] = u - ((u * lp->shade) >> 8);
+    }
+}
+
+/* The control's glass as it is over what slides under it now, into its bake. Worked out once
+ * per 2 x 2 block (at the top left pixel inside the shape): a moving face shows no finer, and
+ * a frame has the time for a quarter of the pixels only. */
+static void live_render(bake_t *b, ui_glass_kind_t kind, lv_color_t tint)
+{
+    const lens_t *lens = lens_get(b, kind, tint);
+    look_t l;
+    ilook_t il;
+
+    if (lens == NULL) {
+        return;
+    }
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    int64_t t0 = esp_timer_get_time();
+#endif
+    l = look_of(kind, tint, UI_GLASS_FACE);
+    il = ilook_of(&l, UI_GLASS_FACE);
+    for (int32_t y = 0; y < b->h; y += 2) {
+        bool two = y + 1 < b->h;
+        uint16_t *r0 = (uint16_t *)(b->buf->data + (size_t)y * b->buf->header.stride);
+        uint16_t *r1 = two ? (uint16_t *)((uint8_t *)r0 + b->buf->header.stride) : r0;
+        const lens_px_t *l0 = &lens->px[y * b->w];
+        const lens_px_t *l1 = two ? l0 + b->w : l0;
+        int32_t sy = b->y + y;
+
+        for (int32_t x = 0; x < b->w; x += 2) {
+            bool right = x + 1 < b->w;
+            const lens_px_t *q[4] = {&l0[x], right ? &l0[x + 1] : &l0[x], &l1[x], right ? &l1[x + 1] : &l1[x]};
+            uint16_t *d[4] = {&r0[x], right ? &r0[x + 1] : &r0[x], &r1[x], right ? &r1[x + 1] : &r1[x]};
+            const lens_px_t *in = NULL;
+            uint16_t v;
+            int c[3];
+
+            for (int k = 0; k < 4 && in == NULL; k++) {
+                in = q[k]->dx != LENS_OUT ? q[k] : NULL;
+            }
+            if (in != NULL) {
+                live_colour(&il, in, b->x + x, sy, c);
+                v = pack(c[0], c[1], c[2], b->x + x, sy);
+            } else {
+                v = 0;
+            }
+            for (int k = 0; k < 4; k++) {
+                if (q[k]->dx != LENS_OUT) {
+                    *d[k] = v;
+                } else if (b->opaque) {
+                    /* Corners baked against the ground: what is behind. */
+                    *d[k] = live_at(b->x + x + (k & 1), sy + (k >> 1), false);
+                }
+            }
+        }
+    }
+    b->live = true;
+    b->live_frame = s_live.frame;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    s_live_us += esp_timer_get_time() - t0;
+    s_live_px += (uint32_t)(b->w * b->h);
+#endif
+}
+
+static void live_release(void)
+{
+    for (int i = 0; i < 4; i++) {
+        lv_free(s_arc_lenses[i].px);
+        lv_free(s_arc_lenses[i].cov);
+        s_arc_lenses[i].px = NULL;
+        s_arc_lenses[i].cov = NULL;
+        s_arc_lenses[i].img = NULL;
+    }
+    for (int i = 0; i < LIVE_LENSES; i++) {
+        lv_free(s_lenses[i].px);
+        s_lenses[i].px = NULL;
+    }
+    for (int i = 1; i < 3; i++) {
+        if (s_side_frost[i] != NULL) {
+            lv_draw_buf_destroy(s_side_frost[i]);
+            s_side_frost[i] = NULL;
+        }
+        s_side_stamp[i] = 0;
+    }
+    s_live.on = false;
+}
+
+void ui_glass_side_frost(int slot, const lv_draw_buf_t *face, uint32_t stamp)
+{
+    bool light;
+
+    if (slot < 1 || slot > 2 || face == NULL || face->data == NULL || s_side_stamp[slot] == stamp) {
+        return;
+    }
+    if (s_side_frost[slot] == NULL) {
+        s_side_frost[slot] = lv_draw_buf_create(FROST, FROST, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
+    }
+    s_side_stamp[slot] = 0;
+    if (s_side_frost[slot] != NULL && frost_make(face, s_side_frost[slot], false, &light)) {
+        s_side_stamp[slot] = stamp;
+    }
+}
+
+bool ui_glass_side_frost_ready(int slot, uint32_t stamp)
+{
+    return slot >= 1 && slot <= 2 && s_side_frost[slot] != NULL && s_side_stamp[slot] == stamp;
+}
+
+void ui_glass_live_frame(const lv_draw_buf_t *a, int32_t ax, const lv_draw_buf_t *b, int32_t bx, int b_slot,
+                         uint32_t b_stamp)
+{
+    if (!ui_skin_is_glass() || s_mode != UI_GLASS_FACE || !s_frost_ok) {
+        s_live.on = false;
+        return;
+    }
+    s_live.on = true;
+    s_live.frame++;
+    s_live.face[0] = a;
+    s_live.x[0] = ax;
+    s_live.frost[0] = s_frost;
+    s_live.face[1] = b;
+    s_live.x[1] = bx;
+    s_live.frost[1] = ui_glass_side_frost_ready(b_slot, b_stamp) ? s_side_frost[b_slot] : NULL;
+}
+
+
+void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int32_t cy, int32_t r_mid, int32_t width,
+                       float a0, float a1, ui_glass_kind_t kind, lv_color_t tint)
+{
+    float r0 = a0 * 3.14159265f / 180.0f;
+    float r1 = a1 * 3.14159265f / 180.0f;
+    int32_t w = lv_area_get_width(box);
+    int32_t h = lv_area_get_height(box);
+    look_t l = look_of(kind, tint, UI_GLASS_FACE);
+    ilook_t il = ilook_of(&l, UI_GLASS_FACE);
+    arc_lens_t *e = NULL;
+    int slot = -1;
+
+    if (!s_live.on || img == NULL || img->header.cf != LV_COLOR_FORMAT_ARGB8888) {
+        return;
+    }
+    for (int i = 0; i < 4 && e == NULL; i++) {
+        if (s_arc_lenses[i].img == img->data && s_arc_lenses[i].w == w && s_arc_lenses[i].h == h) {
+            e = &s_arc_lenses[i];
+            slot = i;
+        }
+    }
+    if (e == NULL) {
+        bezel_t bz;
+
+        slot = 0;
+        for (int i = 1; i < 4; i++) {
+            if (s_arc_lenses[i].img == NULL || s_arc_frame[i] < s_arc_frame[slot]) {
+                slot = i;
+            }
+        }
+        e = &s_arc_lenses[slot];
+        lv_free(e->px);
+        lv_free(e->cov);
+        e->px = lv_malloc((size_t)w * (size_t)h * sizeof(lens_px_t));
+        e->cov = lv_malloc((size_t)w * (size_t)h);
+        e->img = NULL;
+        if (e->px == NULL || e->cov == NULL) {
+            return;
+        }
+        bezel_build(&bz, (float)width * 0.42f, (float)width * 0.42f, 1.6f);
+        for (int32_t y = 0; y < h; y++) {
+            for (int32_t x = 0; x < w; x++) {
+                lens_px_t *p = &e->px[y * w + x];
+                float px = (float)(box->x1 + x) + 0.5f - (float)cx;
+                float py = (float)(box->y1 + y) + 0.5f - (float)cy;
+                float nx;
+                float ny;
+                float d = arc_sdf(px, py, (float)r_mid, (float)width / 2.0f, r0, r1, &nx, &ny);
+                float s = LV_MAX(0.0f, -d);
+                float disp;
+                float slope;
+                float lit = LV_MAX(0.0f, -0.6f * nx - 0.8f * ny);
+                float refl = LV_MAX(0.0f, 0.6f * nx + 0.8f * ny);
+                float spec;
+
+                e->cov[y * w + x] = (uint8_t)lroundf(clampf(0.5f - d, 0.0f, 1.0f) * 255.0f);
+                if (d > 0.5f) {
+                    p->dx = LENS_OUT;
+                    continue;
+                }
+                bezel_at(&bz, s, &disp, &slope);
+                p->dx = (int8_t)LV_CLAMP(-127, lroundf(-nx * disp), 127);
+                p->dy = (int8_t)LV_CLAMP(-127, lroundf(-ny * disp), 127);
+                spec = slope == 0.0f ? 0.0f : l.spec * slope * slope * (0.25f + 0.85f * lit * lit + 0.45f * refl * refl);
+                spec += l.spec * 0.35f * clampf(1.4f - s, 0.0f, 1.0f);
+                p->spec = (uint8_t)lroundf(clampf(spec, 0.0f, 1.0f) * 255.0f);
+                p->shade = (uint8_t)lroundf(255.0f * l.edge_dark * clampf(1.0f - s / 5.0f, 0.0f, 1.0f) *
+                                            (0.55f + 0.45f * LV_MAX(0.0f, ny)));
+            }
+        }
+        e->img = img->data;
+        e->w = w;
+        e->h = h;
+    }
+    if (s_arc_frame[slot] == s_live.frame || ((s_live.frame & 1) && s_arc_live[slot])) {
+        return;
+    }
+    s_arc_frame[slot] = s_live.frame;
+    s_arc_live[slot] = true;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    int64_t t0 = esp_timer_get_time();
+
+    s_live_px += (uint32_t)(w * h);
+#endif
+    for (int32_t y = 0; y < h; y += 2) {
+        bool two = y + 1 < h;
+        uint32_t *r0 = (uint32_t *)(img->data + (size_t)y * img->header.stride);
+        uint32_t *r1 = two ? (uint32_t *)((uint8_t *)r0 + img->header.stride) : r0;
+        const lens_px_t *l0 = &e->px[y * w];
+        const lens_px_t *l1 = two ? l0 + w : l0;
+        const uint8_t *c0 = &e->cov[y * w];
+        const uint8_t *c1 = two ? c0 + w : c0;
+
+        for (int32_t x = 0; x < w; x += 2) {
+            bool right = x + 1 < w;
+            int32_t x1 = right ? x + 1 : x;
+            const lens_px_t *q[4] = {&l0[x], &l0[x1], &l1[x], &l1[x1]};
+            uint32_t *d[4] = {&r0[x], &r0[x1], &r1[x], &r1[x1]};
+            uint8_t cv[4] = {c0[x], c0[x1], c1[x], c1[x1]};
+            const lens_px_t *in = NULL;
+            uint32_t rgb;
+            int c[3];
+
+            for (int k = 0; k < 4 && in == NULL; k++) {
+                in = q[k]->dx != LENS_OUT ? q[k] : NULL;
+            }
+            if (in == NULL) {
+                continue;
+            }
+            live_colour(&il, in, box->x1 + x, box->y1 + y, c);
+            rgb = (uint32_t)LV_CLAMP(0, c[0], 255) << 16 | (uint32_t)LV_CLAMP(0, c[1], 255) << 8 |
+                  (uint32_t)LV_CLAMP(0, c[2], 255);
+            for (int k = 0; k < 4; k++) {
+                if (q[k]->dx != LENS_OUT) {
+                    *d[k] = (uint32_t)cv[k] << 24 | rgb;
+                }
+            }
+        }
+    }
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    s_live_us += esp_timer_get_time() - t0;
+#endif
+}
+
+bool ui_glass_live_active(void)
+{
+    return s_live.on;
+}
+
+void ui_glass_live_end(void)
+{
+    for (int i = 0; i < 4; i++) {
+        s_arc_live[i] = false;
+    }
+    if (s_live.on) {
+        s_live_epoch++;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+        uint32_t frames = LV_MAX(1u, s_live.frame - s_live_frame0);
+
+        printf("PERF glass_live frames=%u us_per_frame=%d px_per_frame=%u\n", (unsigned)frames,
+               (int)(s_live_us / (int64_t)frames), (unsigned)(s_live_px / frames));
+        s_live_us = 0;
+        s_live_px = 0;
+        s_live_frame0 = s_live.frame;
+#endif
+    }
+    s_live.on = false;
+    for (int i = 0; i < BAKE_MAX; i++) {
+        if (s_bakes[i].live) {
+            s_bakes[i].live = false;
+            s_bakes[i].gen = s_generation - 1; /* baked again, properly, when next drawn */
+        }
+    }
+}
+
 void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind,
                    lv_color_t tint)
 {
@@ -1503,6 +1973,11 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     plan(key, area, radius, kind, &rest, &opaque, &mode, &deep);
     if (can_bake(mode)) {
         b = bake_get(key, &rest, radius, kind, tint, opaque, mode, deep);
+    }
+    /* Keys and pills on odd frames, the rim tabs on even ones: half the work in each. */
+    if (b != NULL && s_live.on && b->mode == UI_GLASS_FACE && kind != UI_GLASS_SHEET && !b->deep &&
+        b->live_frame != s_live.frame && ((s_live.frame & 1) || !b->live)) {
+        live_render(b, kind, tint);
     }
     if (b != NULL && kind == UI_GLASS_SHEET) {
         sheet_draw(layer, b, area, radius);
@@ -1776,7 +2251,8 @@ static void enter_apply(int32_t t)
     if (s_enter_ground) {
         s_ground_fade = clampf((float)t / (float)ENTER_GROUND_MS, 0.0f, 1.0f);
         s_ground_fade = s_ground_fade * s_ground_fade * (3.0f - 2.0f * s_ground_fade);
-        lv_obj_invalidate(s_enter_root);
+        /* Every page draws the ground, not only this one: another may already be over it. */
+        lv_obj_invalidate(lv_obj_get_screen(s_enter_root));
     }
 }
 
@@ -1791,6 +2267,9 @@ static void enter_done_cb(lv_anim_t *a)
     LV_UNUSED(a);
     for (int i = 0; i < s_enter_count; i++) {
         lv_obj_set_style_translate_y(s_enter_targets[i], 0, 0);
+    }
+    if (s_ground_fade < 1.0f && s_enter_root != NULL) {
+        lv_obj_invalidate(lv_obj_get_screen(s_enter_root));
     }
     s_ground_fade = 1.0f;
     s_enter_count = 0;

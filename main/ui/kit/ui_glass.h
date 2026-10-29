@@ -74,6 +74,20 @@ void ui_glass_frost_blit(lv_draw_buf_t *dst, int32_t dst_x, int32_t dst_y);
  * ground fades from the face to the dimmed face. targets: the objects that rise, in order. */
 void ui_glass_page_enter(lv_obj_t *root, lv_obj_t *const *targets, int count, bool from_face);
 
+/* A face slide under the face controls: their glass follows what slides under it. The
+ * neighbours' frost (slide slots 1 and 2) is built ahead, at idle, for a stamp that says
+ * which face it shows; each frame names the two faces and where they are. */
+void ui_glass_side_frost(int slot, const lv_draw_buf_t *face, uint32_t stamp);
+bool ui_glass_side_frost_ready(int slot, uint32_t stamp);
+void ui_glass_live_frame(const lv_draw_buf_t *a, int32_t ax, const lv_draw_buf_t *b, int32_t bx, int b_slot,
+                         uint32_t b_stamp);
+void ui_glass_live_end(void);
+bool ui_glass_live_active(void);
+/* During such a slide: an arc image from ui_glass_arc_image (at box, with the same shape)
+ * drawn again over what is under it now. */
+void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int32_t cy, int32_t r_mid, int32_t width,
+                       float a0, float a1, ui_glass_kind_t kind, lv_color_t tint);
+
 /* Bakes, while the face is idle, the glass of everything under root that has none current yet
  * (hidden pages included), so opening them does not wait; returns true once all is baked. */
 bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms);

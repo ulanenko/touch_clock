@@ -2,7 +2,7 @@
  * Boot: the wordmark on black with a thin line filling under it while the faces are built
  * (each step is drawn as it finishes: the build holds the UI thread). Once all is ready the
  * wordmark fades, the backlight goes dark, the face is drawn, and the backlight brings it up
- * out of the dark as the start chime swells (the app fades the backlight on a timer of its
+ * out of the dark as the start chime plays (the app fades the backlight on a timer of its
  * own, so the reveal costs no frames at all).
  */
 #include "ui/clock_ui_private.h"

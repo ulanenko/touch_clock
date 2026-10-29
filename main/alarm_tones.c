@@ -137,8 +137,8 @@ static const tone_def_t s_tones[ALARM_SOUND_COUNT] = {
 
 /* --- Start chime ------------------------------------------------------------------------ */
 
-/* Dawn (the default): a soft chord swelling in as the face brightens out of the dark, warm,
- * D major with a ninth on top, no strike to it. The fundamentals have no twin: all the notes
+/* Dawn: a soft chord swelling in as the face brightens out of the dark, warm, D major with a
+ * ninth on top, no strike to it. The fundamentals have no twin: all the notes
  * would beat together and the chord would swell a second time as it fades. */
 static const tone_instrument_t s_dawn_pad = {
     .partials =
@@ -156,7 +156,7 @@ static const tone_strike_t s_dawn_strikes[] = {
     {0.00f, N_D4, 0.46f}, {0.06f, N_A4, 0.36f}, {0.12f, N_FS5, 0.30f}, {0.20f, N_E5, 0.24f}, {0.42f, N_A5, 0.14f},
 };
 
-/* Two notes: a soft wooden mallet, a rising fifth. */
+/* Mallet (the one used): two notes on a soft wooden mallet, a rising fifth. */
 static const tone_instrument_t s_mallet = {
     .partials =
         {
@@ -194,11 +194,11 @@ static const tone_strike_t s_warm_bell_strikes[] = {
 };
 
 static const tone_def_t s_start_variants[] = {
-    {&s_dawn_pad, s_dawn_strikes, sizeof(s_dawn_strikes) / sizeof(s_dawn_strikes[0]), 2.8f},
     {&s_mallet, s_mallet_strikes, sizeof(s_mallet_strikes) / sizeof(s_mallet_strikes[0]), 1.6f},
+    {&s_dawn_pad, s_dawn_strikes, sizeof(s_dawn_strikes) / sizeof(s_dawn_strikes[0]), 2.8f},
     {&s_warm_bell, s_warm_bell_strikes, sizeof(s_warm_bell_strikes) / sizeof(s_warm_bell_strikes[0]), 2.6f},
 };
-static unsigned s_start_variant; /* 0: Dawn; others for listening (scripts/alarm_tones) */
+static unsigned s_start_variant; /* 0: Mallet; others for listening (scripts/alarm_tones) */
 #define s_start (s_start_variants[s_start_variant])
 
 void alarm_tone_select_start(unsigned variant)

@@ -83,9 +83,9 @@ int main(int argc, char **argv)
         }
         free(pcm);
     }
-    /* The start chimes play once: the one used (Dawn) and the others to compare. */
+    /* The start chimes play once: the one used (Mallet) and the others to compare. */
     for (unsigned v = 0; v < 3; v++) {
-        static const char *const start_names[3] = {"start_dawn", "start_mallet", "start_warm_bell"};
+        static const char *const start_names[3] = {"start_mallet", "start_dawn", "start_warm_bell"};
 
         alarm_tone_select_start(v);
         n = alarm_tone_start_samples();

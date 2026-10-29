@@ -131,6 +131,12 @@ static bool face_slide_snapshot(clock_ui_context_t *ctx, clock_face_id_t face, i
     return true;
 }
 
+/* Which face a slot's snapshot shows, to the minute (the frost of it is no finer). */
+static uint32_t face_slide_stamp(const ui_face_slide_shot_t *shot)
+{
+    return 1u + ((uint32_t)shot->face | (uint32_t)shot->theme << 8 | ((uint32_t)shot->minute & 0xFFFFu) << 16);
+}
+
 /* The slot of the neighbour on a side: 1 the next face, 2 the previous one. */
 static int face_slide_side_slot(int8_t dir)
 {
@@ -153,6 +159,14 @@ static void face_slide_draw_cb(lv_event_t *event)
     lv_area_t gap;
 
     lv_event_stop_processing(event);
+    if (ui_skin_is_glass() && ctx->faces.face_slide_controls_were_visible) {
+        int side = face_slide_side_slot(ctx->faces.face_slide_dir);
+
+        /* The controls stay over the slide: their glass shows what slides under them. */
+        ui_glass_live_frame(ctx->faces.face_slide_bufs[0], xs[0],
+                            ctx->faces.face_slide_dir != 0 ? ctx->faces.face_slide_bufs[side] : NULL, xs[1], side,
+                            face_slide_stamp(&ctx->faces.face_slide_shots[side]));
+    }
     lv_draw_rect_dsc_init(&black);
     black.bg_color = lv_color_black();
     black.bg_opa = LV_OPA_COVER;
@@ -227,8 +241,12 @@ static bool face_slide_begin(clock_ui_context_t *ctx)
     ctx->faces.face_slide_velocity = 0.0f;
     ctx->faces.face_slide_active = true;
     ctx->faces.face_slide_controls_were_visible = face_controls_visible(ctx);
-    face_controls_hide(ctx);
     lv_obj_move_foreground(ctx->faces.face_slide_shell);
+    if (ctx->faces.face_slide_controls_were_visible) {
+        /* The controls stay where they are while the faces slide under them. */
+        lv_obj_move_foreground(ctx->chrome_root);
+        face_controls_hold(ctx);
+    }
     lv_obj_remove_flag(ctx->faces.face_slide_shell, LV_OBJ_FLAG_HIDDEN);
     lv_obj_invalidate(ctx->faces.face_slide_shell);
     return true;
@@ -325,6 +343,16 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         update_face(ctx, current);
         return;
     }
+    /* Liquid Glass: the neighbours' frost too, for the controls' glass over a slide. */
+    for (int8_t dir = 1; ui_skin_is_glass() && dir >= -1; dir -= 2) {
+        int slot = face_slide_side_slot(dir);
+        uint32_t stamp = face_slide_stamp(&ctx->faces.face_slide_shots[slot]);
+
+        if (ctx->faces.face_slide_shots[slot].face != CLOCK_FACE_COUNT && !ui_glass_side_frost_ready(slot, stamp)) {
+            ui_glass_side_frost(slot, ctx->faces.face_slide_bufs[slot], stamp);
+            return;
+        }
+    }
     /* Liquid Glass: keep the face's glass ready, so the controls come up at once, and bake
      * what the chrome will show a little at a time (one tick does at most a few shapes). */
     if (!face_controls_visible(ctx)) {
@@ -341,6 +369,7 @@ static void face_slide_finish(lv_anim_t *anim)
     bool changed = LV_ABS(ctx->faces.face_slide_offset) >= FACE_SLIDE_SPAN && ctx->faces.face_slide_dir != 0;
     clock_face_id_t face = changed ? ctx->faces.face_slide_to : ctx->faces.face_slide_from;
 
+    ui_glass_live_end();
     /* Snapshotting the neighbour may have drawn into buffers this face shares with it
      * (the hand-drawn faces): bring the face up to date before the layer goes. */
     update_face(ctx, face);
@@ -371,8 +400,8 @@ static void face_slide_finish(lv_anim_t *anim)
             request_set_current_face(ctx, face);
         }
     }
-    /* The controls come back only if they were up, as they were: a swipe through the faces
-     * is not met by the chrome flying in again each time. */
+    /* The controls stayed up through the slide: now they show the new face (its glass, its
+     * page dot) and their hide timer runs again. */
     if (ctx->faces.face_slide_controls_were_visible) {
         face_controls_show_still(ctx);
     }

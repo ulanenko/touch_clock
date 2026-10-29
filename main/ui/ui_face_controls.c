@@ -379,6 +379,13 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
             fc->rim_band[i] = kit_arc_band_image(KIT_CENTER, KIT_CENTER, r_mid, width, mid - half_span, mid + half_span,
                                                  fill, fill_opa, edge, LV_OPA_COVER, &fc->rim_band_area[i]);
         }
+        if (fc->rim_band[i] != NULL && ui_skin_is_glass() && ui_glass_live_active()) {
+            float mid = i == 0 ? 270.0f : 90.0f;
+
+            /* Over a face slide: the band shows what slides under it. */
+            ui_glass_arc_live(fc->rim_band[i], &fc->rim_band_area[i], KIT_CENTER, KIT_CENTER, r_mid, width,
+                              mid - half_span, mid + half_span, UI_GLASS_RAISED, lv_color_black());
+        }
         if (fc->rim_band[i] != NULL) {
             lv_area_t area = fc->rim_band_area[i];
             float rx = reveal_x(fc, i == 0 ? 0.0f : 180.0f);
@@ -1072,11 +1079,12 @@ static void controls_show(clock_ui_context_t *ctx, bool reveal)
     if (!controls_allowed(ctx)) {
         return;
     }
-    if (!fc->visible) {
+    if (!fc->visible || !reveal) {
+        /* Still: back after a face slide, maybe on another face: its glass and ink. */
         face_glass_capture(ctx, 0 /* UI_GLASS_FACE */);
         glass_ink(ctx);
     }
-    face_controls_sync(ctx, face_now(), !fc->visible);
+    face_controls_sync(ctx, face_now(), !fc->visible || !reveal);
     if (!fc->visible) {
         fc->visible = true;
         ctx->affordances_visible = true;
@@ -1100,6 +1108,13 @@ static void controls_show(clock_ui_context_t *ctx, bool reveal)
 }
 
 /* Hides the controls at once: something else is about to take the screen. */
+void face_controls_hold(clock_ui_context_t *ctx)
+{
+    if (ctx->face_chrome.hide_timer != NULL) {
+        lv_timer_pause(ctx->face_chrome.hide_timer);
+    }
+}
+
 void face_controls_hide(clock_ui_context_t *ctx)
 {
     clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
