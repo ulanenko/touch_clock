@@ -613,10 +613,18 @@ typedef struct {
     float edge_dark; /* light glass on a light face: a darker edge to stand off it */
 } look_t;
 
+static look_t look_for(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mode, bool light_face);
+
 static look_t look_of(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mode)
 {
+    return look_for(kind, tint, mode, s_light);
+}
+
+/* The look of glass of kind over a light (white dial) or dark face. */
+static look_t look_for(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mode, bool light_face)
+{
     bool face = mode == UI_GLASS_FACE;
-    bool light = face && s_light;
+    bool light = face && light_face;
     look_t l = {face ? 0.55f : 0.85f, 0.0f, {0, 0, 0}, 0.62f, 1.18f, light ? 0.30f : 0.0f};
 
     switch (kind) {
@@ -640,8 +648,8 @@ static look_t look_of(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mod
         break;
     case UI_GLASS_SHEET:
         l.frost = 0.62f; /* clear enough to see the face behind, which stays put as it moves */
-        l.tint_a = s_light && face ? 0.12f : 0.20f;
-        if (s_light && face) {
+        l.tint_a = light ? 0.12f : 0.20f;
+        if (light) {
             l.tint[0] = l.tint[1] = l.tint[2] = 255.0f;
         }
         break;
@@ -655,6 +663,25 @@ static look_t look_of(ui_glass_kind_t kind, lv_color_t tint, ui_glass_mode_t mod
             l.tint_a = face ? 0.12f : 0.06f;
         }
         break;
+    }
+    if (light && kind != UI_GLASS_TINT) {
+        /* On a white face light glass all but vanishes: smoked glass instead, frosted enough
+         * that the dial's ticks do not speckle it, with a darker edge to stand off the face. */
+        l.frost = LV_MAX(l.frost, 0.86f);
+        l.tint[0] = 112.0f;
+        l.tint[1] = 116.0f;
+        l.tint[2] = 126.0f;
+        l.tint_a = kind == UI_GLASS_WELL ? 0.52f : 0.44f;
+        l.edge_dark = 0.40f;
+        if (kind == UI_GLASS_SHEET) {
+            /* Sheets keep their white type: darker smoke under it. */
+            l.frost = 0.92f;
+            l.tint[0] = 44.0f;
+            l.tint[1] = 46.0f;
+            l.tint[2] = 54.0f;
+            l.tint_a = 0.62f;
+            l.edge_dark = 0.0f;
+        }
     }
     return l;
 }
@@ -1532,14 +1559,13 @@ static bool can_bake(ui_glass_mode_t mode)
 typedef struct {
     int8_t dx, dy; /* where the bent ray meets the face, from the pixel */
     uint8_t spec;  /* the highlight, 0..255 */
-    uint8_t shade; /* the light glass's edge shade, 0 none */
+    uint8_t shade; /* a light face's edge shade (none over a dark face) */
 } lens_px_t;
 
 typedef struct {
     const void *key;
     int16_t w, h, r;
     uint8_t kind;
-    bool light;
     lens_px_t *px;
 } lens_t;
 
@@ -1552,7 +1578,6 @@ static float arc_sdf(float px, float py, float rm, float hw, float a0, float a1,
 typedef struct {
     const void *img;
     int32_t w, h;
-    bool light; /* made for a light face (its edge shade) */
     lens_px_t *px;
     uint8_t *cov;
 } arc_lens_t;
@@ -1574,6 +1599,7 @@ static struct {
     uint32_t frame;
     const lv_draw_buf_t *face[2];
     const lv_draw_buf_t *frost[2]; /* NULL: the face itself, unfrosted */
+    bool light[2];                 /* each face light (a white dial): its glass is smoked */
     int32_t x[2];
 } s_live;
 
@@ -1594,7 +1620,7 @@ static const lens_t *lens_get(const bake_t *b, ui_glass_kind_t kind, lv_color_t 
         lens_t *c = &s_lenses[i];
 
         if (c->px != NULL && c->key == b->key && c->w == b->w && c->h == b->h && c->r == b->r &&
-            c->kind == (uint8_t)kind && c->light == s_light) {
+            c->kind == (uint8_t)kind) {
             return c;
         }
     }
@@ -1610,8 +1636,7 @@ static const lens_t *lens_get(const bake_t *b, ui_glass_kind_t kind, lv_color_t 
     e->h = b->h;
     e->r = b->r;
     e->kind = (uint8_t)kind;
-    e->light = s_light;
-    l = look_of(kind, tint, UI_GLASS_FACE);
+    l = look_for(kind, tint, UI_GLASS_FACE, true); /* the shade is a light face's, used over one */
     bezel_for(&bz, b->w, b->h);
     hx = (float)b->w / 2.0f;
     hy = (float)b->h / 2.0f;
@@ -1649,6 +1674,17 @@ static const lens_t *lens_get(const bake_t *b, ui_glass_kind_t kind, lv_color_t 
 }
 
 /* What is on the screen at (x, y) during the slide, sharp or frosted. */
+/* Which face is under screen column x during the slide: 0, 1, or -1 for the black between. */
+static inline int live_face(int32_t x)
+{
+    for (int i = 0; i < 2; i++) {
+        if (s_live.face[i] != NULL && x >= s_live.x[i] && x < s_live.x[i] + SCREEN) {
+            return i;
+        }
+    }
+    return -1;
+}
+
 static inline uint16_t live_at(int32_t x, int32_t y, bool frosted)
 {
     y = LV_CLAMP(0, y, SCREEN - 1);
@@ -1668,8 +1704,10 @@ static inline uint16_t live_at(int32_t x, int32_t y, bool frosted)
 }
 
 /* One lens pixel's colour over what is under it now (8 bit per channel). */
-static inline void live_colour(const ilook_t *il, const lens_px_t *lp, int32_t sx, int32_t sy, int *c)
+static inline void live_colour(const ilook_t *il, const lens_px_t *lp, int32_t sx, int32_t sy, bool light, int *c)
 {
+    int shade = light ? lp->shade : 0;
+
     uint16_t v = live_at(sx + lp->dx, sy + lp->dy, false);
     uint16_t f = live_at(sx + lp->dx, sy + lp->dy, true);
 
@@ -1679,7 +1717,7 @@ static inline void live_colour(const ilook_t *il, const lens_px_t *lp, int32_t s
         int hl = 191 + LV_MIN(64, (u * 2) / 5);
 
         u += ((hl - u) * lp->spec) >> 8;
-        c[k] = u - ((u * lp->shade) >> 8);
+        c[k] = u - ((u * shade) >> 8);
     }
 }
 
@@ -1690,7 +1728,7 @@ static void live_render(bake_t *b, ui_glass_kind_t kind, lv_color_t tint)
 {
     const lens_t *lens = lens_get(b, kind, tint);
     look_t l;
-    ilook_t il;
+    ilook_t il_by[2]; /* over a dark face, over a light one */
 
     if (lens == NULL) {
         return;
@@ -1698,8 +1736,10 @@ static void live_render(bake_t *b, ui_glass_kind_t kind, lv_color_t tint)
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
     int64_t t0 = esp_timer_get_time();
 #endif
-    l = look_of(kind, tint, UI_GLASS_FACE);
-    il = ilook_of(&l, UI_GLASS_FACE);
+    l = look_for(kind, tint, UI_GLASS_FACE, false);
+    il_by[0] = ilook_of(&l, UI_GLASS_FACE);
+    l = look_for(kind, tint, UI_GLASS_FACE, true);
+    il_by[1] = ilook_of(&l, UI_GLASS_FACE);
     for (int32_t y = 0; y < b->h; y += 2) {
         bool two = y + 1 < b->h;
         uint16_t *r0 = (uint16_t *)(b->buf->data + (size_t)y * b->buf->header.stride);
@@ -1720,7 +1760,11 @@ static void live_render(bake_t *b, ui_glass_kind_t kind, lv_color_t tint)
                 in = q[k]->dx != LENS_OUT ? q[k] : NULL;
             }
             if (in != NULL) {
-                live_colour(&il, in, b->x + x, sy, c);
+                int f = live_face(b->x + x);
+
+                bool lt = f >= 0 && s_live.light[f];
+
+                live_colour(&il_by[lt], in, b->x + x, sy, lt, c);
                 v = pack(c[0], c[1], c[2], b->x + x, sy);
             } else {
                 v = 0;
@@ -1803,6 +1847,8 @@ void ui_glass_live_frame(const lv_draw_buf_t *a, int32_t ax, const lv_draw_buf_t
     s_live.face[1] = b;
     s_live.x[1] = bx;
     s_live.frost[1] = ui_glass_side_frost_ready(b_slot, b_stamp) ? s_side_frost[b_slot] : NULL;
+    s_live.light[0] = s_light;
+    s_live.light[1] = s_live.frost[1] != NULL ? s_side_light[b_slot] : s_light;
 }
 
 
@@ -1813,8 +1859,10 @@ void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int
     float r1 = a1 * 3.14159265f / 180.0f;
     int32_t w = lv_area_get_width(box);
     int32_t h = lv_area_get_height(box);
-    look_t l = look_of(kind, tint, UI_GLASS_FACE);
-    ilook_t il = ilook_of(&l, UI_GLASS_FACE);
+    look_t l = look_for(kind, tint, UI_GLASS_FACE, true); /* the lens's shade: a light face's */
+    look_t ld = look_for(kind, tint, UI_GLASS_FACE, false);
+    look_t ll = look_for(kind, tint, UI_GLASS_FACE, true);
+    ilook_t il_by[2] = {ilook_of(&ld, UI_GLASS_FACE), ilook_of(&ll, UI_GLASS_FACE)};
     arc_lens_t *e = NULL;
     int slot = -1;
 
@@ -1822,8 +1870,7 @@ void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int
         return;
     }
     for (int i = 0; i < 4 && e == NULL; i++) {
-        if (s_arc_lenses[i].img == img->data && s_arc_lenses[i].w == w && s_arc_lenses[i].h == h &&
-            s_arc_lenses[i].light == s_light) {
+        if (s_arc_lenses[i].img == img->data && s_arc_lenses[i].w == w && s_arc_lenses[i].h == h) {
             e = &s_arc_lenses[i];
             slot = i;
         }
@@ -1880,7 +1927,6 @@ void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int
         e->img = img->data;
         e->w = w;
         e->h = h;
-        e->light = s_light;
     }
     if (s_arc_frame[slot] == s_live.frame || ((s_live.frame & 1) && s_arc_live[slot] && !s_live.all)) {
         return;
@@ -1917,7 +1963,13 @@ void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int
             if (in == NULL) {
                 continue;
             }
-            live_colour(&il, in, box->x1 + x, box->y1 + y, c);
+            {
+                int f = live_face(box->x1 + x);
+
+                bool lt = f >= 0 && s_live.light[f];
+
+                live_colour(&il_by[lt], in, box->x1 + x, box->y1 + y, lt, c);
+            }
             rgb = (uint32_t)LV_CLAMP(0, c[0], 255) << 16 | (uint32_t)LV_CLAMP(0, c[1], 255) << 8 |
                   (uint32_t)LV_CLAMP(0, c[2], 255);
             for (int k = 0; k < 4; k++) {
@@ -1972,6 +2024,7 @@ bool ui_glass_live_finish(const lv_draw_buf_t *face, int slot, uint32_t slot_sta
     s_live.frost[0] = s_frost;
     s_live.face[1] = NULL;
     s_live.frost[1] = NULL;
+    s_live.light[0] = s_light;
     s_live.frame++;
     s_live.all = true;
     s_live.finishing = true;
