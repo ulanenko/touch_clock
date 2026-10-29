@@ -112,6 +112,7 @@ void st_schedule_sync(clock_ui_context_t *ctx, bool force);
 void st_schedule_open(clock_ui_context_t *ctx, uint8_t which);
 void st_face_build(clock_ui_context_t *ctx);
 void st_face_sync(clock_ui_context_t *ctx, bool force);
+uint32_t st_face_key(const clock_ui_context_t *ctx, clock_face_id_t face);
 void st_night_bright_build(clock_ui_context_t *ctx);
 void st_night_bright_sync(clock_ui_context_t *ctx);
 void st_sunrise_build(clock_ui_context_t *ctx);

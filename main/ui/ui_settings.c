@@ -12,6 +12,9 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+#include "esp_timer.h"
+#endif
 
 #include "app_version.h"
 #include "domain/timezone_rules.h"
@@ -573,6 +576,9 @@ void st_render_face_thumb(clock_ui_context_t *ctx, lv_obj_t *image, lv_draw_buf_
 {
     clock_ui_settings_state_t *st = ST(ctx);
     const void *src;
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    int64_t perf_t0 = esp_timer_get_time();
+#endif
 
     if (image == NULL || buf == NULL) {
         return;
@@ -616,6 +622,9 @@ void st_render_face_thumb(clock_ui_context_t *ctx, lv_obj_t *image, lv_draw_buf_
     } else {
         lv_obj_invalidate(image);
     }
+#if CONFIG_TOUCH_CLOCK_PERF_TOUR
+    printf("PERF face_thumb face=%d us=%lld\n", (int)face, esp_timer_get_time() - perf_t0);
+#endif
 }
 
 /* --- Home ------------------------------------------------------------------------------ */

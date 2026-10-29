@@ -906,6 +906,18 @@ static uint8_t *filament_ghosts(clock_ui_context_t *ctx)
 
 static void filament_tube(const ev_target_t *t, const filament_palette_t *p, const uint8_t *ghosts, int32_t tx)
 {
+    /* The mesh's dots by place in its 8 x 7 lattice (pixel centres fall on the same 56 spots). */
+    float mesh[7][8];
+
+    for (int32_t my = 0; my < 7; my++) {
+        for (int32_t mx = 0; mx < 8; mx++) {
+            float fx = (float)mx + 0.5f;
+            float fy = (float)my + 0.5f;
+            float dot = LV_MIN(hypotf(fx - 2.0f, fy - 1.75f), hypotf(fx - 6.0f, fy - 5.25f));
+
+            mesh[my][mx] = ev_clampf(1.4f - dot, 0.0f, 1.0f);
+        }
+    }
     for (int32_t ly = 0; ly < TUBE_H + 12; ly++) {
         for (int32_t lx = 0; lx < TUBE_W; lx++) {
             int32_t x = tx + lx;
@@ -917,12 +929,8 @@ static void filament_tube(const ev_target_t *t, const filament_palette_t *p, con
 
             if (inside > 0.0f) {
                 /* Glass, its mesh (dots on an 8 x 7 lattice), the ghost digits. */
-                float mx = fmodf(px, 8.0f);
-                float my = fmodf(py, 7.0f);
-                float dot = LV_MIN(hypotf(mx - 2.0f, my - 1.75f), hypotf(mx - 6.0f, my - 5.25f));
-
                 ev_px(t, x, y, p->glass, inside);
-                ev_px(t, x, y, p->mesh, inside * ev_clampf(1.4f - dot, 0.0f, 1.0f));
+                ev_px(t, x, y, p->mesh, inside * mesh[ly % 7][lx % 8]);
                 if (ghosts != NULL && ly < TUBE_H) {
                     ev_px(t, x, y, p->ghost, inside * 0.7f * (float)ghosts[ly * TUBE_W + lx] / 255.0f);
                 }
@@ -952,8 +960,14 @@ static void filament_base(clock_ui_context_t *ctx, const filament_palette_t *p, 
     char upper[48];
 
     ev_fill(&t, p->ground);
-    for (int i = 0; i < 4; i++) {
-        filament_tube(&t, p, ghosts, s_tube_x[i]);
+    /* The four tubes are the same over the same ground: the first, copied row by row. */
+    filament_tube(&t, p, ghosts, s_tube_x[0]);
+    for (int32_t y = TUBE_Y; y < TUBE_Y + TUBE_H + 12; y++) {
+        uint16_t *row = (uint16_t *)(ev->base->data + (size_t)y * ev->base->header.stride);
+
+        for (int i = 1; i < 4; i++) {
+            memcpy(row + s_tube_x[i], row + s_tube_x[0], TUBE_W * sizeof(uint16_t));
+        }
     }
     for (int i = 0; i < 2; i++) {
         ev_disc(&t, COLON_X, s_colon_y[i], 11.0f, p->glass, 1.0f);

@@ -979,7 +979,6 @@ void st_night_sync(clock_ui_context_t *ctx, bool force)
     clock_ui_settings_state_t *st = ST(ctx);
     const night_mode_config_t *nm = &ctx->settings->night_mode;
     clock_face_id_t face = sanitize_enabled_face(nm->face);
-    int32_t minute = (int32_t)(time(NULL) / 60);
     int ui_bright = brightness_hw_to_ui(nm->brightness);
     char text[64];
 
@@ -1028,12 +1027,13 @@ void st_night_sync(clock_ui_context_t *ctx, bool force)
     } else if (st_atelier()) {
         kit_label_set_text_if_changed(st->night_face_sub, ui_l10n_str(ctx, &s_tap_to_choose));
     }
-    if (force || !st->night_valid || st->night_face_shown != face || st->night_face_minute != minute) {
+    if (st->night_face_buf == NULL || !st->night_valid || st->night_face_shown != face ||
+        st->night_face_key != st_face_key(ctx, face)) {
         int32_t size = st_instrument() ? FACE_THUMB_INSTRUMENT : st_orbit() ? FACE_THUMB_ORBIT : FACE_THUMB_ATELIER;
 
         st_render_face_thumb(ctx, st->night_face_img, &st->night_face_buf, size, face);
         st->night_face_shown = face;
-        st->night_face_minute = minute;
+        st->night_face_key = st_face_key(ctx, face);
     }
 
     if (st->night_bright_slider != NULL && !lv_slider_is_dragged(st->night_bright_slider)) {
@@ -1253,7 +1253,37 @@ void st_face_build(clock_ui_context_t *ctx)
         lv_obj_set_style_text_align(st->face_name[face], LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(st->face_name[face], LV_LABEL_LONG_MODE_DOTS);
     }
-    st->face_minute = -1;
+    memset(st->face_key, 0, sizeof(st->face_key));
+}
+
+/* What a face's thumbnail shows: the minute, the face's theme, the language of its date. */
+uint32_t st_face_key(const clock_ui_context_t *ctx, clock_face_id_t face)
+{
+    uint32_t minute = (uint32_t)(time(NULL) / 60);
+
+    return (minute & 0x1FFFFFFu) | (uint32_t)(ctx->settings->face_themes[face] & 7u) << 25 |
+           (uint32_t)(ctx->settings->language & 7u) << 28 | 1u << 31;
+}
+
+/* The thumbnails not yet drawn, or gone stale (a new minute, a theme), are drawn one a tick
+ * while the picker shows: opening it, or the minute turning, no longer waits for all eight at
+ * once. */
+static void face_timer_cb(lv_timer_t *timer)
+{
+    clock_ui_context_t *ctx = lv_timer_get_user_data(timer);
+    clock_ui_settings_state_t *st = ST(ctx);
+
+    if (st->built[UI_ST_FACE] && st->open && !lv_obj_has_flag(st->pages[UI_ST_FACE].root, LV_OBJ_FLAG_HIDDEN)) {
+        for (int face = 0; face < CLOCK_FACE_COUNT; face++) {
+            if (st->face_img[face] != NULL && st->face_key[face] != st->face_want[face]) {
+                st_render_face_thumb(ctx, st->face_img[face], &st->face_buf[face], picker_thumb(),
+                                     (clock_face_id_t)face);
+                st->face_key[face] = st->face_want[face];
+                return;
+            }
+        }
+    }
+    lv_timer_pause(timer);
 }
 
 void st_face_sync(clock_ui_context_t *ctx, bool force)
@@ -1261,10 +1291,10 @@ void st_face_sync(clock_ui_context_t *ctx, bool force)
     const ui_skin_t *sk = ui_skin();
     clock_ui_settings_state_t *st = ST(ctx);
     clock_face_id_t selected = sanitize_enabled_face(ctx->settings->night_mode.face);
-    int32_t minute = (int32_t)(time(NULL) / 60);
     lv_color_t accent = st_orbit() ? sk->tint_night : sk->accent;
-    bool render = force || minute != st->face_minute;
+    bool stale = false;
 
+    LV_UNUSED(force);
     if (!st->built[UI_ST_FACE]) {
         return;
     }
@@ -1278,11 +1308,23 @@ void st_face_sync(clock_ui_context_t *ctx, bool force)
         lv_obj_set_style_border_color(st->face_ring[face], on ? accent : sk->line, 0);
         st_show(st->face_check[face], on);
         lv_obj_set_style_text_color(st->face_name[face], on ? sk->text : sk->text_2, 0);
-        if (render) {
+        st->face_want[face] = st_face_key(ctx, (clock_face_id_t)face);
+        if (on && st->face_key[face] != st->face_want[face]) {
+            /* The chosen face's at once; the others follow a tick apart (eight together held
+             * the first open for over half a second on the clock). */
             st_render_face_thumb(ctx, st->face_img[face], &st->face_buf[face], picker_thumb(), (clock_face_id_t)face);
+            st->face_key[face] = st->face_want[face];
+        }
+        stale = stale || st->face_key[face] != st->face_want[face];
+    }
+    if (stale) {
+        if (st->face_timer == NULL) {
+            st->face_timer = lv_timer_create(face_timer_cb, 30, ctx);
+        }
+        if (st->face_timer != NULL) {
+            lv_timer_resume(st->face_timer);
         }
     }
-    st->face_minute = minute;
 }
 
 /* --- Orbit brightness page ------------------------------------------------------------- */
@@ -1336,6 +1378,10 @@ void st_night_destroy(clock_ui_context_t *ctx)
 {
     clock_ui_settings_state_t *st = ST(ctx);
 
+    if (st->face_timer != NULL) {
+        lv_timer_delete(st->face_timer);
+        st->face_timer = NULL;
+    }
     if (st->night_face_buf != NULL) {
         lv_draw_buf_destroy(st->night_face_buf);
         st->night_face_buf = NULL;

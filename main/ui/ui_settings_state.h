@@ -153,7 +153,7 @@ typedef struct {
     uint32_t night_sched_shown;
     int16_t night_bright_shown;
     clock_face_id_t night_face_shown;
-    int32_t night_face_minute;
+    uint32_t night_face_key;
     lv_draw_buf_t *night_face_buf;
 
     /* Schedule editor. */
@@ -169,7 +169,9 @@ typedef struct {
     lv_obj_t *face_name[CLOCK_FACE_COUNT];
     lv_draw_buf_t *face_buf[CLOCK_FACE_COUNT];
     ui_st_item_t face_item[CLOCK_FACE_COUNT];
-    int32_t face_minute;
+    uint32_t face_key[CLOCK_FACE_COUNT]; /* what each thumbnail shows (st_face_key) */
+    uint32_t face_want[CLOCK_FACE_COUNT]; /* what it should show: redrawn one a tick */
+    lv_timer_t *face_timer;
     lv_obj_t *thumb_shell; /* offscreen renderer for round face thumbnails */
     lv_obj_t *thumb_image;
 

@@ -225,6 +225,8 @@ static const perf_step_t s_steps[] = {
     CALL("settings_tap", call_open_settings_root, 1200),
     CALL("settings_night_open", call_open_night, 1500),
     CALL("night_faces", call_night_face_picker, 2500),
+    CALL("settings_back", call_settings_back, 800),
+    CALL("night_faces_again", call_night_face_picker, 1500),
     CALL("settings_close", call_close_settings, 1500),
     IDLE("idle_after", 4000),
     DRAG("face_tap", 360, 300, 362, 302, 60, 1500),
@@ -693,7 +695,11 @@ static void start_step(const perf_step_t *step)
         break;
     case PERF_STEP_CALL:
         if (step->call != NULL) {
+            int64_t t0 = esp_timer_get_time();
+
             step->call(s_ctx);
+            /* What the step's own work held the UI thread for, before its first frame. */
+            printf("PERF call seg=%s us=%lld\n", step->segment, esp_timer_get_time() - t0);
         }
         break;
     case PERF_STEP_THUMB:

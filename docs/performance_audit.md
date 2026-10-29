@@ -211,6 +211,15 @@ longer draws its sides and the middle of its bands through the radius mask: quic
 36.9 -> 34.1 ms. Still open: under the quick panel the face is drawn whole each frame, though
 the panel's ground covers most of it.
 
+Night face picker (29 Oct). Opening it drew all eight thumbnails at once: 665 ms on the clock
+the first time (call time, now `PERF call` in the tour), and again on every open. A thumbnail is
+now keyed by what it shows (the minute, the face's theme, the language) and drawn again only
+when that changes: the chosen face's at once, the rest one a tick while the picker shows
+(`PERF face_thumb`: 10-70 ms each). First open 665 -> 43 ms, reopen 2 ms. Filament's thumbnail
+was 324 ms: the three evening faces share one base buffer, so its preview drew its base again,
+four identical glass tubes per pixel. It now draws one and copies it (and takes the mesh from
+an 8 x 7 table): 68 ms, the same pixels.
+
 ### Checking Liquid Glass on the clock
 
 1. Glass tour against the 20261028-213305 baseline:
@@ -259,7 +268,6 @@ rest of the chrome, under one 20 ms budget a tick.
 ### High
 - **Atelier settings take 15-18 ms a frame** (Instrument and Orbit: 11-15 ms). What remains is about 75 draw tasks (each image task costs about 70 us of LVGL setup), the 164 px gradient scrim (about 2.5 ms) and pill borders (about 0.7 ms each).
 
-- **Night face picker re-renders all 8 previews on every open.**
 
 ### Medium
 - Extra snapshots during `set_active_face` and reveal end: `lv_tileview_set_tile` fires `SCROLL_BEGIN`/`END` synchronously, which triggers `refresh_digital_face_snapshot`.
