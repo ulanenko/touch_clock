@@ -336,10 +336,11 @@ void request_set_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent)
     }
 }
 
-void request_set_night_sunrise_options(clock_ui_context_t *ctx, uint8_t minutes, uint8_t peak, bool chime)
+void request_set_night_sunrise_options(clock_ui_context_t *ctx, uint8_t minutes, uint8_t peak, bool chime,
+                                       uint8_t face)
 {
     if (ctx->callbacks.on_set_night_sunrise_options != NULL) {
-        ctx->callbacks.on_set_night_sunrise_options(ctx->user_ctx, minutes, peak, chime);
+        ctx->callbacks.on_set_night_sunrise_options(ctx->user_ctx, minutes, peak, chime, face);
     }
 }
 

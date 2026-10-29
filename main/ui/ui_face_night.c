@@ -188,6 +188,7 @@ void face_night_sync(clock_ui_context_t *ctx, time_t now, bool force)
         return;
     }
     show = (s_night_forced || (rt != NULL && rt->in_night_mode)) && !fc->hidden && !fc->visible &&
+           !ui_sunrise_covers_face() &&
            !ui_settings_is_open(ctx) && !ui_alarms_is_open(ctx) && !(rt != NULL && rt->alarm_ringing);
     if (!show) {
         if (fc->night_visible) {

@@ -33,6 +33,15 @@ static const ui_l10n_str_t s_sunrise_chime = UI_L10N_STR("Soft chime", "Cichy dz
 static const ui_l10n_str_t s_sunrise_chime_sub = UI_L10N_STR("A minute before the alarm", "Minutę przed alarmem",
                                                              "За хвилину до будильника", "За минуту до будильника",
                                                              "Een minuut voor de wekker");
+static const ui_l10n_str_t s_sunrise_face = UI_L10N_STR("Wake-up face", "Tarcza na pobudkę", "Циферблат пробудження",
+                                                       "Циферблат пробуждения", "Wekscherm");
+static const ui_l10n_str_t s_sunrise_faces[4] = {
+    UI_L10N_STR("Daybreak · Dawn", "Daybreak · Świt", "Daybreak · Зоря", "Daybreak · Заря", "Daybreak · Dageraad"),
+    UI_L10N_STR("Daybreak · Rose", "Daybreak · Róż", "Daybreak · Троянда", "Daybreak · Роза", "Daybreak · Roos"),
+    UI_L10N_STR("Daybreak · Mist", "Daybreak · Mgła", "Daybreak · Туман", "Daybreak · Туман", "Daybreak · Mist"),
+    UI_L10N_STR("None, just a warm glow", "Brak, tylko poświata", "Немає, лише сяйво", "Нет, только свечение",
+                "Geen, alleen een gloed"),
+};
 static const uint8_t s_sunrise_lengths[3] = {10, 20, 30};
 static const uint8_t s_sunrise_peaks[3] = {40, 60, 80};
 static const ui_l10n_str_t s_ends = UI_L10N_STR("Ends", "Koniec", "Кінець", "Конец", "Eindigt");
@@ -424,34 +433,44 @@ static void sunrise_options_row(clock_ui_context_t *ctx, lv_obj_t *group)
     dim_row(ctx, &row);
 }
 
-static void sunrise_set(clock_ui_context_t *ctx, int length, int peak, int chime)
+/* Changes one option (the others at -1 keep theirs). */
+static void sunrise_set(clock_ui_context_t *ctx, int length, int peak, int chime, int face)
 {
     const night_mode_config_t *nm = &ctx->settings->night_mode;
 
     request_set_night_sunrise_options(ctx, length >= 0 ? s_sunrise_lengths[length] : nm->sunrise_minutes,
                                       peak >= 0 ? s_sunrise_peaks[peak] : nm->sunrise_peak,
-                                      chime >= 0 ? chime != 0 : nm->sunrise_chime);
+                                      chime >= 0 ? chime != 0 : nm->sunrise_chime,
+                                      face >= 0 ? (uint8_t)face : nm->sunrise_face);
 }
 
 static void sunrise_len_cb(lv_event_t *e)
 {
     ui_st_item_t *item = lv_event_get_user_data(e);
 
-    sunrise_set(item->ui, item->index, -1, -1);
+    sunrise_set(item->ui, item->index, -1, -1, -1);
 }
 
 static void sunrise_peak_cb(lv_event_t *e)
 {
     ui_st_item_t *item = lv_event_get_user_data(e);
 
-    sunrise_set(item->ui, -1, item->index, -1);
+    sunrise_set(item->ui, -1, item->index, -1, -1);
+}
+
+/* Rows 0..2 are Daybreak's themes (setting 1..3), row 3 none (0). */
+static void sunrise_face_cb(lv_event_t *e)
+{
+    ui_st_item_t *item = lv_event_get_user_data(e);
+
+    sunrise_set(item->ui, -1, -1, -1, item->index < 3 ? item->index + 1 : 0);
 }
 
 static void sunrise_chime_cb(lv_event_t *e)
 {
     clock_ui_context_t *ctx = lv_event_get_user_data(e);
 
-    sunrise_set(ctx, -1, -1, lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0);
+    sunrise_set(ctx, -1, -1, lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0, -1);
 }
 
 void st_sunrise_build(clock_ui_context_t *ctx)
@@ -497,6 +516,21 @@ void st_sunrise_build(clock_ui_context_t *ctx)
         kit_row_create(&row, group, &o);
         st->sunrise_peak_check[i] = kit_icon_small(row.trail, KIT_ICON_CHECK, sk->accent);
     }
+    label = kit_section_label(p->content, "");
+    st_bind(ctx, label, ST_STR(&s_sunrise_face));
+    group = kit_group(p->content);
+    for (int i = 0; i < 4; i++) {
+        o = (kit_row_opts_t) {0};
+        st->sunrise_face_item[i].ui = ctx;
+        st->sunrise_face_item[i].index = (uint8_t)i;
+        o.title = " ";
+        o.trail = KIT_TRAIL_CUSTOM;
+        o.on_click = sunrise_face_cb;
+        o.user_data = &st->sunrise_face_item[i];
+        kit_row_create(&row, group, &o);
+        st->sunrise_face_title[i] = row.title;
+        st->sunrise_face_check[i] = kit_icon_small(row.trail, KIT_ICON_CHECK, sk->accent);
+    }
     group = kit_group(p->content);
     o = (kit_row_opts_t) {0};
     o.trail = KIT_TRAIL_SWITCH;
@@ -521,6 +555,10 @@ void st_sunrise_sync(clock_ui_context_t *ctx)
         kit_label_set_text_if_changed(st->sunrise_len_title[i], text);
         st_show(st->sunrise_len_check[i], nm->sunrise_minutes == s_sunrise_lengths[i]);
         st_show(st->sunrise_peak_check[i], nm->sunrise_peak == s_sunrise_peaks[i]);
+    }
+    for (int i = 0; i < 4; i++) {
+        kit_label_set_text_if_changed(st->sunrise_face_title[i], ui_l10n_str(ctx, &s_sunrise_faces[i]));
+        st_show(st->sunrise_face_check[i], nm->sunrise_face == (i < 3 ? i + 1 : 0));
     }
     kit_switch_set(st->sunrise_chime_sw, nm->sunrise_chime);
 }

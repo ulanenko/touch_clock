@@ -57,6 +57,7 @@
 #define SETTINGS_KEY_NIGHT_SUNRISE_MIN "n_sunm"
 #define SETTINGS_KEY_NIGHT_SUNRISE_PEAK "n_sunp"
 #define SETTINGS_KEY_NIGHT_SUNRISE_CHIME "n_sunc"
+#define SETTINGS_KEY_NIGHT_SUNRISE_FACE "n_sunf"
 #define SETTINGS_KEY_ALARMS "alarms"
 #define SETTINGS_KEY_LAST_SYNCED "last_sync"
 #define SETTINGS_KEY_SKIPPED_EPOCH "skip_epoch"
@@ -226,6 +227,11 @@ static const settings_field_descriptor_t s_settings_fields[] = {
         .key = SETTINGS_KEY_NIGHT_SUNRISE_CHIME,
         .kind = SETTINGS_FIELD_U8,
         .offset = offsetof(app_settings_t, night_mode.sunrise_chime),
+    },
+    {
+        .key = SETTINGS_KEY_NIGHT_SUNRISE_FACE,
+        .kind = SETTINGS_FIELD_U8,
+        .offset = offsetof(app_settings_t, night_mode.sunrise_face),
     },
     {
         .key = SETTINGS_KEY_LAST_SYNCED,

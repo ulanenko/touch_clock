@@ -72,6 +72,9 @@ void settings_policy_sanitize(app_settings_t *settings)
         settings->night_mode.sunrise_peak = 60;
     }
     settings->night_mode.sunrise_chime = settings->night_mode.sunrise_chime ? true : false;
+    if (settings->night_mode.sunrise_face > 3) {
+        settings->night_mode.sunrise_face = 1;
+    }
     if (settings->night_mode.start_hour > 23) {
         settings->night_mode.start_hour = 22;
     }
@@ -143,6 +146,7 @@ void settings_policy_set_defaults(app_settings_t *settings)
     settings->night_mode.sunrise_minutes = 20;
     settings->night_mode.sunrise_peak = 60;
     settings->night_mode.sunrise_chime = true;
+    settings->night_mode.sunrise_face = 1; /* Daybreak, Dawn */
     settings->night_mode.start_hour = 22;
     settings->night_mode.start_minute = 0;
     settings->night_mode.end_hour = 7;

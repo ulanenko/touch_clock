@@ -1473,9 +1473,11 @@ bool alm_banner_wanted(const clock_ui_context_t *ctx, time_t now)
 {
     const app_runtime_state_t *rt = ctx->runtime;
 
+    /* Daybreak says when it wakes you itself. */
     return (ctx->alarms.banner_feedback_until > now && ctx->alarms.banner_feedback_text[0] != '\0') ||
-           (rt->snooze_active && rt->snooze_deadline > now) ||
-           (!rt->alarm_ringing && rt->next_alarm_epoch > now && (rt->next_alarm_epoch - now) <= 1800);
+           (!ui_sunrise_covers_face() && ((rt->snooze_active && rt->snooze_deadline > now) ||
+                                          (!rt->alarm_ringing && rt->next_alarm_epoch > now &&
+                                           (rt->next_alarm_epoch - now) <= 1800)));
 }
 
 void alm_banner_update(clock_ui_context_t *ctx, time_t now)
@@ -1502,6 +1504,10 @@ void alm_banner_update(clock_ui_context_t *ctx, time_t now)
     a->banner_feedback_revertible = false;
     a->banner_feedback_text[0] = '\0';
 
+    if (ui_sunrise_covers_face()) {
+        banner_set_visible(ctx, false); /* Daybreak says when it wakes you itself */
+        return;
+    }
     if (rt->snooze_active && rt->snooze_deadline > now) {
         int left = (int)((rt->snooze_deadline - now + 59) / 60);
 

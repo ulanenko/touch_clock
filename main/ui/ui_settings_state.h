@@ -138,6 +138,9 @@ typedef struct {
     ui_st_item_t sunrise_peak_item[3];
     lv_obj_t *sunrise_peak_check[3];
     lv_obj_t *sunrise_chime_sw;
+    ui_st_item_t sunrise_face_item[4]; /* Daybreak's three themes, then none */
+    lv_obj_t *sunrise_face_title[4];
+    lv_obj_t *sunrise_face_check[4];
     lv_obj_t *night_click[6];
     ui_st_dim_t night_dim[UI_ST_DIM_MAX];
     uint8_t night_dim_count;

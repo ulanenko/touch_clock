@@ -182,12 +182,13 @@ static void cb_night_schedule(void *u, uint8_t sh, uint8_t sm, uint8_t eh, uint8
 }
 static void cb_night_brightness(void *u, uint8_t v) { (void)u; s_settings.night_mode.brightness = v; mark_refresh(); }
 static void cb_sunrise(void *u, bool e) { (void)u; s_settings.night_mode.sunrise_brightness_enabled = e; mark_refresh(); }
-static void cb_sunrise_options(void *u, uint8_t m, uint8_t p, bool c)
+static void cb_sunrise_options(void *u, uint8_t m, uint8_t p, bool c, uint8_t f)
 {
     (void)u;
     s_settings.night_mode.sunrise_minutes = m;
     s_settings.night_mode.sunrise_peak = p;
     s_settings.night_mode.sunrise_chime = c;
+    s_settings.night_mode.sunrise_face = f;
     mark_refresh();
 }
 static void cb_alarm_volume(void *u, uint8_t v) { (void)u; s_settings.alarm_volume = v; mark_refresh(); }
@@ -291,6 +292,7 @@ static void sample_state(void)
         .sunrise_minutes = 20,
         .sunrise_peak = 60,
         .sunrise_chime = true,
+        .sunrise_face = 1,
         .start_hour = 22,
         .start_minute = 30,
         .end_hour = 7,

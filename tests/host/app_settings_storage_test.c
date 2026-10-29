@@ -30,7 +30,7 @@ typedef struct {
 } store_entry_t;
 
 typedef struct {
-    store_entry_t entries[32];
+    store_entry_t entries[48]; /* more than the settings keys */
     int commit_calls;
 } fake_store_t;
 

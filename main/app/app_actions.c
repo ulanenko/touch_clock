@@ -170,6 +170,7 @@ app_action_result_t app_action_set_night_sunrise_options(app_state_t *state,
                                                          uint8_t minutes,
                                                          uint8_t peak,
                                                          bool chime,
+                                                         uint8_t face,
                                                          time_t now)
 {
     app_action_result_t result;
@@ -177,12 +178,14 @@ app_action_result_t app_action_set_night_sunrise_options(app_state_t *state,
 
     app_action_result_init(&result);
     chime = chime ? true : false;
-    if (nm->sunrise_minutes == minutes && nm->sunrise_peak == peak && nm->sunrise_chime == chime) {
+    if (nm->sunrise_minutes == minutes && nm->sunrise_peak == peak && nm->sunrise_chime == chime &&
+        nm->sunrise_face == face) {
         return result;
     }
     nm->sunrise_minutes = minutes;
     nm->sunrise_peak = peak;
     nm->sunrise_chime = chime;
+    nm->sunrise_face = face;
     settings_policy_sanitize(&state->settings);
     refresh_runtime_after_settings_change(state, &result, now);
     return result;

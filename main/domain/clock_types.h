@@ -81,6 +81,7 @@ typedef struct {
     uint8_t sunrise_minutes;         /* its length: 10, 20 or 30 */
     uint8_t sunrise_peak;            /* its brightest, UI percent: 40, 60 or 80 */
     bool sunrise_chime;              /* a soft chime a minute before the alarm */
+    uint8_t sunrise_face;            /* the wake-up face: 0 none, 1..3 Daybreak's theme */
     uint8_t start_hour;
     uint8_t start_minute;
     uint8_t end_hour;

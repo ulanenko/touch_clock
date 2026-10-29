@@ -636,7 +636,8 @@ static void nocturne_moon(const ev_target_t *t, const nocturne_palette_t *p, flo
 }
 
 /* The hill's top edge: M0 612 C140 574, 250 604, 372 590 S604 560, 720 592. */
-static void nocturne_hill(const ev_target_t *t, const nocturne_palette_t *p)
+/* The low hill along the foot of the sky (Nocturne, Daybreak): filled, with a line along its top. */
+static void ev_hill(const ev_target_t *t, uint32_t fill, uint32_t line, float width)
 {
     static const float seg[2][4][2] = {
         {{0, 612}, {140, 574}, {250, 604}, {372, 590}},
@@ -681,10 +682,15 @@ static void nocturne_hill(const ev_target_t *t, const nocturne_palette_t *p)
         for (int32_t y = LV_MAX(t->clip.y1, (int32_t)edge - 2); y <= t->clip.y2; y++) {
             float below = (float)y + 0.5f - edge;
 
-            ev_px(t, x, y, p->hill, ev_clampf(below + 0.5f, 0.0f, 1.0f));
-            ev_px(t, x, y, p->hill_line, ev_clampf(p->hill_width / 2.0f + 0.5f - fabsf(below) * norm, 0.0f, 1.0f));
+            ev_px(t, x, y, fill, ev_clampf(below + 0.5f, 0.0f, 1.0f));
+            ev_px(t, x, y, line, ev_clampf(width / 2.0f + 0.5f - fabsf(below) * norm, 0.0f, 1.0f));
         }
     }
+}
+
+static void nocturne_hill(const ev_target_t *t, const nocturne_palette_t *p)
+{
+    ev_hill(t, p->hill, p->hill_line, p->hill_width);
 }
 
 /* The moon's box as drawn over the sky and stars, kept so a base rebuilt for the same theme
@@ -1107,4 +1113,223 @@ bool evening_face_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t c
     default:
         return false;
     }
+}
+
+/* --- Daybreak: the wake-up face (shown by ui_sunrise.c) ----------------------------------- */
+
+/* Nocturne's morning: through the sunrise before an alarm the sun climbs from behind the
+ * same hill, the sky lightens from night through rose and amber to morning blue, the stars
+ * fade, and the ink turns from cream to navy once the sky behind the time is light. The sky,
+ * the sun's glow and its disc are worked out per pixel in float and dithered to RGB565 (they
+ * are smooth gradients that band otherwise); stars, hill and text are drawn over them. */
+
+typedef struct {
+    uint32_t sky[4][4]; /* at progress 0, 1/3, 2/3, 1: the top, 300 px, 560 px, the horizon */
+    uint32_t hill[2];   /* at night, at the alarm */
+    uint32_t rim[2];
+} daybreak_palette_t;
+
+static const daybreak_palette_t s_daybreak[CLOCK_FACE_THEME_COUNT] = {
+    /* Dawn */
+    {{{0x07081A, 0x0C0E24, 0x1A1530, 0x2A1C34},
+      {0x10173A, 0x26244E, 0x6A3A5E, 0xC4605A},
+      {0x22407A, 0x4A5E98, 0xC07A78, 0xF2A464},
+      {0x3D7CC4, 0x86AEDA, 0xF4C9A0, 0xFFE3B0}},
+     {0x000408, 0x2A2836},
+     {0x101828, 0xF0C08A}},
+    /* Rose */
+    {{{0x0A0710, 0x120C1A, 0x1E1222, 0x2A1626},
+      {0x1E1230, 0x3E2244, 0x8A3A55, 0xD8645E},
+      {0x4A3060, 0x8A5A80, 0xE08A80, 0xF8B07A},
+      {0x9A7AA8, 0xD4AFC0, 0xFCD2B8, 0xFFE6C8}},
+     {0x000000, 0x3A2632},
+     {0x181008, 0xFFC49A}},
+    /* Mist */
+    {{{0x020A0C, 0x061214, 0x0C1A1C, 0x142224},
+      {0x0C2228, 0x1E3C42, 0x5A6A62, 0xB88A6A},
+      {0x2A5C66, 0x5E8E92, 0xC8B492, 0xF0D29A},
+      {0x6AA8B4, 0xA8CCCC, 0xEEE2C4, 0xFFF2D2}},
+     {0x000000, 0x24302E},
+     {0x102020, 0xF4D6A0}},
+};
+
+static const float s_daybreak_stop_y[4] = {0.0f, 300.0f, 560.0f, 620.0f};
+static const uint8_t s_daybreak_bayer[4][4] = {{0, 8, 2, 10}, {12, 4, 14, 6}, {3, 11, 1, 9}, {15, 7, 13, 5}};
+
+static const ui_l10n_str_t s_daybreak_waking =
+    UI_L10N_STR("Waking at %s", "Pobudka o %s", "Підйом о %s", "Подъём в %s", "Wekker om %s");
+static const ui_l10n_str_t s_daybreak_in = UI_L10N_STR("In %d min", "Za %d min", "Через %d хв", "Через %d мин", "Over %d min");
+static const ui_l10n_str_t s_daybreak_minute =
+    UI_L10N_STR("In a minute", "Za minutę", "За хвилину", "Через минуту", "Over een minuut");
+static const ui_l10n_str_t s_daybreak_morning =
+    UI_L10N_STR("Good morning", "Dzień dobry", "Доброго ранку", "Доброе утро", "Goedemorgen");
+
+typedef struct {
+    float r, g, b;
+} db_rgb_t;
+
+static float db_smooth(float x)
+{
+    x = ev_clampf(x, 0.0f, 1.0f);
+    return x * x * (3.0f - 2.0f * x);
+}
+
+static db_rgb_t db_hex(uint32_t c)
+{
+    return (db_rgb_t) {(float)((c >> 16) & 0xFF), (float)((c >> 8) & 0xFF), (float)(c & 0xFF)};
+}
+
+static db_rgb_t db_mix(db_rgb_t a, db_rgb_t b, float k)
+{
+    return (db_rgb_t) {a.r + (b.r - a.r) * k, a.g + (b.g - a.g) * k, a.b + (b.b - a.b) * k};
+}
+
+static uint32_t db_u32(db_rgb_t c)
+{
+    return (uint32_t)lroundf(ev_clampf(c.r, 0, 255)) << 16 | (uint32_t)lroundf(ev_clampf(c.g, 0, 255)) << 8 |
+           (uint32_t)lroundf(ev_clampf(c.b, 0, 255));
+}
+
+/* WCAG relative luminance, for the ink's contrast against the sky. */
+static float db_luminance(db_rgb_t c)
+{
+    float v[3] = {c.r / 255.0f, c.g / 255.0f, c.b / 255.0f};
+
+    for (int i = 0; i < 3; i++) {
+        v[i] = v[i] <= 0.03928f ? v[i] / 12.92f : powf((v[i] + 0.055f) / 1.055f, 2.4f);
+    }
+    return 0.2126f * v[0] + 0.7152f * v[1] + 0.0722f * v[2];
+}
+
+static float db_contrast(db_rgb_t a, db_rgb_t b)
+{
+    float x = db_luminance(a);
+    float y = db_luminance(b);
+
+    return (LV_MAX(x, y) + 0.05f) / (LV_MIN(x, y) + 0.05f);
+}
+
+static db_rgb_t db_sky_at(const db_rgb_t stops[4], float y)
+{
+    for (int i = 0; i < 3; i++) {
+        if (y <= s_daybreak_stop_y[i + 1]) {
+            return db_mix(stops[i], stops[i + 1],
+                          (y - s_daybreak_stop_y[i]) / (s_daybreak_stop_y[i + 1] - s_daybreak_stop_y[i]));
+        }
+    }
+    return stops[3];
+}
+
+void ui_daybreak_render(clock_ui_context_t *ctx, lv_draw_buf_t *buf, const ui_daybreak_view_t *view)
+{
+    const daybreak_palette_t *pal = &s_daybreak[view->theme < CLOCK_FACE_THEME_COUNT ? view->theme : 0];
+    ev_target_t t = {buf, {0, 0, SCREEN_SIZE - 1, SCREEN_SIZE - 1}};
+    float p = ev_clampf((float)view->progress / 1000.0f, 0.0f, 1.0f);
+    float sp = db_smooth(p);
+    float k = ev_clampf(p * 3.0f, 0.0f, 2.999f);
+    int ki = (int)k;
+    float kf = db_smooth(k - (float)ki);
+    db_rgb_t stops[4];
+    /* The sun: from behind the hill to just clear of it; deep orange low, pale gold high. */
+    float sx = 372.0f;
+    float sy = 668.0f + (534.0f - 668.0f) * db_smooth(ev_clampf(p * 1.05f, 0.0f, 1.0f));
+    float sun_r = 46.0f;
+    db_rgb_t sun = p < 0.5f ? db_mix(db_hex(0xFF5A2E), db_hex(0xFFB050), p / 0.5f)
+                            : db_mix(db_hex(0xFFB050), db_hex(0xFFF4DA), (p - 0.5f) / 0.5f);
+    db_rgb_t sun_core = db_mix(sun, db_hex(0xFFFFF5), 0.5f);
+    db_rgb_t glow = db_mix(db_hex(0xFF6A30), db_hex(0xFFD088), sp);
+    float glow_r = 140.0f + 420.0f * sp;
+    float glow_a0 = 0.25f + 0.45f * sp;
+    float glow_a1 = 0.12f + 0.2f * sp;
+    float star_a = 1.0f - db_smooth(p / 0.4f);
+    db_rgb_t cream = db_hex(0xF6EEDF);
+    db_rgb_t navy = db_hex(0x1C2442);
+    db_rgb_t behind;
+    db_rgb_t ink;
+    struct tm ti = get_local_time_now();
+    lv_obj_t *canvas;
+    lv_layer_t layer;
+    char text[64];
+    char upper[96];
+    char clock[8];
+
+    for (int i = 0; i < 4; i++) {
+        stops[i] = db_mix(db_hex(pal->sky[ki][i]), db_hex(pal->sky[ki + 1][i]), kf);
+    }
+    for (int32_t y = 0; y < SCREEN_SIZE; y++) {
+        uint16_t *row = (uint16_t *)(buf->data + (size_t)y * buf->header.stride);
+        db_rgb_t sky = db_sky_at(stops, (float)y + 0.5f);
+        float dy = (float)y + 0.5f - sy;
+
+        for (int32_t x = 0; x < SCREEN_SIZE; x++) {
+            float dx = (float)x + 0.5f - sx;
+            float d = sqrtf(dx * dx + dy * dy);
+            float u = ev_clampf((d - 10.0f) / (glow_r - 10.0f), 0.0f, 1.0f);
+            float a = u < 0.35f ? glow_a0 + (glow_a1 - glow_a0) * (u / 0.35f) : glow_a1 * (1.0f - (u - 0.35f) / 0.65f);
+            db_rgb_t c = db_mix(sky, glow, a);
+            float cover = ev_clampf(sun_r + 0.5f - d, 0.0f, 1.0f);
+            int dither = s_daybreak_bayer[y & 3][x & 3];
+
+            if (cover > 0.0f) {
+                float off = hypotf(dx, dy + 10.0f);
+                db_rgb_t disc = db_mix(sun_core, sun, ev_clampf((off - 4.0f) / 44.0f, 0.0f, 1.0f));
+
+                c = db_mix(c, disc, cover);
+            }
+            /* Dithered down to 5-6-5 bits: the threshold moves each pixel's rounding. */
+            {
+                float dr = ((float)dither + 0.5f) / 16.0f;
+                uint32_t r5 = (uint32_t)ev_clampf(c.r * 31.0f / 255.0f + dr, 0.0f, 31.0f);
+                uint32_t g6 = (uint32_t)ev_clampf(c.g * 63.0f / 255.0f + dr, 0.0f, 63.0f);
+                uint32_t b5 = (uint32_t)ev_clampf(c.b * 31.0f / 255.0f + dr, 0.0f, 31.0f);
+
+                row[x] = (uint16_t)(r5 << 11 | g6 << 5 | b5);
+            }
+        }
+    }
+    if (star_a > 0.0f) {
+        for (size_t i = 0; i < sizeof(s_stars) / sizeof(s_stars[0]); i++) {
+            ev_disc(&t, s_stars[i][0], s_stars[i][1], s_stars[i][2], 0xC8D2EB, s_stars[i][3] * star_a);
+        }
+    }
+    ev_hill(&t, db_u32(db_mix(db_hex(pal->hill[0]), db_hex(pal->hill[1]), sp)),
+            db_u32(db_mix(db_hex(pal->rim[0]), db_hex(pal->rim[1]), db_smooth(p * 1.2f))), 1.5f);
+
+    /* The ink: cream on the night sky, navy once the sky behind the time is light. */
+    behind = db_sky_at(stops, 340.0f);
+    ink = db_mix(cream, navy, db_smooth((db_contrast(navy, behind) - db_contrast(cream, behind)) * 0.6f + 0.5f));
+
+    canvas = lv_canvas_create(ctx->screen);
+    lv_obj_add_flag(canvas, LV_OBJ_FLAG_HIDDEN);
+    lv_canvas_set_draw_buf(canvas, buf);
+    lv_canvas_init_layer(canvas, &layer);
+    if (view->ringing) {
+        ev_upper(upper, sizeof(upper), ui_l10n_str(ctx, &s_daybreak_morning));
+    } else {
+        char at[8];
+
+        ui_format_clock(view->alarm, at, sizeof(at));
+        snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_daybreak_waking), at);
+        ev_upper(upper, sizeof(upper), text);
+    }
+    ev_text(&layer, &ev_sans_16, db_u32(db_mix(db_sky_at(stops, 190.0f), ink, 0.62f)), 3, upper, EV_CENTER, 196);
+    if (!view->ringing && view->alarm > view->now) {
+        int left = (int)((view->alarm - view->now + 59) / 60);
+
+        if (left <= 1) {
+            ev_upper(upper, sizeof(upper), ui_l10n_str(ctx, &s_daybreak_minute));
+        } else {
+            snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_daybreak_in), left);
+            ev_upper(upper, sizeof(upper), text);
+        }
+        ev_text(&layer, &ev_sans_12, db_u32(db_mix(db_sky_at(stops, 214.0f), ink, 0.5f)), 3, upper, EV_CENTER, 220);
+    }
+    snprintf(clock, sizeof(clock), "%02d:%02d", ti.tm_hour, ti.tm_min);
+    ev_text(&layer, &ev_serif_light_176, db_u32(db_mix(behind, ink, 0.92f)), 0, clock, EV_CENTER, 372);
+    snprintf(text, sizeof(text), "%s %d %s", ui_weekday_name(ctx, ti.tm_wday), ti.tm_mday,
+             ui_month_name(ctx, ti.tm_mon, true));
+    ev_upper(upper, sizeof(upper), text);
+    ev_text(&layer, &ev_sans_16, db_u32(db_mix(db_sky_at(stops, 426.0f), ink, 0.62f)), 3, upper, EV_CENTER, 432);
+    lv_canvas_finish_layer(canvas, &layer);
+    lv_obj_delete(canvas);
 }

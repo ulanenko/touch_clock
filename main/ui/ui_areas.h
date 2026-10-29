@@ -49,6 +49,18 @@ void ui_boot_replay(clock_ui_context_t *ctx); /* debug call: the boot screen and
 void ui_sunrise_create(clock_ui_context_t *ctx);
 void ui_sunrise_tick(clock_ui_context_t *ctx, time_t now);
 void ui_sunrise_before_face_change(clock_ui_context_t *ctx);
+/* True while Daybreak covers the faces: the night overlay and the alarm banner stand aside. */
+bool ui_sunrise_covers_face(void);
+
+/* Daybreak, the wake-up face (ui_faces_evening.c), drawn whole into a 720x720 RGB565 buffer. */
+typedef struct {
+    uint8_t theme;     /* 0 Dawn, 1 Rose, 2 Mist */
+    uint16_t progress; /* through the sunrise, 0..1000 */
+    time_t now;
+    time_t alarm;      /* the alarm it wakes for */
+    bool ringing;
+} ui_daybreak_view_t;
+void ui_daybreak_render(clock_ui_context_t *ctx, lv_draw_buf_t *buf, const ui_daybreak_view_t *view);
 
 /* --- Face chrome ------------------------------------------------------------------------- */
 
