@@ -15,6 +15,9 @@
 #include "esp_heap_caps.h"
 
 #if defined(ESP_PLATFORM)
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
+#include "freertos/task.h"
 #include "sdkconfig.h"
 #endif
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
@@ -727,34 +730,42 @@ static inline uint16_t fetch(const lv_draw_buf_t *img, int32_t x, int32_t y)
 /* What a bake refracts. A page's glass baked while the backdrop is still the face (at idle,
  * ahead of the page) sees what the page's ground will be: the frost (dimmed by the look's
  * bgain), here at full size, a row at a time. */
-static bool s_back_frosted;
-static uint16_t s_fb_rows[8][SCREEN];
-static int16_t s_fb_fy[8] = {-1, -1, -1, -1, -1, -1, -1, -1};
+typedef struct {
+    bool frosted;                /* a page's glass baked while the backdrop is the face */
+    uint16_t fb_rows[8][SCREEN]; /* the frost at full size, rows fb_fy */
+    int16_t fb_fy[8];
+    int16_t flat[FROST][3];      /* bake_render's flat-top colours of frost row flat_fy, per column */
+    int16_t flat_fy[FROST];
+} bake_scratch_t;
 
-static inline const uint16_t *back_row(int32_t y)
+/* What a bake reads and keeps on the way: one for each half of a bake (the halves are made at
+ * once on the two cores); outside a bake, the first. */
+static bake_scratch_t s_scratch[2];
+
+static inline const uint16_t *back_row(bake_scratch_t *sc, int32_t y)
 {
     y = LV_CLAMP(0, y, SCREEN - 1);
-    if (s_back_frosted) {
+    if (sc->frosted) {
         int32_t fy = y >> 1;
         int slot = fy & 7;
-        uint16_t *out = s_fb_rows[slot];
+        uint16_t *out = sc->fb_rows[slot];
 
-        if (s_fb_fy[slot] != fy) {
+        if (sc->fb_fy[slot] != fy) {
             const uint16_t *f = (const uint16_t *)(s_frost->data + (size_t)fy * s_frost->header.stride);
 
             for (int32_t x = 0; x < SCREEN; x++) {
                 out[x] = f[x >> 1];
             }
-            s_fb_fy[slot] = (int16_t)fy;
+            sc->fb_fy[slot] = (int16_t)fy;
         }
         return out;
     }
     return (const uint16_t *)(s_back->data + (size_t)y * s_back->header.stride);
 }
 
-static inline uint16_t fetch_back(int32_t x, int32_t y)
+static inline uint16_t fetch_back(bake_scratch_t *sc, int32_t x, int32_t y)
 {
-    return back_row(y)[LV_CLAMP(0, x, SCREEN - 1)];
+    return back_row(sc, y)[LV_CLAMP(0, x, SCREEN - 1)];
 }
 
 /* A look in integers, for the per-pixel loops. */
@@ -801,8 +812,8 @@ static inline void body(const ilook_t *il, int br, int bg, int bb, int fr, int f
 /* The glass at screen point (x, y), s px inside the edge with outward normal (nx, ny): the
  * backdrop bent through the bezel (each channel a little differently: dispersion), the body,
  * then the specular rim. Nearest samples: the bend is smooth, and this runs per pixel. */
-static void glass_pixel(float x, float y, float s, float nx, float ny, const bezel_t *bz, const look_t *l,
-                        const ilook_t *ilp, float *out)
+static void glass_pixel(bake_scratch_t *sc, float x, float y, float s, float nx, float ny, const bezel_t *bz,
+                        const look_t *l, const ilook_t *ilp, float *out)
 {
     const ilook_t il = *ilp;
     float disp;
@@ -817,9 +828,9 @@ static void glass_pixel(float x, float y, float s, float nx, float ny, const bez
     float spec;
 
     bezel_at(bz, s, &disp, &slope);
-    vr = fetch_back((int32_t)(x - nx * disp * 0.94f), (int32_t)(y - ny * disp * 0.94f));
-    vg = fetch_back((int32_t)(x - nx * disp), (int32_t)(y - ny * disp));
-    vb = fetch_back((int32_t)(x - nx * disp * 1.06f), (int32_t)(y - ny * disp * 1.06f));
+    vr = fetch_back(sc, (int32_t)(x - nx * disp * 0.94f), (int32_t)(y - ny * disp * 0.94f));
+    vg = fetch_back(sc, (int32_t)(x - nx * disp), (int32_t)(y - ny * disp));
+    vb = fetch_back(sc, (int32_t)(x - nx * disp * 1.06f), (int32_t)(y - ny * disp * 1.06f));
     vf = fetch_frost((int32_t)(x - nx * disp), (int32_t)(y - ny * disp));
     body(&il, s_e5[vr >> 11], s_e6[(vg >> 5) & 63], s_e5[vb & 31], s_e5[vf >> 11], s_e6[(vf >> 5) & 63],
          s_e5[vf & 31], c);
@@ -1101,7 +1112,7 @@ static bool sheet_ground_build(uint32_t budget_ms)
     (void)row_from;
     while (s_sheet_ground_row < SCREEN) {
         int32_t y = s_sheet_ground_row++;
-        const uint16_t *bk = back_row(y);
+        const uint16_t *bk = back_row(&s_scratch[0], y);
         const uint16_t *f = (const uint16_t *)(s_frost->data + (size_t)(y >> 1) * s_frost->header.stride);
         uint16_t *out = (uint16_t *)(s_sheet_ground->data + (size_t)y * s_sheet_ground->header.stride);
         int half = circle_half(y);
@@ -1128,8 +1139,8 @@ static bool sheet_ground_build(uint32_t budget_ms)
 }
 
 /* One pixel the slow way (corners): exact distance and normal, the ground outside the shape. */
-static uint16_t corner_px(const bake_t *b, const bezel_t *bz, const look_t *l, const ilook_t *il, float hx, float hy,
-                          float rr, int32_t x, int32_t y, int32_t sx, int32_t sy, uint16_t ground)
+static uint16_t corner_px(bake_scratch_t *sc, const bake_t *b, const bezel_t *bz, const look_t *l, const ilook_t *il,
+                          float hx, float hy, float rr, int32_t x, int32_t y, int32_t sx, int32_t sy, uint16_t ground)
 {
     float nx;
     float ny;
@@ -1139,7 +1150,7 @@ static uint16_t corner_px(const bake_t *b, const bezel_t *bz, const look_t *l, c
     if (d >= 0.5f) {
         return ground;
     }
-    glass_pixel((float)sx + 0.5f, (float)sy + 0.5f, LV_MAX(0.0f, -d), nx, ny, bz, l, il, c);
+    glass_pixel(sc, (float)sx + 0.5f, (float)sy + 0.5f, LV_MAX(0.0f, -d), nx, ny, bz, l, il, c);
     if (d > -0.5f && b->opaque) {
         /* The antialiased edge over the ground. */
         float cov = 0.5f - d;
@@ -1158,7 +1169,8 @@ static uint16_t corner_px(const bake_t *b, const bezel_t *bz, const look_t *l, c
 typedef struct {
     int8_t ox[4], oy[4]; /* red, green, blue, frost */
     uint16_t spec, dark;
-    uint8_t cov; /* 255 inside, 0 outside */
+    uint8_t cov;  /* 255 inside, 0 outside */
+    bool flat;    /* past the rim: the flat top, as away from the corners */
 } corner_opt_t;
 
 #define CORNER_TABS 6
@@ -1226,6 +1238,10 @@ static const corner_tab_t *corner_tab(const bezel_t *bz, const look_t *l, int32_
                 o->spec = (uint16_t)lroundf(clampf(spec, 0.0f, 1.0f) * 256.0f);
                 o->dark = (uint16_t)lroundf(256.0f * (1.0f - l->edge_dark * clampf(1.0f - s / 5.0f, 0.0f, 1.0f) *
                                                                   (0.55f + 0.45f * LV_MAX(0.0f, ny))));
+                o->flat = o->cov == 255 && o->spec == 0 && o->dark == 256;
+                for (int c = 0; c < 4; c++) {
+                    o->flat = o->flat && o->ox[c] == 0 && o->oy[c] == 0;
+                }
             }
         }
     }
@@ -1233,8 +1249,8 @@ static const corner_tab_t *corner_tab(const bezel_t *bz, const look_t *l, int32_
 }
 
 /* A corner pixel from its optics: the integer path of the spans. */
-static inline uint16_t corner_fast(const bake_t *b, const ilook_t *il, const corner_opt_t *o, int32_t sx, int32_t sy,
-                                   uint16_t ground)
+static inline uint16_t corner_fast(bake_scratch_t *sc, const bake_t *b, const ilook_t *il, const corner_opt_t *o,
+                                   int32_t sx, int32_t sy, uint16_t ground)
 {
     uint16_t vr;
     uint16_t vg;
@@ -1245,9 +1261,9 @@ static inline uint16_t corner_fast(const bake_t *b, const ilook_t *il, const cor
     if (o->cov == 0) {
         return ground;
     }
-    vr = fetch_back(sx + o->ox[0], sy + o->oy[0]);
-    vg = fetch_back(sx + o->ox[1], sy + o->oy[1]);
-    vb = fetch_back(sx + o->ox[2], sy + o->oy[2]);
+    vr = fetch_back(sc, sx + o->ox[0], sy + o->oy[0]);
+    vg = fetch_back(sc, sx + o->ox[1], sy + o->oy[1]);
+    vb = fetch_back(sc, sx + o->ox[2], sy + o->oy[2]);
     vf = fetch_frost(sx + o->ox[3], sy + o->oy[3]);
     body(il, s_e5[vr >> 11], s_e6[(vg >> 5) & 63], s_e5[vb & 31], s_e5[vf >> 11], s_e6[(vf >> 5) & 63], s_e5[vf & 31],
          c);
@@ -1267,66 +1283,66 @@ static inline uint16_t corner_fast(const bake_t *b, const ilook_t *il, const cor
     return pack(c[0], c[1], c[2], sx, sy);
 }
 
-/* Bakes the shape. Away from the corners every row is spans: along the top and bottom bezel the
- * bend and the light are the same across the row, along the sides the same down a column, and
- * the flat top has none, so all of them run in integers; only the corners (radius x radius)
- * take the exact path. */
-/* bake_render's flat-top colours of the frost row s_flat_fy[x], per frost column. */
-static int16_t s_flat[FROST][3];
-static int16_t s_flat_fy[FROST];
 
-static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind, lv_color_t tint)
+/* The flat top over a page's ground: its colour is worked out once per 2 x 2 block (the ground
+ * and the frost are both smooth at that scale), dithered per pixel. */
+static inline uint16_t flat_px(bake_scratch_t *sc, const ilook_t *il, const uint16_t *brow, const uint16_t *frow,
+                               int32_t sx, int32_t sy)
 {
+    int32_t fx = LV_CLAMP(0, sx, SCREEN - 1) >> 1;
+    int16_t *c = sc->flat[fx];
+
+    if (sc->flat_fy[fx] != (int16_t)(sy >> 1)) {
+        uint16_t v = brow[fx << 1];
+        uint16_t f = frow[fx];
+        int k[3];
+
+        body(il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[f >> 11], s_e6[(f >> 5) & 63], s_e5[f & 31],
+             k);
+        c[0] = (int16_t)k[0];
+        c[1] = (int16_t)k[1];
+        c[2] = (int16_t)k[2];
+        sc->flat_fy[fx] = (int16_t)(sy >> 1);
+    }
+    return pack(c[0], c[1], c[2], sx, sy);
+}
+
+/* One bake under way: what both halves of it need. */
+typedef struct {
+    bake_t *b;
+    lv_area_t area;
+    ui_glass_kind_t kind;
+    int32_t w, h, bez, corner;
+    float hx, hy, rr;
     bool smooth;
-    const corner_tab_t *ctab;
-    int32_t w = lv_area_get_width(area);
-    int32_t h = lv_area_get_height(area);
-    float hx = (float)w / 2.0f;
-    float hy = (float)h / 2.0f;
-    look_t l = look_of(kind, tint, (ui_glass_mode_t)b->mode);
+    look_t l;
     ilook_t il;
     bezel_t bz;
-    float rr = (float)radius;
-    int32_t bez;
-    int32_t corner;
+    const corner_tab_t *ctab;
     rim_t side[2][32];
-    GLASS_PERF_START();
+} bake_job_t;
 
-    /* Large panels are material: the deep frost only, the face bent at their edge but nowhere
-     * seen sharp through them. Glass on them and on sheets (the sheet's keys) sees the same: the
-     * panel is what is behind it, not the face under it. A sheet itself is clearer glass: its
-     * body is the sheet ground (drawn under it, where it is), so only its rim is baked. */
-    s_use_deep = s_deep_ok && (b->deep || (kind != UI_GLASS_SHEET && w * h > 100000));
-    /* Over a page's ground (the frost dimmed) everything behind the flat top is smooth; baked
-     * ahead of the page, the frost itself is what it refracts. */
-    smooth = b->mode == UI_GLASS_PAGE;
-    s_back_frosted = b->mode == UI_GLASS_PAGE && s_mode == UI_GLASS_FACE;
-    for (int i = 0; i < FROST; i++) {
-        s_flat_fy[i] = -1;
-    }
-    for (int i = 0; i < 8; i++) {
-        s_fb_fy[i] = -1;
-    }
-    if (s_use_deep) {
-        l.frost = 1.0f;
-    }
-    il = ilook_of(&l, (ui_glass_mode_t)b->mode);
-    bezel_for(&bz, w, h);
-    bez = LV_MIN((int32_t)ceilf(bz.bezel), 31);
-    /* The straight spans start past the corner arcs (and the bezel, if the radius is smaller). */
-    corner = LV_MAX(radius, bez);
-    corner = LV_MIN(corner, LV_MIN(w, h) / 2);
-    ctab = corner > 0 ? corner_tab(&bz, &l, w, h, rr, corner) : NULL;
-    for (int32_t i = 0; i < bez; i++) {
-        side[0][i] = rim_at(&bz, &l, (float)i + 0.5f, -1.0f, 0.0f);
-        side[1][i] = rim_at(&bz, &l, (float)i + 0.5f, 1.0f, 0.0f);
-    }
-    for (int32_t y = 0; y < h; y++) {
+/* Rows y0..y1 of a bake. Away from the corners every row is spans: along the top and bottom
+ * bezel the bend and the light are the same across the row, along the sides the same down a
+ * column, and the flat top has none, so all of them run in integers; the corners use their
+ * optics. */
+static void bake_rows(const bake_job_t *j, int32_t y0, int32_t y1, bake_scratch_t *sc)
+{
+    const bake_t *b = j->b;
+    const lv_area_t *area = &j->area;
+    const ilook_t *il = &j->il;
+    int32_t w = j->w;
+    int32_t h = j->h;
+    int32_t corner = j->corner;
+    int32_t bez = j->bez;
+    bool smooth = j->smooth;
+
+    for (int32_t y = y0; y < y1; y++) {
         uint16_t *row = (uint16_t *)(b->buf->data + (size_t)y * b->buf->header.stride);
         int32_t sy = area->y1 + y;
         int32_t dy = LV_MIN(y, h - 1 - y); /* rows from the nearer edge */
         int32_t ny = y < h / 2 ? -1 : 1;
-        const uint16_t *brow = back_row(sy);
+        const uint16_t *brow = back_row(sc, sy);
         const uint16_t *frow = frost_row(sy);
         bool corner_row = dy < corner;
         int32_t x0 = corner_row ? corner : 0;
@@ -1337,28 +1353,30 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
             int32_t ly = y < corner ? y : y - (h - corner);
             int qy = y < corner ? 0 : 2;
 
-            for (int32_t x = 0; x < x0; x++) {
+            for (int32_t x = 0; x < w; x++) {
                 int32_t sx = area->x1 + x;
-                uint16_t ground = brow[LV_CLAMP(0, sx, SCREEN - 1)];
+                uint16_t ground;
+                const corner_opt_t *o;
 
-                row[x] = ctab != NULL ? corner_fast(b, &il, &ctab->px[(qy * corner + ly) * corner + x], sx, sy, ground)
-                                      : corner_px(b, &bz, &l, &il, hx, hy, rr, x, y, sx, sy, ground);
-            }
-            for (int32_t x = x1; x < w; x++) {
-                int32_t sx = area->x1 + x;
-                uint16_t ground = brow[LV_CLAMP(0, sx, SCREEN - 1)];
-
-                row[x] = ctab != NULL ? corner_fast(b, &il, &ctab->px[((qy + 1) * corner + ly) * corner + (x - (w - corner))],
-                                                    sx, sy, ground)
-                                      : corner_px(b, &bz, &l, &il, hx, hy, rr, x, y, sx, sy, ground);
+                if (x == x0 && x1 > x0) {
+                    x = x1 - 1; /* past the span between the corners */
+                    continue;
+                }
+                ground = brow[LV_CLAMP(0, sx, SCREEN - 1)];
+                o = j->ctab == NULL ? NULL
+                    : x < x0       ? &j->ctab->px[(qy * corner + ly) * corner + x]
+                                   : &j->ctab->px[((qy + 1) * corner + ly) * corner + (x - (w - corner))];
+                row[x] = o == NULL ? corner_px(sc, b, &j->bz, &j->l, il, j->hx, j->hy, j->rr, x, y, sx, sy, ground)
+                         : smooth && o->flat ? flat_px(sc, il, brow, frow, sx, sy)
+                                             : corner_fast(sc, b, il, o, sx, sy, ground);
             }
         }
         if (dy < bez) {
             /* The top or bottom bezel: one bend and one light for the whole span. */
-            rim_t rp = rim_at(&bz, &l, (float)dy + 0.5f, 0.0f, (float)ny);
-            const uint16_t *rr_row = back_row(sy - ny * rp.off[0]);
-            const uint16_t *rg_row = back_row(sy - ny * rp.off[1]);
-            const uint16_t *rb_row = back_row(sy - ny * rp.off[2]);
+            rim_t rp = rim_at(&j->bz, &j->l, (float)dy + 0.5f, 0.0f, (float)ny);
+            const uint16_t *rr_row = back_row(sc, sy - ny * rp.off[0]);
+            const uint16_t *rg_row = back_row(sc, sy - ny * rp.off[1]);
+            const uint16_t *rb_row = back_row(sc, sy - ny * rp.off[2]);
             const uint16_t *rf_row = frost_row(sy - ny * rp.off_f);
 
             for (int32_t x = x0; x < x1; x++) {
@@ -1368,13 +1386,13 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
                     /* Over a page's smooth ground: one colour for the pair, each dithered. */
                     int c[3];
 
-                    shade_rgb(&il, &rp, rr_row[sx], rg_row[sx], rb_row[sx], rf_row[sx >> 1], c);
+                    shade_rgb(il, &rp, rr_row[sx], rg_row[sx], rb_row[sx], rf_row[sx >> 1], c);
                     row[x] = pack(c[0], c[1], c[2], area->x1 + x, sy);
                     row[x + 1] = pack(c[0], c[1], c[2], area->x1 + x + 1, sy);
                     x++;
                     continue;
                 }
-                row[x] = shade_px(&il, &rp, rr_row[sx], rg_row[sx], rb_row[sx], rf_row[sx >> 1], area->x1 + x, sy);
+                row[x] = shade_px(il, &rp, rr_row[sx], rg_row[sx], rb_row[sx], rf_row[sx >> 1], area->x1 + x, sy);
             }
             continue;
         }
@@ -1383,56 +1401,143 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
             int32_t sx = area->x1 + x;
             int32_t dx = LV_MIN(x, w - 1 - x);
 
-            if (dx >= bez && kind == UI_GLASS_SHEET) {
+            if (dx >= bez && j->kind == UI_GLASS_SHEET) {
                 x = w - 1 - bez; /* the body: the sheet ground; on to the right rim */
                 continue;
             }
             if (dx < bez) {
-                const rim_t *rp = &side[x < w / 2 ? 0 : 1][dx];
+                const rim_t *rp = &j->side[x < w / 2 ? 0 : 1][dx];
                 int32_t dir = x < w / 2 ? 1 : -1; /* inward */
 
-                row[x] = shade_px(&il, rp, brow[LV_CLAMP(0, sx + dir * rp->off[0], SCREEN - 1)],
+                row[x] = shade_px(il, rp, brow[LV_CLAMP(0, sx + dir * rp->off[0], SCREEN - 1)],
                                   brow[LV_CLAMP(0, sx + dir * rp->off[1], SCREEN - 1)],
                                   brow[LV_CLAMP(0, sx + dir * rp->off[2], SCREEN - 1)],
                                   frow[LV_CLAMP(0, sx + dir * rp->off_f, SCREEN - 1) >> 1], sx, sy);
             } else if (smooth) {
-                /* The flat top over a page's ground: its colour is worked out once per 2 x 2
-                 * block (the ground and the frost are both smooth at that scale), dithered per
-                 * pixel. */
-                int32_t fx = LV_CLAMP(0, sx, SCREEN - 1) >> 1;
-                int16_t *c = s_flat[fx];
-
-                if (s_flat_fy[fx] != (int16_t)(sy >> 1)) {
-                    uint16_t v = brow[fx << 1];
-                    uint16_t f = frow[fx];
-                    int k[3];
-
-                    body(&il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[f >> 11], s_e6[(f >> 5) & 63],
-                         s_e5[f & 31], k);
-                    c[0] = (int16_t)k[0];
-                    c[1] = (int16_t)k[1];
-                    c[2] = (int16_t)k[2];
-                    s_flat_fy[fx] = (int16_t)(sy >> 1);
-                }
-                row[x] = pack(c[0], c[1], c[2], sx, sy);
+                row[x] = flat_px(sc, il, brow, frow, sx, sy);
             } else {
                 int32_t cx = LV_CLAMP(0, sx, SCREEN - 1);
 
-                row[x] = shade_px(&il, NULL, brow[cx], brow[cx], brow[cx], frow[cx >> 1], sx, sy);
+                row[x] = shade_px(il, NULL, brow[cx], brow[cx], brow[cx], frow[cx >> 1], sx, sy);
             }
         }
     }
-    s_back_frosted = false;
+}
+
+#if defined(ESP_PLATFORM)
+/* The second half of a bake, on the other core (the UI thread does the first). */
+static TaskHandle_t s_bake_task;
+static SemaphoreHandle_t s_bake_go;
+static SemaphoreHandle_t s_bake_done;
+static const bake_job_t *s_bake_job;
+static int32_t s_bake_from;
+
+static void bake_worker(void *arg)
+{
+    LV_UNUSED(arg);
+    for (;;) {
+        xSemaphoreTake(s_bake_go, portMAX_DELAY);
+        bake_rows(s_bake_job, s_bake_from, s_bake_job->h, &s_scratch[1]);
+        xSemaphoreGive(s_bake_done);
+    }
+}
+
+static bool bake_worker_ready(void)
+{
+    if (s_bake_task == NULL) {
+        s_bake_go = xSemaphoreCreateBinary();
+        s_bake_done = xSemaphoreCreateBinary();
+        if (s_bake_go == NULL || s_bake_done == NULL ||
+            xTaskCreate(bake_worker, "glass_bake", 6144, NULL, CONFIG_LV_DRAW_THREAD_PRIO + 2, &s_bake_task) != pdPASS) {
+            s_bake_task = NULL;
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
+/* Bakes the shape: its rows split between the two cores. */
+static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind, lv_color_t tint)
+{
+    /* Kept off the stack (the bezel tables are large, a draw event's stack is not): bakes are
+     * made one at a time, on the UI thread. */
+    static bake_job_t s_job;
+    bake_job_t *jp = &s_job;
+    int32_t half;
+    GLASS_PERF_START();
+
+    jp->b = b;
+    jp->area = *area;
+    jp->kind = kind;
+    jp->w = lv_area_get_width(area);
+    jp->h = lv_area_get_height(area);
+    jp->hx = (float)jp->w / 2.0f;
+    jp->hy = (float)jp->h / 2.0f;
+    jp->rr = (float)radius;
+    jp->l = look_of(kind, tint, (ui_glass_mode_t)b->mode);
+    /* Large panels are material: the deep frost only, the face bent at their edge but nowhere
+     * seen sharp through them. Glass on them and on sheets (the sheet's keys) sees the same: the
+     * panel is what is behind it, not the face under it. A sheet itself is clearer glass: its
+     * body is the sheet ground (drawn under it, where it is), so only its rim is baked. */
+    s_use_deep = s_deep_ok && (b->deep || (kind != UI_GLASS_SHEET && jp->w * jp->h > 100000));
+    if (s_use_deep) {
+        jp->l.frost = 1.0f;
+        (void)frost_row(0); /* the deep frost made whole before the halves read it */
+    }
+    /* Over a page's ground (the frost dimmed) everything behind the flat top is smooth; baked
+     * ahead of the page, the frost itself is what it refracts. */
+    jp->smooth = b->mode == UI_GLASS_PAGE;
+    for (int k = 0; k < 2; k++) {
+        s_scratch[k].frosted = b->mode == UI_GLASS_PAGE && s_mode == UI_GLASS_FACE;
+        for (int i = 0; i < FROST; i++) {
+            s_scratch[k].flat_fy[i] = -1;
+        }
+        for (int i = 0; i < 8; i++) {
+            s_scratch[k].fb_fy[i] = -1;
+        }
+    }
+    jp->il = ilook_of(&jp->l, (ui_glass_mode_t)b->mode);
+    bezel_for(&jp->bz, jp->w, jp->h);
+    jp->bez = LV_MIN((int32_t)ceilf(jp->bz.bezel), 31);
+    /* The straight spans start past the corner arcs (and the bezel, if the radius is smaller). */
+    jp->corner = LV_MIN(LV_MAX(radius, jp->bez), LV_MIN(jp->w, jp->h) / 2);
+    jp->ctab = jp->corner > 0 ? corner_tab(&jp->bz, &jp->l, jp->w, jp->h, jp->rr, jp->corner) : NULL;
+    for (int32_t i = 0; i < jp->bez; i++) {
+        jp->side[0][i] = rim_at(&jp->bz, &jp->l, (float)i + 0.5f, -1.0f, 0.0f);
+        jp->side[1][i] = rim_at(&jp->bz, &jp->l, (float)i + 0.5f, 1.0f, 0.0f);
+    }
+    /* The split on an even screen row: the flat top pairs rows (on the screen). */
+    half = jp->h / 2;
+    if ((area->y1 + half) & 1) {
+        half++;
+    }
+#if defined(ESP_PLATFORM)
+    if (jp->w * jp->h >= 6000 && jp->h >= 16 && bake_worker_ready()) {
+        s_bake_job = jp;
+        s_bake_from = half;
+        xSemaphoreGive(s_bake_go);
+        bake_rows(jp, 0, half, &s_scratch[0]);
+        xSemaphoreTake(s_bake_done, portMAX_DELAY);
+    } else {
+        bake_rows(jp, 0, jp->h, &s_scratch[0]);
+    }
+#else
+    bake_rows(jp, 0, half, &s_scratch[0]);
+    bake_rows(jp, half, jp->h, &s_scratch[1]);
+#endif
+    s_scratch[0].frosted = false;
+    s_scratch[1].frosted = false;
     b->x = (int16_t)area->x1;
     b->y = (int16_t)area->y1;
-    b->bez = (int16_t)bez;
-    b->corner = (int16_t)corner;
+    b->bez = (int16_t)jp->bez;
+    b->corner = (int16_t)jp->corner;
     b->gen = s_generation;
     b->identity = s_identity;
     b->pend_x = b->x;
     b->pend_y = b->y;
     s_use_deep = false;
-    GLASS_PERF_END("bake", w, h);
+    GLASS_PERF_END("bake", jp->w, jp->h);
 }
 
 static void settle_timer_cb(lv_timer_t *t)
@@ -2186,7 +2291,7 @@ static bool arc_pixel(int32_t x, int32_t y, int32_t cx, int32_t cy, float rm, fl
     }
     ilook_t il = ilook_of(l, s_mode);
 
-    glass_pixel((float)x + 0.5f, (float)y + 0.5f, LV_MAX(0.0f, -d), nx, ny, bz, l, &il, rgb);
+    glass_pixel(&s_scratch[0], (float)x + 0.5f, (float)y + 0.5f, LV_MAX(0.0f, -d), nx, ny, bz, l, &il, rgb);
     *coverage = clampf(0.5f - d, 0.0f, 1.0f);
     return true;
 }

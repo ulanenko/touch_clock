@@ -175,9 +175,14 @@ a page's smooth ground at a quarter of the colour work (row bakes 38 -> 23 ms); 
 ahead seeing the frosted ground they stand on (they were baked again on every open); settled
 shapes baked again one a frame; the face behind a moving sheet not drawn under its body.
 
-Still open: a page opened right after the face changed bakes its rows then (20-50 ms each);
-a scrolling page draws its ground and rows as images (about 21 ms a frame against Orbit's
-fills, about 13 ms).
+Then (tour 20261029-145512): bakes split between the two cores (the UI thread the top half,
+a worker task the bottom; the other core is mostly idle while a page opens), and corner pixels
+past the rim on the flat-top path. A 500 x 88 row bakes in 11 ms (was 20); a page opened right
+after a face change 105-115 ms (was 146-178), settings reopened 81 ms, alarms 97 ms.
+
+Still open: a page opened right after the face changed still bakes its rows then; a scrolling
+page draws its ground and rows as images (about 20-25 ms a frame against Orbit's fills, about
+13 ms), which is memory bandwidth, not work that can be skipped.
 
 ### Checking Liquid Glass on the clock
 
