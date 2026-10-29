@@ -77,7 +77,10 @@ typedef struct {
 
 typedef struct {
     bool enabled;
-    bool sunrise_brightness_enabled;
+    bool sunrise_brightness_enabled; /* the sunrise before an alarm, from the night */
+    uint8_t sunrise_minutes;         /* its length: 10, 20 or 30 */
+    uint8_t sunrise_peak;            /* its brightest, UI percent: 40, 60 or 80 */
+    bool sunrise_chime;              /* a soft chime a minute before the alarm */
     uint8_t start_hour;
     uint8_t start_minute;
     uint8_t end_hour;
@@ -124,6 +127,11 @@ typedef struct {
     size_t wifi_scan_count;
     clock_wifi_scan_result_t wifi_scan_results[CLOCK_WIFI_SCAN_RESULT_MAX];
     bool sunrise_active;
+    /* The sunrise began in the night (only then does it light the screen); the alarm it is
+     * for; and that alarm's soft chime has been played. */
+    bool sunrise_from_night;
+    time_t sunrise_alarm_epoch;
+    time_t sunrise_chimed_epoch;
     bool in_night_mode;
     /* The quick Night key overrides the schedule until the night window next ends: 1 night
      * now, -1 day now, 0 the schedule decides. */

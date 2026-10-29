@@ -24,6 +24,7 @@ typedef enum {
     UI_ST_SCHEDULE,     /* Night */
     UI_ST_FACE,         /* Night */
     UI_ST_NIGHT_BRIGHT, /* Night (Orbit brightness tile) */
+    UI_ST_SUNRISE,      /* Night */
     UI_ST_LANGUAGE,     /* Other */
     UI_ST_STYLE,        /* Other */
     UI_ST_PAGE_COUNT,
@@ -130,6 +131,13 @@ typedef struct {
     lv_obj_t *night_bright_value;
     lv_obj_t *night_gauge;
     lv_obj_t *night_sunrise_sw;
+    lv_obj_t *night_sunrise_value; /* "20 min · 60%": opens the sunrise's options */
+    ui_st_item_t sunrise_len_item[3];
+    lv_obj_t *sunrise_len_title[3]; /* "20 minutes before the alarm": composed, so synced */
+    lv_obj_t *sunrise_len_check[3];
+    ui_st_item_t sunrise_peak_item[3];
+    lv_obj_t *sunrise_peak_check[3];
+    lv_obj_t *sunrise_chime_sw;
     lv_obj_t *night_click[6];
     ui_st_dim_t night_dim[UI_ST_DIM_MAX];
     uint8_t night_dim_count;

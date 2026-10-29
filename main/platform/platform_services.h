@@ -21,6 +21,7 @@ typedef struct {
     int (*start_test)(uint8_t volume, uint8_t sound);
     int (*play_ui_click)(uint8_t volume);
     int (*play_start_chime)(uint8_t volume);
+    int (*play_sunrise_chime)(uint8_t volume); /* Dawn, a minute before a sunrise's alarm */
     void (*stop)(void);
     bool (*is_alarm_active)(void);
     bool (*is_test_active)(void);
@@ -42,6 +43,8 @@ typedef struct {
     /* The backlight from off up to hw_percent over ms (0: off at once), smoothly and off the
      * UI thread. set_brightness ends one under way. */
     void (*fade_in)(uint8_t hw_percent, uint32_t ms);
+    /* The backlight in per mille of full (finer than set_brightness's percent). */
+    int (*set_level_permille)(uint16_t permille);
 } display_service_t;
 
 typedef struct {

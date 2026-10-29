@@ -73,6 +73,11 @@ static int esp_audio_play_start_chime(uint8_t volume)
     return alarm_audio_play_start_chime(volume);
 }
 
+static int esp_audio_play_sunrise_chime(uint8_t volume)
+{
+    return alarm_audio_play_sunrise_chime(volume);
+}
+
 static int esp_audio_play_ui_click(uint8_t volume)
 {
     return alarm_audio_play_ui_click(volume);
@@ -179,6 +184,15 @@ static void esp_display_fade_in(uint8_t hw_percent, uint32_t ms)
     esp_timer_start_periodic(s_fade_timer, 8000);
 }
 
+static int esp_display_set_level_permille(uint16_t permille)
+{
+    if (s_fade_timer != NULL) {
+        esp_timer_stop(s_fade_timer);
+    }
+    fade_set_duty((1023u * (permille > 1000 ? 1000u : permille)) / 1000u);
+    return 0;
+}
+
 static int esp_display_set_brightness(uint8_t hw_percent)
 {
     if (s_fade_timer != NULL) {
@@ -243,6 +257,7 @@ static const audio_service_t s_audio_service = {
     .start_test = esp_audio_start_test,
     .play_ui_click = esp_audio_play_ui_click,
     .play_start_chime = esp_audio_play_start_chime,
+    .play_sunrise_chime = esp_audio_play_sunrise_chime,
     .stop = esp_audio_stop,
     .is_alarm_active = esp_audio_is_alarm_active,
     .is_test_active = esp_audio_is_test_active,
@@ -261,6 +276,7 @@ static const wifi_service_t s_wifi_service = {
 static const display_service_t s_display_service = {
     .set_brightness = esp_display_set_brightness,
     .fade_in = esp_display_fade_in,
+    .set_level_permille = esp_display_set_level_permille,
 };
 
 static const ota_service_t s_ota_service = {

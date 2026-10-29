@@ -62,12 +62,41 @@ static void start_brightness_fade_down(app_controller_core_t *core, uint8_t targ
     core->state.brightness_fade_duration_ms = duration_ms;
 }
 
+/* The sunrise rises in per-mille steps where the display can take them (whole percents would
+ * show as steps in a dark room). True while it does. */
+static bool apply_sunrise_brightness(app_controller_core_t *core, time_t now)
+{
+    const display_service_t *display = core->config.display_service;
+    uint16_t permille;
+
+    if (display->set_level_permille == NULL || core->state.runtime.alarm_ringing ||
+        !core->state.runtime.sunrise_active || !core->state.runtime.sunrise_from_night ||
+        core->state.temporary_brightness_floor_active) {
+        if (core->state.applied_permille != 0) {
+            core->state.applied_permille = 0;
+            core->state.applied_brightness = UCHAR_MAX; /* set again, in percent */
+        }
+        return false;
+    }
+    permille = brightness_policy_get_target_permille(&core->state.runtime, &core->state.settings, now);
+    if (permille != core->state.applied_permille && display->set_level_permille(permille) == 0) {
+        core->state.applied_permille = permille;
+        core->state.applied_brightness = (uint8_t)((permille + 5U) / 10U);
+    }
+    return true;
+}
+
 static void apply_runtime_brightness(app_controller_core_t *core)
 {
     uint8_t target_brightness;
     uint8_t applied_brightness;
 
     if (core->config.display_service == NULL || core->config.display_service->set_brightness == NULL) {
+        return;
+    }
+    if (apply_sunrise_brightness(core, core->config.clock_service != NULL && core->config.clock_service->now != NULL
+                                           ? core->config.clock_service->now()
+                                           : 0)) {
         return;
     }
 
@@ -245,6 +274,24 @@ static void maybe_request_periodic_ota_check(app_controller_core_t *core)
 
     core->state.ota_next_check_ms = now_ms + APP_OTA_AUTO_CHECK_INTERVAL_MS;
     core->config.ota_service->request_check();
+}
+
+/* The sunrise's soft chime, once, a minute before its alarm. */
+static void maybe_play_sunrise_chime(app_controller_core_t *core, time_t now)
+{
+    app_runtime_state_t *rt = &core->state.runtime;
+    const audio_service_t *audio = core->config.audio_service;
+
+    if (!rt->sunrise_active || !rt->sunrise_from_night || !core->state.settings.night_mode.sunrise_chime ||
+        rt->next_alarm_epoch - now > 60 || rt->next_alarm_epoch <= now || rt->sunrise_chimed_epoch == rt->next_alarm_epoch) {
+        return;
+    }
+    rt->sunrise_chimed_epoch = rt->next_alarm_epoch;
+    if (core->state.audio_available && audio != NULL && audio->play_sunrise_chime != NULL &&
+        core->state.settings.alarm_volume > 0) {
+        /* Well under the alarm: it is there to be half heard. */
+        (void)audio->play_sunrise_chime((uint8_t)(core->state.settings.alarm_volume / 3U));
+    }
 }
 
 static void reconcile_alarm_audio(app_controller_core_t *core)
@@ -525,6 +572,7 @@ time_t app_controller_core_tick(app_controller_core_t *core)
         core->config.ui_refresh(core->config.ui_refresh_ctx);
     }
     reconcile_alarm_audio(core);
+    maybe_play_sunrise_chime(core, now);
 
     if (core->state.runtime.time_synced &&
         now > 1700000000 &&

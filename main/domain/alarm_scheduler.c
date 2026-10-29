@@ -227,16 +227,61 @@ bool alarm_scheduler_tick(app_runtime_state_t *runtime, app_settings_t *settings
         runtime->active_alarm_index = -1;
     }
 
+    /* The sunrise: the last minutes before an alarm, when it is on and the night is on. */
     runtime->sunrise_active = false;
-    if (!runtime->alarm_ringing &&
-        !runtime->snooze_active &&
-        runtime->next_alarm_epoch > now &&
-        (runtime->next_alarm_epoch - now) <= 1800) {
+    if (!runtime->alarm_ringing && !runtime->snooze_active && settings->night_mode.enabled &&
+        settings->night_mode.sunrise_brightness_enabled && runtime->next_alarm_epoch > now &&
+        (runtime->next_alarm_epoch - now) <= alarm_scheduler_sunrise_seconds(settings)) {
         runtime->sunrise_active = true;
+        if (runtime->sunrise_alarm_epoch != runtime->next_alarm_epoch) {
+            /* It lights the screen only if it begins in the night. */
+            runtime->sunrise_alarm_epoch = runtime->next_alarm_epoch;
+            runtime->sunrise_from_night = runtime->in_night_mode;
+        }
+        /* Halfway, the night face gives way to the day face, and the day holds until the night
+         * window ends (the quick Night key's "day now"), so the alarm does not wake to night. */
+        if (runtime->sunrise_from_night && runtime->in_night_mode && runtime->night_now == 0 &&
+            alarm_scheduler_sunrise_progress(runtime, settings, now) >= 500) {
+            struct tm until_tm = now_tm;
+            time_t until;
+
+            until_tm.tm_hour = settings->night_mode.end_hour;
+            until_tm.tm_min = settings->night_mode.end_minute;
+            until_tm.tm_sec = 0;
+            until_tm.tm_isdst = -1;
+            until = mktime(&until_tm);
+            if (until <= now) {
+                until_tm.tm_mday += 1;
+                until_tm.tm_isdst = -1;
+                until = mktime(&until_tm);
+            }
+            runtime->night_now = -1;
+            runtime->night_now_until = until;
+            runtime->in_night_mode = false;
+        }
     }
 
     runtime->effective_brightness = brightness_policy_get_target(runtime, settings, now);
     return settings_changed;
+}
+
+uint32_t alarm_scheduler_sunrise_seconds(const app_settings_t *settings)
+{
+    return (uint32_t)settings->night_mode.sunrise_minutes * 60U;
+}
+
+uint32_t alarm_scheduler_sunrise_progress(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)
+{
+    uint32_t window = alarm_scheduler_sunrise_seconds(settings);
+    int64_t left = (int64_t)runtime->next_alarm_epoch - (int64_t)now;
+
+    if (window == 0 || left >= (int64_t)window) {
+        return 0;
+    }
+    if (left <= 0) {
+        return 1000;
+    }
+    return (uint32_t)(((int64_t)window - left) * 1000 / (int64_t)window);
 }
 
 void alarm_scheduler_snooze(app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)

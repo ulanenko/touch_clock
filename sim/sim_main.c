@@ -182,6 +182,14 @@ static void cb_night_schedule(void *u, uint8_t sh, uint8_t sm, uint8_t eh, uint8
 }
 static void cb_night_brightness(void *u, uint8_t v) { (void)u; s_settings.night_mode.brightness = v; mark_refresh(); }
 static void cb_sunrise(void *u, bool e) { (void)u; s_settings.night_mode.sunrise_brightness_enabled = e; mark_refresh(); }
+static void cb_sunrise_options(void *u, uint8_t m, uint8_t p, bool c)
+{
+    (void)u;
+    s_settings.night_mode.sunrise_minutes = m;
+    s_settings.night_mode.sunrise_peak = p;
+    s_settings.night_mode.sunrise_chime = c;
+    mark_refresh();
+}
 static void cb_alarm_volume(void *u, uint8_t v) { (void)u; s_settings.alarm_volume = v; mark_refresh(); }
 static void cb_ascending(void *u, bool e) { (void)u; s_settings.ascending_alarm_enabled = e; mark_refresh(); }
 static void cb_snooze(void *u, uint8_t m) { (void)u; s_settings.snooze_minutes = m; mark_refresh(); }
@@ -218,6 +226,7 @@ static const clock_ui_callbacks_t s_callbacks = {
     .on_set_night_schedule = cb_night_schedule,
     .on_set_night_brightness = cb_night_brightness,
     .on_set_night_sunrise_brightness_enabled = cb_sunrise,
+    .on_set_night_sunrise_options = cb_sunrise_options,
     .on_set_alarm_volume = cb_alarm_volume,
     .on_set_ascending_alarm_enabled = cb_ascending,
     .on_set_snooze_minutes = cb_snooze,
@@ -279,6 +288,9 @@ static void sample_state(void)
     s_settings.night_mode = (night_mode_config_t) {
         .enabled = true,
         .sunrise_brightness_enabled = true,
+        .sunrise_minutes = 20,
+        .sunrise_peak = 60,
+        .sunrise_chime = true,
         .start_hour = 22,
         .start_minute = 30,
         .end_hour = 7,
@@ -471,6 +483,8 @@ static bool apply_set(const char *key, const char *value)
         s_runtime.alarm_test_active = v != 0;
     } else if (strcmp(key, "sunrise_active") == 0) {
         s_runtime.sunrise_active = v != 0;
+    } else if (strcmp(key, "sunrise_from_night") == 0) {
+        s_runtime.sunrise_from_night = v != 0;
     } else if (strcmp(key, "alarm_delete") == 0) {
         /* Deleted slots look like app_action_delete_alarm leaves them. */
         s_settings.alarms[v] = (alarm_config_t) {.enabled = false, .hour = 7, .minute = 0, .days_mask = 0x7F,

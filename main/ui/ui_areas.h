@@ -44,6 +44,12 @@ void ui_boot_step(clock_ui_context_t *ctx);
 void ui_boot_finish(clock_ui_context_t *ctx);
 void ui_boot_replay(clock_ui_context_t *ctx); /* debug call: the boot screen and the intro again */
 
+/* The sunrise before an alarm (ui_sunrise.c): its glow, and the night face dissolving into the
+ * day face when the night hands over. */
+void ui_sunrise_create(clock_ui_context_t *ctx);
+void ui_sunrise_tick(clock_ui_context_t *ctx, time_t now);
+void ui_sunrise_before_face_change(clock_ui_context_t *ctx);
+
 /* --- Face chrome ------------------------------------------------------------------------- */
 
 void ui_face_chrome_create(clock_ui_context_t *ctx);     /* created below the other areas */

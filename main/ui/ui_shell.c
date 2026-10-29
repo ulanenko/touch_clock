@@ -921,6 +921,7 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
     /* A refresh re-applies the same face: only a real face change closes the theme sheet. */
     if (ctx->tileview != NULL && face != tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview))) {
         face_themes_close(ctx, true);
+        ui_sunrise_before_face_change(ctx);
     }
     ctx->suppress_events = true;
     apply_face_navigation_mode(ctx, face);
@@ -1038,6 +1039,7 @@ void build_root_ui(clock_ui_context_t *ctx)
 
     create_face_slide_layer(ctx);
     create_face_swipe_layer(ctx);
+    ui_sunrise_create(ctx);
     ui_chrome_build(ctx);
     set_active_face(ctx, ctx->settings->current_face, LV_ANIM_OFF);
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR

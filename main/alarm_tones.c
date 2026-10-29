@@ -505,14 +505,27 @@ bool alarm_tone_render(uint8_t sound, int16_t *out, float *block)
 
 size_t alarm_tone_start_samples(void)
 {
-    return (size_t)(s_start.loop_s * (float)ALARM_TONE_SAMPLE_RATE);
+    return alarm_tone_chime_samples(s_start_variant);
 }
 
 bool alarm_tone_render_start(int16_t *out, float *block)
 {
+    return alarm_tone_render_chime(s_start_variant, out, block);
+}
+
+size_t alarm_tone_chime_samples(unsigned variant)
+{
+    variant = variant < sizeof(s_start_variants) / sizeof(s_start_variants[0]) ? variant : 0;
+    return (size_t)(s_start_variants[variant].loop_s * (float)ALARM_TONE_SAMPLE_RATE);
+}
+
+bool alarm_tone_render_chime(unsigned variant, int16_t *out, float *block)
+{
     if (out == NULL || block == NULL) {
         return false;
     }
+    variant = variant < sizeof(s_start_variants) / sizeof(s_start_variants[0]) ? variant : 0;
     /* Softer than the alarms: a greeting, mostly the first strikes; the tail fades out. */
-    return render_def(&s_start, alarm_tone_start_samples(), true, 1500.0f, 18000.0f, out, block);
+    return render_def(&s_start_variants[variant], alarm_tone_chime_samples(variant), true, 1500.0f, 18000.0f, out,
+                      block);
 }

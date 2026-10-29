@@ -47,6 +47,10 @@ typedef struct {
     app_settings_t stored_settings;
     int64_t monotonic_ms;
     int ui_refresh_calls;
+    uint16_t permille_value;
+    int permille_calls;
+    int sunrise_chime_calls;
+    uint8_t sunrise_chime_volume;
 } fake_env_t;
 
 static fake_env_t *g_env;
@@ -228,6 +232,20 @@ static int fake_display_set_brightness(uint8_t hw_percent)
     return 0;
 }
 
+static int fake_display_set_level_permille(uint16_t permille)
+{
+    g_env->permille_calls += 1;
+    g_env->permille_value = permille;
+    return 0;
+}
+
+static int fake_audio_play_sunrise_chime(uint8_t volume)
+{
+    g_env->sunrise_chime_calls += 1;
+    g_env->sunrise_chime_volume = volume;
+    return 0;
+}
+
 static int fake_settings_load(app_settings_t *settings)
 {
     g_env->load_calls += 1;
@@ -270,6 +288,7 @@ static const audio_service_t s_audio_service = {
     .stop = fake_audio_stop,
     .is_alarm_active = fake_audio_is_alarm_active,
     .is_test_active = fake_audio_is_test_active,
+    .play_sunrise_chime = fake_audio_play_sunrise_chime,
 };
 
 static const wifi_service_t s_wifi_service = {
@@ -284,6 +303,7 @@ static const wifi_service_t s_wifi_service = {
 
 static const display_service_t s_display_service = {
     .set_brightness = fake_display_set_brightness,
+    .set_level_permille = fake_display_set_level_permille,
 };
 
 static const ota_service_t s_ota_service = {
@@ -551,6 +571,60 @@ static int test_temporary_brightness_floor(void)
     return 0;
 }
 
+static int test_sunrise_rises_finely_and_chimes_once(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+    time_t alarm = make_utc_time(2026, 3, 12, 6, 30, 0);
+    uint16_t last;
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    env.stored_settings.night_mode.enabled = true;
+    env.stored_settings.night_mode.end_hour = 7;
+    env.stored_settings.night_mode.brightness = 25;
+    env.stored_settings.alarm_volume = 60;
+    env.stored_settings.alarms[0].enabled = true;
+    env.stored_settings.alarms[0].hour = 6;
+    env.stored_settings.alarms[0].minute = 30;
+    env.stored_settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    env.stored_settings.alarms[0].days_mask = 0x7F;
+    env.now = alarm - 25 * 60;
+    core = make_core(&env);
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    core.state.audio_available = true;
+    core.config.wifi_service = NULL; /* its fake snapshot replaces the whole runtime */
+
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(0, env.permille_calls);
+
+    /* In the sunrise the backlight rises in per mille steps, up all the way. */
+    env.now = alarm - 19 * 60;
+    app_controller_core_tick(&core);
+    EXPECT_TRUE(env.permille_calls > 0);
+    last = env.permille_value;
+    EXPECT_TRUE(last >= 250 && last < 260);
+    env.now = alarm - 5 * 60;
+    app_controller_core_tick(&core);
+    EXPECT_TRUE(env.permille_value > last);
+    EXPECT_EQ_INT(0, env.sunrise_chime_calls);
+
+    /* The soft chime, a minute before, once. */
+    env.now = alarm - 59;
+    app_controller_core_tick(&core);
+    env.now = alarm - 30;
+    app_controller_core_tick(&core);
+
+    EXPECT_EQ_INT(1, env.sunrise_chime_calls);
+    EXPECT_EQ_INT(20, env.sunrise_chime_volume);
+
+    /* Ringing: the alarm's full brightness, in percent again. */
+    env.now = alarm;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(DISPLAY_BRIGHTNESS_MAX_PERCENT, env.brightness_value);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -573,6 +647,11 @@ int main(void)
     }
 
     status = test_alarm_auto_stop_and_brightness_fade();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_sunrise_rises_finely_and_chimes_once();
     if (status != 0) {
         return status;
     }

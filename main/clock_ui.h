@@ -43,6 +43,7 @@ typedef struct {
                                   uint8_t end_minute);
     void (*on_set_night_brightness)(void *user_ctx, uint8_t hw_percent);
     void (*on_set_night_sunrise_brightness_enabled)(void *user_ctx, bool enabled);
+    void (*on_set_night_sunrise_options)(void *user_ctx, uint8_t minutes, uint8_t peak, bool chime);
     void (*on_set_alarm_volume)(void *user_ctx, uint8_t volume);
     void (*on_set_ascending_alarm_enabled)(void *user_ctx, bool enabled);
     void (*on_set_snooze_minutes)(void *user_ctx, uint8_t minutes);

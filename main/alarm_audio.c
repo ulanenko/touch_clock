@@ -107,28 +107,29 @@ static const int16_t *tone_pcm(uint8_t sound)
     return pcm;
 }
 
-/* The start chime, rendered when first played (on the audio task) and kept. */
-static int16_t *s_start_pcm;
+/* The chimes (the start chime, the sunrise's), rendered when first played (on the audio task)
+ * and kept. */
+static int16_t *s_chime_pcm[2];
 
-static const int16_t *start_pcm(void)
+static const int16_t *chime_pcm(unsigned variant)
 {
-    if (s_tone_lock == NULL) {
+    if (s_tone_lock == NULL || variant >= 2) {
         return NULL;
     }
     xSemaphoreTake(s_tone_lock, portMAX_DELAY);
-    if (s_start_pcm == NULL) {
-        int16_t *buf = heap_caps_malloc(alarm_tone_start_samples() * sizeof(int16_t), MALLOC_CAP_SPIRAM);
+    if (s_chime_pcm[variant] == NULL) {
+        int16_t *buf = heap_caps_malloc(alarm_tone_chime_samples(variant) * sizeof(int16_t), MALLOC_CAP_SPIRAM);
         float *block = heap_caps_malloc(ALARM_TONE_BLOCK_SAMPLES * sizeof(float), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 
-        if (buf != NULL && block != NULL && alarm_tone_render_start(buf, block)) {
-            s_start_pcm = buf;
+        if (buf != NULL && block != NULL && alarm_tone_render_chime(variant, buf, block)) {
+            s_chime_pcm[variant] = buf;
         } else {
             heap_caps_free(buf);
         }
         heap_caps_free(block);
     }
     xSemaphoreGive(s_tone_lock);
-    return s_start_pcm;
+    return s_chime_pcm[variant];
 }
 
 static void tone_prerender_task(void *arg)
@@ -295,13 +296,13 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
         if (*mode == ALARM_AUDIO_MODE_ALARM || *mode == ALARM_AUDIO_MODE_TEST) {
             break;
         }
-        pcm = start_pcm();
+        pcm = chime_pcm(cmd->sound);
         if (pcm == NULL) {
             *mode = ALARM_AUDIO_MODE_IDLE;
             break;
         }
         loop->data = pcm;
-        loop->samples = alarm_tone_start_samples();
+        loop->samples = alarm_tone_chime_samples(cmd->sound);
         *volume = clamp_volume(cmd->volume);
         *sample_index = 0;
         *elapsed_samples = 0;
@@ -583,7 +584,12 @@ esp_err_t alarm_audio_play_ui_click(uint8_t volume)
 
 esp_err_t alarm_audio_play_start_chime(uint8_t volume)
 {
-    return enqueue_command(ALARM_AUDIO_CMD_PLAY_START, volume, 0);
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_START, volume, ALARM_TONE_CHIME_START);
+}
+
+esp_err_t alarm_audio_play_sunrise_chime(uint8_t volume)
+{
+    return enqueue_command(ALARM_AUDIO_CMD_PLAY_START, volume, ALARM_TONE_CHIME_DAWN);
 }
 
 void alarm_audio_stop(void)

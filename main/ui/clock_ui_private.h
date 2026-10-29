@@ -53,6 +53,7 @@ void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t end_minute);
 void request_set_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent);
 void request_set_night_sunrise_brightness_enabled(clock_ui_context_t *ctx, bool enabled);
+void request_set_night_sunrise_options(clock_ui_context_t *ctx, uint8_t minutes, uint8_t peak, bool chime);
 void request_set_alarm_volume(clock_ui_context_t *ctx, uint8_t volume);
 void request_set_ascending_alarm_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_snooze_minutes(clock_ui_context_t *ctx, uint8_t minutes);

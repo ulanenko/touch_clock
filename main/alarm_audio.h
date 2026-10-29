@@ -14,6 +14,7 @@ esp_err_t alarm_audio_start_test(uint8_t volume, uint8_t sound);
 esp_err_t alarm_audio_play_ui_click(uint8_t volume);
 /* The start chime, once (rendered on first use). Not over an alarm or a preview. */
 esp_err_t alarm_audio_play_start_chime(uint8_t volume);
+esp_err_t alarm_audio_play_sunrise_chime(uint8_t volume);
 void alarm_audio_stop(void);
 bool alarm_audio_is_alarm_active(void);
 bool alarm_audio_is_test_active(void);

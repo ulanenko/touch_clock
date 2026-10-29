@@ -8,5 +8,9 @@
 uint8_t brightness_policy_get_target(const app_runtime_state_t *runtime,
                                      const app_settings_t *settings,
                                      time_t now);
+/* The same, finer (per mille of full): the sunrise rises in steps a percent would show. */
+uint16_t brightness_policy_get_target_permille(const app_runtime_state_t *runtime,
+                                               const app_settings_t *settings,
+                                               time_t now);
 uint8_t brightness_policy_ui_to_hw(uint8_t ui_percent);
 uint8_t brightness_policy_hw_to_ui(uint8_t hw_percent);

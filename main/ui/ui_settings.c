@@ -388,6 +388,7 @@ ui_st_page_t st_parent(ui_st_page_t id)
     case UI_ST_SCHEDULE:
     case UI_ST_FACE:
     case UI_ST_NIGHT_BRIGHT:
+    case UI_ST_SUNRISE:
         return UI_ST_NIGHT;
     case UI_ST_LANGUAGE:
     case UI_ST_STYLE:
@@ -926,6 +927,9 @@ static void build_page(clock_ui_context_t *ctx, ui_st_page_t id)
     case UI_ST_NIGHT_BRIGHT:
         st_night_bright_build(ctx);
         break;
+    case UI_ST_SUNRISE:
+        st_sunrise_build(ctx);
+        break;
     case UI_ST_LANGUAGE:
         st_language_build(ctx);
         break;
@@ -969,6 +973,9 @@ static void sync_page(clock_ui_context_t *ctx, ui_st_page_t id, bool force)
         break;
     case UI_ST_NIGHT_BRIGHT:
         st_night_bright_sync(ctx);
+        break;
+    case UI_ST_SUNRISE:
+        st_sunrise_sync(ctx);
         break;
     case UI_ST_LANGUAGE:
         st_language_sync(ctx);
@@ -1127,6 +1134,11 @@ static void debug_night_brightness(clock_ui_context_t *ctx)
     debug_sub(ctx, UI_SETTINGS_PAGE_NIGHT, UI_ST_NIGHT_BRIGHT);
 }
 
+static void debug_sunrise(clock_ui_context_t *ctx)
+{
+    debug_sub(ctx, UI_SETTINGS_PAGE_NIGHT, UI_ST_SUNRISE);
+}
+
 static void debug_language(clock_ui_context_t *ctx)
 {
     debug_sub(ctx, UI_SETTINGS_PAGE_OTHER, UI_ST_LANGUAGE);
@@ -1226,6 +1238,7 @@ void ui_settings_create(clock_ui_context_t *ctx)
     ui_debug_register("night_schedule", debug_schedule);
     ui_debug_register("night_face_picker", debug_face_picker);
     ui_debug_register("night_brightness", debug_night_brightness);
+    ui_debug_register("sunrise_options", debug_sunrise);
     ui_debug_register("language_picker", debug_language);
     ui_debug_register("style_picker", debug_style);
     ui_debug_register("about", debug_about);

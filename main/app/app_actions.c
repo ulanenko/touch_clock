@@ -166,6 +166,28 @@ app_action_result_t app_action_set_night_sunrise_brightness_enabled(app_state_t 
     return result;
 }
 
+app_action_result_t app_action_set_night_sunrise_options(app_state_t *state,
+                                                         uint8_t minutes,
+                                                         uint8_t peak,
+                                                         bool chime,
+                                                         time_t now)
+{
+    app_action_result_t result;
+    night_mode_config_t *nm = &state->settings.night_mode;
+
+    app_action_result_init(&result);
+    chime = chime ? true : false;
+    if (nm->sunrise_minutes == minutes && nm->sunrise_peak == peak && nm->sunrise_chime == chime) {
+        return result;
+    }
+    nm->sunrise_minutes = minutes;
+    nm->sunrise_peak = peak;
+    nm->sunrise_chime = chime;
+    settings_policy_sanitize(&state->settings);
+    refresh_runtime_after_settings_change(state, &result, now);
+    return result;
+}
+
 app_action_result_t app_action_set_ui_click_sound_enabled(app_state_t *state, bool enabled)
 {
     app_action_result_t result;

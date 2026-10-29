@@ -125,6 +125,80 @@ static int test_cancel_next_one_time_disables_alarm(void)
     return 0;
 }
 
+static int test_sunrise_from_night_hands_over_to_day(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime;
+    time_t alarm = make_utc_time(2026, 3, 12, 6, 30, 0);
+
+    init_state(&settings, &runtime);
+    settings.night_mode.enabled = true;
+    settings.night_mode.start_hour = 22;
+    settings.night_mode.end_hour = 7;
+    settings.night_mode.sunrise_brightness_enabled = true;
+    settings.night_mode.sunrise_minutes = 20;
+    settings.alarms[0].enabled = true;
+    settings.alarms[0].hour = 6;
+    settings.alarms[0].minute = 30;
+    settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    settings.alarms[0].days_mask = 0x7F;
+
+    /* Before the window: the night, no sunrise. */
+    alarm_scheduler_tick(&runtime, &settings, alarm - 25 * 60);
+    EXPECT_TRUE(runtime.in_night_mode);
+    EXPECT_FALSE(runtime.sunrise_active);
+
+    /* In its first half: a sunrise from the night, still the night. */
+    alarm_scheduler_tick(&runtime, &settings, alarm - 15 * 60);
+    EXPECT_TRUE(runtime.sunrise_active);
+    EXPECT_TRUE(runtime.sunrise_from_night);
+    EXPECT_TRUE(runtime.in_night_mode);
+    EXPECT_EQ_INT(250, alarm_scheduler_sunrise_progress(&runtime, &settings, alarm - 15 * 60));
+
+    /* Halfway: day, until the night window ends (07:00), past the alarm too. */
+    alarm_scheduler_tick(&runtime, &settings, alarm - 10 * 60);
+    EXPECT_FALSE(runtime.in_night_mode);
+    EXPECT_EQ_INT(-1, runtime.night_now);
+    EXPECT_EQ_INT(make_utc_time(2026, 3, 12, 7, 0, 0), runtime.night_now_until);
+    alarm_scheduler_tick(&runtime, &settings, alarm);
+    EXPECT_TRUE(runtime.alarm_ringing);
+    alarm_scheduler_stop(&runtime);
+    alarm_scheduler_tick(&runtime, &settings, alarm + 60);
+    EXPECT_FALSE(runtime.in_night_mode);
+    /* After 07:00 the schedule decides again. */
+    alarm_scheduler_tick(&runtime, &settings, make_utc_time(2026, 3, 12, 22, 30, 0));
+    EXPECT_TRUE(runtime.in_night_mode);
+    return 0;
+}
+
+static int test_sunrise_off_or_from_day(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime;
+    time_t alarm = make_utc_time(2026, 3, 12, 9, 0, 0);
+
+    init_state(&settings, &runtime);
+    settings.night_mode.enabled = true;
+    settings.night_mode.end_hour = 7;
+    settings.alarms[0].enabled = true;
+    settings.alarms[0].hour = 9;
+    settings.alarms[0].minute = 0;
+    settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    settings.alarms[0].days_mask = 0x7F;
+
+    /* An alarm after the night: a sunrise, but from the day, so nothing changes. */
+    alarm_scheduler_tick(&runtime, &settings, alarm - 5 * 60);
+    EXPECT_TRUE(runtime.sunrise_active);
+    EXPECT_FALSE(runtime.sunrise_from_night);
+    EXPECT_EQ_INT(0, runtime.night_now);
+
+    /* Switched off: none. */
+    settings.night_mode.sunrise_brightness_enabled = false;
+    alarm_scheduler_tick(&runtime, &settings, alarm - 4 * 60);
+    EXPECT_FALSE(runtime.sunrise_active);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -132,6 +206,16 @@ int main(void)
     test_use_utc();
 
     status = test_weekly_next_occurrence();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_sunrise_from_night_hands_over_to_day();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_sunrise_off_or_from_day();
     if (status != 0) {
         return status;
     }

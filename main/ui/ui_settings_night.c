@@ -19,6 +19,22 @@ static const ui_l10n_str_t s_duration = UI_L10N_STR("%d h %02d min", "%d h %02d 
                                                     "%d ч %02d мин", "%d u %02d min");
 
 static const ui_l10n_str_t s_starts = UI_L10N_STR("Starts", "Początek", "Початок", "Начало", "Begint");
+static const ui_l10n_str_t s_sunrise = UI_L10N_STR("Sunrise", "Wschód słońca", "Світанок", "Рассвет", "Zonsopkomst");
+static const ui_l10n_str_t s_sunrise_value = UI_L10N_STR("%d min · %d%%", "%d min · %d%%", "%d хв · %d%%", "%d мин · %d%%",
+                                                         "%d min · %d%%");
+static const ui_l10n_str_t s_sunrise_length = UI_L10N_STR("Length", "Długość", "Тривалість", "Длительность", "Duur");
+static const ui_l10n_str_t s_sunrise_minutes = UI_L10N_STR("%d minutes before the alarm", "%d minut przed alarmem",
+                                                           "За %d хвилин до будильника", "За %d минут до будильника",
+                                                           "%d minuten voor de wekker");
+static const ui_l10n_str_t s_sunrise_peak = UI_L10N_STR("Brightest", "Najjaśniej", "Найяскравіше", "Ярче всего",
+                                                        "Helderst");
+static const ui_l10n_str_t s_sunrise_chime = UI_L10N_STR("Soft chime", "Cichy dzwonek", "Тихий дзвін", "Тихий звон",
+                                                         "Zacht belletje");
+static const ui_l10n_str_t s_sunrise_chime_sub = UI_L10N_STR("A minute before the alarm", "Minutę przed alarmem",
+                                                             "За хвилину до будильника", "За минуту до будильника",
+                                                             "Een minuut voor de wekker");
+static const uint8_t s_sunrise_lengths[3] = {10, 20, 30};
+static const uint8_t s_sunrise_peaks[3] = {40, 60, 80};
 static const ui_l10n_str_t s_ends = UI_L10N_STR("Ends", "Koniec", "Кінець", "Конец", "Eindigt");
 
 #define FACE_THUMB_INSTRUMENT 60
@@ -376,6 +392,139 @@ static void enabled_cb(lv_event_t *e)
     st_night_sync(ctx, false);
 }
 
+/* --- Sunrise ------------------------------------------------------------------------- */
+
+static void sunrise_row_cb(lv_event_t *e)
+{
+    st_show_page(lv_event_get_user_data(e), UI_ST_SUNRISE);
+}
+
+/* The sunrise's options under its switch: "20 min · 60%", opening the page that sets them. */
+static void sunrise_options_row(clock_ui_context_t *ctx, lv_obj_t *group)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_settings_state_t *st = ST(ctx);
+    kit_row_t row;
+    kit_row_opts_t o = {0};
+
+    o.trail = KIT_TRAIL_VALUE;
+    o.value = " ";
+    o.value_chevron = true;
+    o.tint = sk->tint_night;
+    o.on_click = sunrise_row_cb;
+    o.user_data = ctx;
+    if (st_orbit()) {
+        o.icon = KIT_ICON_SUN;
+    }
+    st_row(ctx, &row, group, &o, ST_STR(&s_sunrise), ST_NONE);
+    if (st_orbit()) {
+        lv_obj_set_style_radius(row.row, sk->radius_m, 0);
+    }
+    st->night_sunrise_value = row.value;
+    dim_row(ctx, &row);
+}
+
+static void sunrise_set(clock_ui_context_t *ctx, int length, int peak, int chime)
+{
+    const night_mode_config_t *nm = &ctx->settings->night_mode;
+
+    request_set_night_sunrise_options(ctx, length >= 0 ? s_sunrise_lengths[length] : nm->sunrise_minutes,
+                                      peak >= 0 ? s_sunrise_peaks[peak] : nm->sunrise_peak,
+                                      chime >= 0 ? chime != 0 : nm->sunrise_chime);
+}
+
+static void sunrise_len_cb(lv_event_t *e)
+{
+    ui_st_item_t *item = lv_event_get_user_data(e);
+
+    sunrise_set(item->ui, item->index, -1, -1);
+}
+
+static void sunrise_peak_cb(lv_event_t *e)
+{
+    ui_st_item_t *item = lv_event_get_user_data(e);
+
+    sunrise_set(item->ui, -1, item->index, -1);
+}
+
+static void sunrise_chime_cb(lv_event_t *e)
+{
+    clock_ui_context_t *ctx = lv_event_get_user_data(e);
+
+    sunrise_set(ctx, -1, -1, lv_obj_has_state(lv_event_get_target(e), LV_STATE_CHECKED) ? 1 : 0);
+}
+
+void st_sunrise_build(clock_ui_context_t *ctx)
+{
+    const ui_skin_t *sk = ui_skin();
+    clock_ui_settings_state_t *st = ST(ctx);
+    kit_page_t *p;
+    lv_obj_t *group;
+    lv_obj_t *label;
+    kit_row_t row;
+    kit_row_opts_t o = {0};
+    char text[64];
+
+    p = st_page_begin(ctx, UI_ST_SUNRISE, st_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_STR(&s_sunrise),
+                      KIT_NAV_BACK);
+    label = kit_section_label(p->content, "");
+    st_bind(ctx, label, ST_STR(&s_sunrise_length));
+    group = kit_group(p->content);
+    for (int i = 0; i < 3; i++) {
+        o = (kit_row_opts_t) {0};
+        st->sunrise_len_item[i].ui = ctx;
+        st->sunrise_len_item[i].index = (uint8_t)i;
+        o.title = " ";
+        o.trail = KIT_TRAIL_CUSTOM;
+        o.on_click = sunrise_len_cb;
+        o.user_data = &st->sunrise_len_item[i];
+        kit_row_create(&row, group, &o);
+        st->sunrise_len_title[i] = row.title;
+        st->sunrise_len_check[i] = kit_icon_small(row.trail, KIT_ICON_CHECK, sk->accent);
+    }
+    label = kit_section_label(p->content, "");
+    st_bind(ctx, label, ST_STR(&s_sunrise_peak));
+    group = kit_group(p->content);
+    for (int i = 0; i < 3; i++) {
+        o = (kit_row_opts_t) {0};
+        st->sunrise_peak_item[i].ui = ctx;
+        st->sunrise_peak_item[i].index = (uint8_t)i;
+        snprintf(text, sizeof(text), "%d%%", s_sunrise_peaks[i]);
+        o.title = text;
+        o.trail = KIT_TRAIL_CUSTOM;
+        o.on_click = sunrise_peak_cb;
+        o.user_data = &st->sunrise_peak_item[i];
+        kit_row_create(&row, group, &o);
+        st->sunrise_peak_check[i] = kit_icon_small(row.trail, KIT_ICON_CHECK, sk->accent);
+    }
+    group = kit_group(p->content);
+    o = (kit_row_opts_t) {0};
+    o.trail = KIT_TRAIL_SWITCH;
+    o.tint = sk->tint_night;
+    st_row(ctx, &row, group, &o, ST_STR(&s_sunrise_chime), ST_STR(&s_sunrise_chime_sub));
+    st->sunrise_chime_sw = row.control;
+    st_keep_gestures(row.control);
+    lv_obj_add_event_cb(row.control, sunrise_chime_cb, LV_EVENT_VALUE_CHANGED, ctx);
+}
+
+void st_sunrise_sync(clock_ui_context_t *ctx)
+{
+    clock_ui_settings_state_t *st = ST(ctx);
+    const night_mode_config_t *nm = &ctx->settings->night_mode;
+    char text[64];
+
+    if (!st->built[UI_ST_SUNRISE]) {
+        return;
+    }
+    for (int i = 0; i < 3; i++) {
+        snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_sunrise_minutes), s_sunrise_lengths[i]);
+        kit_label_set_text_if_changed(st->sunrise_len_title[i], text);
+        st_show(st->sunrise_len_check[i], nm->sunrise_minutes == s_sunrise_lengths[i]);
+        st_show(st->sunrise_peak_check[i], nm->sunrise_peak == s_sunrise_peaks[i]);
+    }
+    kit_switch_set(st->sunrise_chime_sw, nm->sunrise_chime);
+}
+
 static void sunrise_cb(lv_event_t *e)
 {
     clock_ui_context_t *ctx = lv_event_get_user_data(e);
@@ -561,6 +710,7 @@ static void build_orbit(clock_ui_context_t *ctx, kit_page_t *p)
     lv_obj_set_style_pad_ver(row.row, 14, 0);
     st->night_sunrise_sw = row.control;
     dim_row(ctx, &row);
+    sunrise_options_row(ctx, group);
 }
 
 static void build_list(clock_ui_context_t *ctx, kit_page_t *p, lv_obj_t *group)
@@ -661,6 +811,7 @@ static void build_list(clock_ui_context_t *ctx, kit_page_t *p, lv_obj_t *group)
     dim_row(ctx, &row);
     box = lv_obj_get_parent(row.title);
     LV_UNUSED(box);
+    sunrise_options_row(ctx, group);
 }
 
 static void build_ring(clock_ui_context_t *ctx, kit_page_t *p)
@@ -776,6 +927,10 @@ void st_night_sync(clock_ui_context_t *ctx, bool force)
     }
     kit_switch_set(st->night_sw, nm->enabled);
     kit_switch_set(st->night_sunrise_sw, nm->sunrise_brightness_enabled);
+    if (st->night_sunrise_value != NULL) {
+        snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_sunrise_value), nm->sunrise_minutes, nm->sunrise_peak);
+        kit_label_set_text_if_changed(st->night_sunrise_value, text);
+    }
 
     if (st->night_sched_value != NULL) {
         format_range(ctx, text, sizeof(text));

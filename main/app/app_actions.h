@@ -55,6 +55,12 @@ app_action_result_t app_action_set_runtime_night_brightness_override(app_state_t
                                                                      time_t now);
 app_action_result_t app_action_set_night_brightness(app_state_t *state, uint8_t hw_percent, time_t now);
 app_action_result_t app_action_set_night_sunrise_brightness_enabled(app_state_t *state, bool enabled, time_t now);
+/* The sunrise's length (10, 20 or 30 min), brightest (UI percent: 40, 60 or 80) and soft chime. */
+app_action_result_t app_action_set_night_sunrise_options(app_state_t *state,
+                                                         uint8_t minutes,
+                                                         uint8_t peak,
+                                                         bool chime,
+                                                         time_t now);
 app_action_result_t app_action_set_ui_click_sound_enabled(app_state_t *state, bool enabled);
 app_action_result_t app_action_set_ui_click_volume(app_state_t *state, uint8_t volume);
 app_action_result_t app_action_set_language(app_state_t *state, clock_language_t language);

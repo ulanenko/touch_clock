@@ -1,7 +1,6 @@
 #include "domain/brightness_policy.h"
 
-#define SUNRISE_WINDOW_SECONDS 1800
-#define NIGHT_SUNRISE_MIN_TARGET 50
+#include "domain/alarm_scheduler.h"
 
 static int clamp_brightness(int brightness)
 {
@@ -35,72 +34,34 @@ static uint8_t get_night_mode_brightness(const app_runtime_state_t *runtime,
     return settings->night_mode.brightness;
 }
 
-static int64_t sunrise_progress_seconds(const app_runtime_state_t *runtime, time_t now)
+/* The sunrise's backlight (per mille of full): from the night's level up to its brightest,
+ * slowly at first (the cube of the way through), as daylight comes. */
+static uint32_t sunrise_permille(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)
 {
-    int64_t seconds_left;
-    int64_t progress;
+    uint32_t p = alarm_scheduler_sunrise_progress(runtime, settings, now); /* 0..1000 */
+    uint32_t from = (uint32_t)clamp_brightness(get_night_mode_brightness(runtime, settings)) * 10U;
+    uint32_t to = (uint32_t)brightness_policy_ui_to_hw(settings->night_mode.sunrise_peak) * 10U;
+    uint64_t eased = (uint64_t)p * p * p; /* x 10^9 */
 
-    if (runtime->next_alarm_epoch <= now) {
-        return 0;
+    if (to <= from) {
+        return from;
     }
-
-    seconds_left = (int64_t)(runtime->next_alarm_epoch - now);
-    progress = SUNRISE_WINDOW_SECONDS - seconds_left;
-    if (progress < 0) {
-        progress = 0;
-    }
-    if (progress > SUNRISE_WINDOW_SECONDS) {
-        progress = SUNRISE_WINDOW_SECONDS;
-    }
-
-    return progress;
+    return from + (uint32_t)(((uint64_t)(to - from) * eased) / 1000000000ULL);
 }
 
-static uint8_t get_default_sunrise_target(const app_runtime_state_t *runtime,
-                                          const app_settings_t *settings,
-                                          time_t now)
+static bool sunrise_lights(const app_runtime_state_t *runtime, time_t now)
 {
-    int64_t progress = sunrise_progress_seconds(runtime, now);
-    int minimum = settings->night_mode.enabled
-                      ? get_night_mode_brightness(runtime, settings)
-                      : DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    int span;
-
-    if (minimum < DISPLAY_BRIGHTNESS_MIN_PERCENT) {
-        minimum = DISPLAY_BRIGHTNESS_MIN_PERCENT;
-    }
-    if (minimum > settings->base_brightness) {
-        minimum = settings->base_brightness;
-    }
-
-    span = (int)settings->base_brightness - minimum;
-    return (uint8_t)(minimum + ((progress * span) / SUNRISE_WINDOW_SECONDS));
+    return runtime->sunrise_active && runtime->sunrise_from_night && runtime->next_alarm_epoch > now;
 }
 
-static uint8_t get_night_sunrise_target(const app_runtime_state_t *runtime,
-                                        const app_settings_t *settings,
-                                        time_t now)
+uint16_t brightness_policy_get_target_permille(const app_runtime_state_t *runtime,
+                                               const app_settings_t *settings,
+                                               time_t now)
 {
-    int64_t progress = sunrise_progress_seconds(runtime, now);
-    int night_brightness = (int)get_night_mode_brightness(runtime, settings);
-    int elapsed_minutes = (int)(progress / 60);
-    int floor_target = night_brightness;
-    int target = night_brightness + elapsed_minutes;
-
-    if (night_brightness < NIGHT_SUNRISE_MIN_TARGET) {
-        floor_target = night_brightness +
-                       (int)((progress * (NIGHT_SUNRISE_MIN_TARGET - night_brightness)) /
-                             SUNRISE_WINDOW_SECONDS);
+    if (!runtime->alarm_ringing && sunrise_lights(runtime, now)) {
+        return (uint16_t)sunrise_permille(runtime, settings, now);
     }
-
-    if (target < floor_target) {
-        target = floor_target;
-    }
-    if (target > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
-        target = DISPLAY_BRIGHTNESS_MAX_PERCENT;
-    }
-
-    return (uint8_t)target;
+    return (uint16_t)(brightness_policy_get_target(runtime, settings, now) * 10U);
 }
 
 uint8_t brightness_policy_get_target(const app_runtime_state_t *runtime,
@@ -111,15 +72,8 @@ uint8_t brightness_policy_get_target(const app_runtime_state_t *runtime,
         return DISPLAY_BRIGHTNESS_MAX_PERCENT;
     }
 
-    if (runtime->sunrise_active && runtime->next_alarm_epoch > now) {
-        if (runtime->in_night_mode) {
-            if (!settings->night_mode.sunrise_brightness_enabled) {
-                return get_night_mode_brightness(runtime, settings);
-            }
-            return get_night_sunrise_target(runtime, settings, now);
-        }
-
-        return get_default_sunrise_target(runtime, settings, now);
+    if (sunrise_lights(runtime, now)) {
+        return (uint8_t)((sunrise_permille(runtime, settings, now) + 5U) / 10U);
     }
 
     if (runtime->in_night_mode) {

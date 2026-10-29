@@ -336,6 +336,13 @@ void request_set_night_brightness(clock_ui_context_t *ctx, uint8_t hw_percent)
     }
 }
 
+void request_set_night_sunrise_options(clock_ui_context_t *ctx, uint8_t minutes, uint8_t peak, bool chime)
+{
+    if (ctx->callbacks.on_set_night_sunrise_options != NULL) {
+        ctx->callbacks.on_set_night_sunrise_options(ctx->user_ctx, minutes, peak, chime);
+    }
+}
+
 void request_set_night_sunrise_brightness_enabled(clock_ui_context_t *ctx, bool enabled)
 {
     if (ctx->callbacks.on_set_night_sunrise_brightness_enabled != NULL) {
@@ -619,4 +626,5 @@ void clock_ui_tick(time_t now)
     ui_face_chrome_tick(ctx, now, active_face, face_covered);
     ui_alarms_tick(ctx, now, face_covered);
     ui_settings_tick(ctx, now);
+    ui_sunrise_tick(ctx, now); /* after the face change above: it sees the night hand over */
 }

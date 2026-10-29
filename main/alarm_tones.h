@@ -32,5 +32,10 @@ bool alarm_tone_render(uint8_t sound, int16_t *out, float *block);
  * render into out (that many samples), as alarm_tone_render. */
 size_t alarm_tone_start_samples(void);
 bool alarm_tone_render_start(int16_t *out, float *block);
+/* The chimes by number (0 Mallet, the start chime; 1 Dawn, the sunrise's; 2 Warm bell). */
+#define ALARM_TONE_CHIME_START 0U
+#define ALARM_TONE_CHIME_DAWN 1U
+size_t alarm_tone_chime_samples(unsigned variant);
+bool alarm_tone_render_chime(unsigned variant, int16_t *out, float *block);
 /* Which start chime renders: 0 Mallet (the one used), 1 Dawn, 2 Warm bell (to listen to). */
 void alarm_tone_select_start(unsigned variant);

@@ -63,6 +63,15 @@ void settings_policy_sanitize(app_settings_t *settings)
     }
     settings->night_mode.sunrise_brightness_enabled =
         settings->night_mode.sunrise_brightness_enabled ? true : false;
+    if (settings->night_mode.sunrise_minutes != 10 && settings->night_mode.sunrise_minutes != 20 &&
+        settings->night_mode.sunrise_minutes != 30) {
+        settings->night_mode.sunrise_minutes = 20;
+    }
+    if (settings->night_mode.sunrise_peak != 40 && settings->night_mode.sunrise_peak != 60 &&
+        settings->night_mode.sunrise_peak != 80) {
+        settings->night_mode.sunrise_peak = 60;
+    }
+    settings->night_mode.sunrise_chime = settings->night_mode.sunrise_chime ? true : false;
     if (settings->night_mode.start_hour > 23) {
         settings->night_mode.start_hour = 22;
     }
@@ -131,6 +140,9 @@ void settings_policy_set_defaults(app_settings_t *settings)
     settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
     settings->night_mode.enabled = false;
     settings->night_mode.sunrise_brightness_enabled = true;
+    settings->night_mode.sunrise_minutes = 20;
+    settings->night_mode.sunrise_peak = 60;
+    settings->night_mode.sunrise_chime = true;
     settings->night_mode.start_hour = 22;
     settings->night_mode.start_minute = 0;
     settings->night_mode.end_hour = 7;
