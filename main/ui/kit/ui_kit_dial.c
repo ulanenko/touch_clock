@@ -20,6 +20,7 @@
 
 #define KIT_DIAL_TILES 8
 #define KIT_DIAL_CACHE 24
+#define KIT_DIAL_CACHE_BYTES (6 * 1024 * 1024) /* a full rim is about 1 MB of tiles */
 #define DEG_TO_RAD (3.14159265f / 180.0f)
 
 typedef struct {
@@ -30,12 +31,15 @@ typedef struct {
 typedef struct {
     bool used;
     uint32_t stamp;
+    size_t bytes;
+    uint32_t used_ms; /* tiles drawn this recently may still be queued for the draw units */
     kit_dial_t key;
     dial_tiles_t tiles;
 } dial_entry_t;
 
 static dial_entry_t s_cache[KIT_DIAL_CACHE];
 static uint32_t s_stamp;
+static size_t s_cache_bytes;
 
 /* --- Geometry --------------------------------------------------------------------------- */
 
@@ -408,6 +412,36 @@ static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
 
 /* --- Cache -------------------------------------------------------------------------------- */
 
+static void entry_free(dial_entry_t *entry)
+{
+    free_tiles(&entry->tiles);
+    s_cache_bytes -= entry->bytes;
+    entry->bytes = 0;
+    entry->used = false;
+}
+
+/* Over its byte budget, the cache drops its least recently drawn dials, never one drawn in
+ * the last 100 ms (its tiles may still be queued in this frame's draw tasks). */
+static void cache_trim(const dial_entry_t *keep)
+{
+    while (s_cache_bytes > KIT_DIAL_CACHE_BYTES) {
+        dial_entry_t *oldest = NULL;
+
+        for (int i = 0; i < KIT_DIAL_CACHE; i++) {
+            dial_entry_t *e = &s_cache[i];
+
+            if (e->used && e != keep && lv_tick_elaps(e->used_ms) >= 100 &&
+                (oldest == NULL || e->stamp < oldest->stamp)) {
+                oldest = e;
+            }
+        }
+        if (oldest == NULL) {
+            return;
+        }
+        entry_free(oldest);
+    }
+}
+
 /* Dials are cached by shape: the key has the centre at 0,0 and the tiles are moved to the
  * real centre when drawn, so the same ring on several keys is built once. */
 static const dial_tiles_t *dial_get(const kit_dial_t *dial_in)
@@ -422,6 +456,7 @@ static const dial_tiles_t *dial_get(const kit_dial_t *dial_in)
     for (int i = 0; i < KIT_DIAL_CACHE; i++) {
         if (s_cache[i].used && memcmp(&s_cache[i].key, dial, sizeof(*dial)) == 0) {
             s_cache[i].stamp = ++s_stamp;
+            s_cache[i].used_ms = lv_tick_get();
             return &s_cache[i].tiles;
         }
     }
@@ -434,11 +469,17 @@ static const dial_tiles_t *dial_get(const kit_dial_t *dial_in)
             slot = &s_cache[i];
         }
     }
-    free_tiles(&slot->tiles);
+    entry_free(slot);
     memcpy(&slot->key, dial, sizeof(*dial));
     build_tiles(dial, &slot->tiles);
+    for (int t = 0; t < KIT_DIAL_TILES; t++) {
+        slot->bytes += slot->tiles.buf[t] != NULL ? slot->tiles.buf[t]->data_size : 0;
+    }
+    s_cache_bytes += slot->bytes;
     slot->used = true;
     slot->stamp = ++s_stamp;
+    slot->used_ms = lv_tick_get();
+    cache_trim(slot);
     return &slot->tiles;
 }
 
@@ -489,8 +530,7 @@ void kit_dial_cache_flush(void)
 {
     kit_slider_cache_flush();
     for (int i = 0; i < KIT_DIAL_CACHE; i++) {
-        free_tiles(&s_cache[i].tiles);
-        s_cache[i].used = false;
+        entry_free(&s_cache[i]);
     }
 }
 
@@ -667,6 +707,37 @@ static void baked_arc_ring(lv_layer_t *layer, const lv_area_t *c, int32_t radius
                   radius - b->width[part] / 2, b->width[part], start, end, b->color[part], b->opa[part]);
 }
 
+/* The indicator moves with the value: cached, every value would keep a ring of its own (up to
+ * about 1 MB for a 344 px arc, 24 of them: a dragged minute wheel filled PSRAM). It is drawn
+ * live, bounded to its own area, unless it closes into the full ring. */
+static void baked_arc_indicator(lv_layer_t *layer, const lv_area_t *c, int32_t radius, const baked_arc_t *b,
+                                int32_t start, int32_t end)
+{
+    lv_draw_arc_dsc_t arc;
+
+    while (end <= start) {
+        end += 360;
+    }
+    if (end - start >= 360) {
+        baked_arc_ring(layer, c, radius, b, 1, start, end);
+        return;
+    }
+    if (b->opa[1] <= LV_OPA_MIN || b->width[1] <= 0) {
+        return;
+    }
+    lv_draw_arc_dsc_init(&arc);
+    arc.center.x = c->x1 + lv_area_get_width(c) / 2;
+    arc.center.y = c->y1 + lv_area_get_height(c) / 2;
+    arc.radius = (uint16_t)radius;
+    arc.width = b->width[1];
+    arc.rounded = 1; /* as the cached rings */
+    arc.color = b->color[1];
+    arc.opa = b->opa[1];
+    arc.start_angle = (lv_value_precise_t)(((start % 360) + 360) % 360);
+    arc.end_angle = (lv_value_precise_t)(((end % 360) + 360) % 360);
+    kit_draw_arc(layer, &arc);
+}
+
 static void baked_arc_cb(lv_event_t *e)
 {
     lv_obj_t *arc = lv_event_get_current_target(e);
@@ -684,8 +755,8 @@ static void baked_arc_cb(lv_event_t *e)
     rot = lv_arc_get_rotation(arc);
     baked_arc_ring(lv_event_get_layer(e), &c, radius, b, 0, rot + (int32_t)lv_arc_get_bg_angle_start(arc),
                    rot + (int32_t)lv_arc_get_bg_angle_end(arc));
-    baked_arc_ring(lv_event_get_layer(e), &c, radius, b, 1, rot + (int32_t)lv_arc_get_angle_start(arc),
-                   rot + (int32_t)lv_arc_get_angle_end(arc));
+    baked_arc_indicator(lv_event_get_layer(e), &c, radius, b, rot + (int32_t)lv_arc_get_angle_start(arc),
+                        rot + (int32_t)lv_arc_get_angle_end(arc));
 }
 
 void kit_arc_bake(lv_obj_t *arc)

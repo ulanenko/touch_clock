@@ -334,7 +334,18 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
      * controls hold nothing of it: this goes on while they are up too. */
     face_glass_capture(ctx, UI_GLASS_FACE);
     if (ui_glass_backdrop_ready()) {
-        ui_glass_prewarm(ctx->chrome_root, 20);
+        /* The pages opened most first (settings, the alarm list), then the rest; one budget. */
+        lv_obj_t *const roots[] = {ctx->settings_ui.pages[UI_ST_HOME].root, ctx->alarms.list_page.root,
+                                   ctx->chrome_root};
+        uint32_t start = lv_tick_get();
+
+        for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++) {
+            uint32_t spent = lv_tick_elaps(start);
+
+            if (roots[i] != NULL && (spent >= 20 || !ui_glass_prewarm(roots[i], 20 - spent))) {
+                return;
+            }
+        }
     }
 }
 

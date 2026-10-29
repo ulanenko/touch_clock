@@ -196,6 +196,37 @@ page draws its ground and rows as images (about 20-25 ms a frame against Orbit's
    at the screen's edge.
 4. After a minute idle, tap the face and open settings: no stall before the controls or the page.
 
+## Stability soak (2026-10-29, tour 20261029-151343)
+
+16 tour loops over all four styles (Glass, Instrument, Orbit, Atelier, four times each),
+about 30 minutes of continuous taps, swipes, sheets, pages and the alarm editor:
+
+- No resets, panics or asserts.
+- PSRAM: no leak. Free PSRAM at the same step of each loop holds steady (Glass idle face
+  1.3-1.8 MB, Instrument 7.5 MB); Glass at its lowest (the night face picker) keeps
+  435-526 KB.
+- **Atelier lost about 750 KB more in loops 11 and 15** (free at its lowest: 1137 KB in loops 3
+  and 7, then 386, then 276). The cause was `kit_arc_bake`, which cached a lv_arc's indicator in the
+  kit dial cache like its track. The indicator's end follows the value, so every minute shown on the
+  alarm time dial kept a ring of its own, 0.3-1 MB of ARGB tiles at 344 px, up to 24 of them.
+  Dragging the minute wheel in Atelier (about 1.1 MB free) could have run PSRAM out, as in the
+  hang fixed on 10-28. Indicators are now drawn live (`kit_draw_arc`, bounded to the arc), and the
+  dial cache keeps to 6 MB, dropping its least recently drawn dials (never one drawn in the last
+  100 ms). Atelier's dials come to about 5.1 MB in the simulator and no longer grow with the time.
+- Internal RAM: at least 24.9 KB free throughout.
+- Stacks (`PERF stack`, the least free each task ever had): the UI thread (`lvgl`, the
+  adapter's default 8 KB) came down to **504 bytes**, `alarm_audio` to 964, `sys_evt` to 956;
+  the others kept 1.2 KB or more (`glass_bake` 5.4 KB of 6 KB).
+
+Fixed from it: the UI thread's stack is now 10 KB and `alarm_audio`'s 5 KB. The simulator's
+ASAN run found a use-after-free in Liquid Glass: a page's entrance animation kept moving its
+controls after a style change deleted the page (`enter_root_deleted_cb` now stops it).
+Corner optics tables are capped at 480 KB, and a face control whose smoked shell can't be
+allocated is drawn as a plain rounded rectangle instead of nothing.
+
+Idle prewarm order (Glass): the settings home and the alarm list are baked first, then the
+rest of the chrome, under one 20 ms budget a tick.
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High

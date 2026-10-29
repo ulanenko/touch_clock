@@ -1179,9 +1179,13 @@ typedef struct {
     int16_t r, corner;
     float bezel, spec, edge_dark;
     corner_opt_t *px; /* 4 quadrants (top left, top right, bottom left, bottom right) of corner^2 */
+    size_t bytes;
 } corner_tab_t;
 
+#define CORNER_BYTES (480u * 1024u)
+
 static corner_tab_t s_corner_tabs[CORNER_TABS];
+static size_t s_corner_bytes;
 static int s_corner_next;
 
 static const corner_tab_t *corner_tab(const bezel_t *bz, const look_t *l, int32_t w, int32_t h, float rr, int32_t corner)
@@ -1189,6 +1193,7 @@ static const corner_tab_t *corner_tab(const bezel_t *bz, const look_t *l, int32_
     float hx = (float)w / 2.0f;
     float hy = (float)h / 2.0f;
     corner_tab_t *t;
+    size_t need;
 
     for (int i = 0; i < CORNER_TABS; i++) {
         t = &s_corner_tabs[i];
@@ -1197,13 +1202,29 @@ static const corner_tab_t *corner_tab(const bezel_t *bz, const look_t *l, int32_
             return t;
         }
     }
+    need = (size_t)4 * (size_t)corner * (size_t)corner * sizeof(corner_opt_t);
+    /* Within CORNER_BYTES (a sheet's corners alone are over 200 KB): the oldest go first. */
+    for (int i = 0; i < CORNER_TABS && s_corner_bytes + need > CORNER_BYTES; i++) {
+        corner_tab_t *old = &s_corner_tabs[(s_corner_next + i) % CORNER_TABS];
+
+        if (old->px != NULL) {
+            s_corner_bytes -= old->bytes;
+            lv_free(old->px);
+            old->px = NULL;
+        }
+    }
     t = &s_corner_tabs[s_corner_next];
     s_corner_next = (s_corner_next + 1) % CORNER_TABS;
-    lv_free(t->px);
-    t->px = lv_malloc((size_t)4 * (size_t)corner * (size_t)corner * sizeof(corner_opt_t));
+    if (t->px != NULL) {
+        s_corner_bytes -= t->bytes;
+        lv_free(t->px);
+    }
+    t->px = lv_malloc(need);
     if (t->px == NULL) {
         return NULL;
     }
+    t->bytes = need;
+    s_corner_bytes += need;
     t->r = (int16_t)rr;
     t->corner = (int16_t)corner;
     t->bezel = bz->bezel;
@@ -1681,6 +1702,7 @@ void ui_glass_release(void)
         lv_free(s_corner_tabs[i].px);
         s_corner_tabs[i].px = NULL;
     }
+    s_corner_bytes = 0;
     s_deep_full_ok = false;
     s_sheet_ground_row = -1;
     lv_free(s_deep);
@@ -2065,6 +2087,15 @@ static void shell_draw(lv_layer_t *layer, const void *key, const lv_area_t *area
     lv_draw_image_dsc_t d;
 
     if (img == NULL) {
+        /* No memory for it: the smoke alone, as a plain shape. */
+        look_t l = control_look(kind, tint);
+        lv_draw_rect_dsc_t r;
+
+        lv_draw_rect_dsc_init(&r);
+        r.bg_color = lv_color_make((uint8_t)l.tint[0], (uint8_t)l.tint[1], (uint8_t)l.tint[2]);
+        r.bg_opa = (lv_opa_t)(l.tint_a * 255.0f);
+        r.radius = radius;
+        lv_draw_rect(layer, &r, area);
         return;
     }
     lv_draw_image_dsc_init(&d);
@@ -2508,15 +2539,31 @@ static void enter_anim_cb(void *var, int32_t value)
     enter_apply(value);
 }
 
+static void enter_root_deleted_cb(lv_event_t *e);
+
 static void enter_done_cb(lv_anim_t *a)
 {
     LV_UNUSED(a);
+    if (s_enter_root != NULL) {
+        lv_obj_remove_event_cb(s_enter_root, enter_root_deleted_cb);
+    }
     for (int i = 0; i < s_enter_count; i++) {
         lv_obj_set_style_translate_y(s_enter_targets[i], 0, 0);
     }
     if (s_ground_fade < 1.0f && s_enter_root != NULL) {
         lv_obj_invalidate(lv_obj_get_screen(s_enter_root));
     }
+    s_ground_fade = 1.0f;
+    s_enter_count = 0;
+    s_enter_root = NULL;
+}
+
+/* The page went (a style change rebuilds the chrome) while its controls rose: the animation
+ * would go on moving freed objects. */
+static void enter_root_deleted_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    lv_anim_delete(&s_enter_root, enter_anim_cb);
     s_ground_fade = 1.0f;
     s_enter_count = 0;
     s_enter_root = NULL;
@@ -2541,6 +2588,7 @@ void ui_glass_page_enter(lv_obj_t *root, lv_obj_t *const *targets, int count, bo
             s_enter_targets[s_enter_count++] = targets[i];
         }
     }
+    lv_obj_add_event_cb(root, enter_root_deleted_cb, LV_EVENT_DELETE, NULL);
     s_enter_ground = from_face && s_back_ok && s_sharp_ok && s_mode == UI_GLASS_PAGE;
     total = LV_MIN(s_enter_count - 1, 8) * ENTER_STAGGER + ENTER_MS;
     enter_apply(0);

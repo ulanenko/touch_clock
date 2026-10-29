@@ -430,10 +430,25 @@ static void report_task_cpu(const char *name)
     s_task_prev_count = count;
     s_task_prev_total = total;
 }
+/* Each task's least free stack so far (bytes), once a loop: headroom left after a full tour. */
+static void report_task_stacks(void)
+{
+    configRUN_TIME_COUNTER_TYPE total;
+    UBaseType_t count = uxTaskGetSystemState(s_task_now, PERF_MAX_TASKS, &total);
+
+    for (UBaseType_t i = 0; i < count; ++i) {
+        printf("PERF stack task=%s free_min=%u\n", s_task_now[i].pcTaskName,
+               (unsigned)(s_task_now[i].usStackHighWaterMark * sizeof(StackType_t)));
+    }
+}
 #else
 static void report_task_cpu(const char *name)
 {
     LV_UNUSED(name);
+}
+
+static void report_task_stacks(void)
+{
 }
 #endif
 
@@ -752,6 +767,7 @@ static void tour_timer_cb(lv_timer_t *timer)
     if (s_step >= PERF_STEP_COUNT) {
         segment_report();
         printf("PERF loop_done loop=%d\n", s_loop);
+        report_task_stacks();
         s_loop++;
         if (s_loop >= CONFIG_TOUCH_CLOCK_PERF_TOUR_LOOPS) {
             printf("PERF tour_done loops=%d\n", s_loop);

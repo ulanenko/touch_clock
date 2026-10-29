@@ -18,6 +18,10 @@ void app_main(void)
     };
     esp_err_t err;
 
+    /* The adapter's 8 KB left the UI thread 504 bytes at its deepest in a 16-loop soak (snapshots
+     * of the faces, Liquid Glass bakes): 2 KB more, from internal RAM that kept ~24 KB free. */
+    cfg.lv_adapter_cfg.task_stack_size = 10 * 1024;
+
     err = nvs_flash_init();
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
