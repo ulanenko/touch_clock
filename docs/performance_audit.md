@@ -159,6 +159,26 @@ Since then (simulator cost model only, to confirm on the clock):
 
 Deferred: the frost build on a worker task (it is mostly idle-time work now, and the snapshot it needs renders on the UI thread anyway) and the settings scroll's full-screen ground blit (about 12 ms of a 23-29 ms frame; cutting it needs occlusion bookkeeping against the opaque rows). Revisit with the numbers from the device.
 
+### Liquid Glass against Orbit (2026-10-29, tour 20261029-133342, avg / max ms)
+
+| Step | Glass before | Glass now | Orbit |
+|---|---|---|---|
+| Face swipe | 21.9 / 26.9 | 22.1 / 27.9 | 22.7 / 28.1 |
+| Theme sheet pull | 24.5 / 33.2 | 15.9 / 17.8 | 18.5 / 35.2 |
+| Quick sheet pull | 32.8 / 38.1 | 28.4 / 36.6 | 22.7 / 39.3 |
+| Settings open (rows not baked ahead) | 36.2 / 190 | 33.7 / 146 | 10.4 / 10.4 |
+| Night page open | 60.7 / 255 | 30.1 / 170 | 13.5 / 13.5 |
+| Page scroll | 21-27 / 260 | 20-25 / 45-90 | 11-13 / 17 |
+
+What made the difference: the page ground drawn only where no opaque glass covers it; bakes over
+a page's smooth ground at a quarter of the colour work (row bakes 38 -> 23 ms); rows baked
+ahead seeing the frosted ground they stand on (they were baked again on every open); settled
+shapes baked again one a frame; the face behind a moving sheet not drawn under its body.
+
+Still open: a page opened right after the face changed bakes its rows then (20-50 ms each);
+a scrolling page draws its ground and rows as images (about 21 ms a frame against Orbit's
+fills, about 13 ms).
+
 ### Checking Liquid Glass on the clock
 
 1. Glass tour against the 20261028-213305 baseline:
