@@ -1497,6 +1497,12 @@ static void bake_rows(const bake_job_t *j, int32_t y0, int32_t y1, bake_scratch_
                     continue;
                 }
                 ground = brow[LV_CLAMP(0, sx, SCREEN - 1)];
+                if (sc->frosted) {
+                    /* Ahead of the page, the back is the frost undimmed: the page's ground is
+                     * it dimmed (as back_build makes it), and the corners show that. */
+                    ground = pack((s_e5[ground >> 11] * PAGE_GROUND) >> 8, (s_e6[(ground >> 5) & 63] * PAGE_GROUND) >> 8,
+                                  (s_e5[ground & 31] * PAGE_GROUND) >> 8, sx, sy);
+                }
                 o = j->ctab == NULL ? NULL
                     : x < x0       ? &j->ctab->px[(qy * corner + ly) * corner + x]
                                    : &j->ctab->px[((qy + 1) * corner + ly) * corner + (x - (w - corner))];
