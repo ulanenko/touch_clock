@@ -192,6 +192,15 @@ Still open: a page opened right after the face changed still bakes its rows then
 page draws its ground and rows as images (about 20-25 ms a frame against Orbit's fills, about
 13 ms), which is memory bandwidth, not work that can be skipped.
 
+Pressing and stopping (29 Oct, evening). A pressed Glass row baked a raised version of itself on
+the frame the finger landed (11-22 ms on the clock, a frame of 50-70 ms), and every row a scroll
+moved was baked again 120 ms after it stopped, one a tick, on the frames of the next flick. A
+pressed row now draws its clear bake under the raised tint (what the raised body is; the tint a
+half again, as RGB565 rounds a light blend down), and a moved page row, already drawn right where
+it is, is baked again only once nothing has been touched for 600 ms. The tour's alarm "scroll"
+was also opening the first alarm: a list too short to scroll took a swipe across a row as a tap
+on release. Alarm flicks on the clock: 13 frames over 33 ms (max 68) -> none (max 21.7).
+
 ### Checking Liquid Glass on the clock
 
 1. Glass tour against the 20261028-213305 baseline:
@@ -239,7 +248,6 @@ rest of the chrome, under one 20 ms budget a tick.
 
 ### High
 - **Atelier settings take 15-18 ms a frame** (Instrument and Orbit: 11-15 ms). What remains is about 75 draw tasks (each image task costs about 70 us of LVGL setup), the 164 px gradient scrim (about 2.5 ms) and pill borders (about 0.7 ms each).
-- **Alarm list re-styles every card at scroll end** (`ui_alarms.c` `refresh_alarm_management_layout`, `update_alarm_list_focus_treatment`).
 
 - **Night face picker re-renders all 8 previews on every open.**
 

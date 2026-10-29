@@ -124,8 +124,16 @@ static void row_event_cb(lv_event_t *e)
             return;
         }
         if (LV_ABS(dy) > LV_ABS(dx) && LV_ABS(dy) >= SWIPE_CANCEL) {
+            lv_obj_t *scroll = ctx->alarms.list_page.scroll;
+
             ctx->alarms.list_swipe_dragging = false; /* the page scrolls */
             ctx->alarms.swipe_drag_index = -1;
+            ctx->alarms.list_swipe_consumed = true;
+            if (scroll != NULL && lv_obj_get_scroll_top(scroll) <= 0 && lv_obj_get_scroll_bottom(scroll) <= 0) {
+                /* A list too short to scroll: the swipe is not a tap on the row (it opened the
+                 * alarm, with a click, when let go). */
+                lv_indev_wait_release(indev);
+            }
             return;
         }
         if (LV_ABS(dx) > LV_ABS(dy)) {

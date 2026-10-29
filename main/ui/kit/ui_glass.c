@@ -1680,6 +1680,17 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
     GLASS_PERF_END("bake", jp->w, jp->h);
 }
 
+/* A page's row is drawn right where it was moved to (row_draw_moving: the ground inside it
+ * from the page ground, only its rim from the bake), so baking it again can wait until nothing
+ * is touched: off the frames of a scroll and of the next flick. */
+#define SETTLE_IDLE_MS 600
+
+static bool settle_can_wait(const bake_t *b)
+{
+    return b->kind == UI_GLASS_CLEAR && b->opaque && b->mode == UI_GLASS_PAGE && !b->deep &&
+           (int32_t)b->w * b->h <= 100000 && page_ground_ready() && lv_display_get_inactive_time(NULL) < SETTLE_IDLE_MS;
+}
+
 static void settle_timer_cb(lv_timer_t *t)
 {
     bool waiting = false;
@@ -1691,8 +1702,8 @@ static void settle_timer_cb(lv_timer_t *t)
 
         if (b->buf != NULL && (b->pend_x != b->x || b->pend_y != b->y)) {
             waiting = true;
-            if (!asked && lv_tick_elaps(b->pend_since) >= BAKE_SETTLE_MS && lv_obj_is_valid((lv_obj_t *)b->key) &&
-                lv_obj_is_visible((lv_obj_t *)b->key)) {
+            if (!asked && lv_tick_elaps(b->pend_since) >= BAKE_SETTLE_MS && !settle_can_wait(b) &&
+                lv_obj_is_valid((lv_obj_t *)b->key) && lv_obj_is_visible((lv_obj_t *)b->key)) {
                 lv_obj_invalidate((lv_obj_t *)b->key);
                 asked = true;
             }
@@ -1740,7 +1751,7 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
                     s_settle_timer = lv_timer_create(settle_timer_cb, 60, NULL);
                 }
                 lv_timer_resume(s_settle_timer);
-            } else if (lv_tick_elaps(b->pend_since) >= BAKE_SETTLE_MS && s_resettle_left > 0) {
+            } else if (lv_tick_elaps(b->pend_since) >= BAKE_SETTLE_MS && s_resettle_left > 0 && !settle_can_wait(b)) {
                 /* One a frame: a page that stops scrolling does not stop for all its rows. */
                 s_resettle_left--;
                 bake_render(b, area, radius, kind, tint);
@@ -2276,6 +2287,10 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     ui_glass_mode_t mode;
     bool opaque;
     bool deep;
+    /* Raised while a finger is on it (a pressed row): its clear glass under the raised glass's
+     * tint, which is what the raised body is, so the press shows at once rather than after a
+     * bake of its own (and a scroll that starts on a row costs none). */
+    bool lifted = kind == UI_GLASS_RAISED && key != NULL && lv_obj_has_state((lv_obj_t *)key, LV_STATE_PRESSED);
 
     if (!lv_area_intersect(&vis, area, &screen)) {
         return;
@@ -2285,6 +2300,9 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     if (is_face_control(key, kind, mode)) {
         shell_draw(layer, key, area, radius, kind, tint);
         return;
+    }
+    if (lifted) {
+        kind = UI_GLASS_CLEAR;
     }
     if (can_bake(mode)) {
         b = bake_get(key, &rest, radius, kind, tint, opaque, mode, deep);
@@ -2308,6 +2326,17 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
         lv_draw_rect_dsc_init(&d);
         d.bg_color = kind == UI_GLASS_TINT ? tint : lv_color_hex(0x1C1E22);
         d.bg_opa = 220;
+        d.radius = radius;
+        lv_draw_rect(layer, &d, area);
+    }
+    if (lifted) {
+        look_t l = look_of(UI_GLASS_RAISED, tint, mode);
+        lv_draw_rect_dsc_t d;
+
+        lv_draw_rect_dsc_init(&d);
+        d.bg_color = lv_color_make((uint8_t)l.tint[0], (uint8_t)l.tint[1], (uint8_t)l.tint[2]);
+        /* Half as much again: RGB565 blending rounds a light tint down, a bake does not. */
+        d.bg_opa = (lv_opa_t)LV_MIN(255, lroundf(l.tint_a * 255.0f * 1.5f));
         d.radius = radius;
         lv_draw_rect(layer, &d, area);
     }
