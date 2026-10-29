@@ -841,10 +841,13 @@ static void grave_free(void)
     }
 }
 
+static void live_finished(void);
+
 static void render_ready_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
     grave_free();
+    live_finished();
 }
 
 static void bake_drop(bake_t *b)
@@ -1549,6 +1552,7 @@ static float arc_sdf(float px, float py, float rm, float hw, float a0, float a1,
 typedef struct {
     const void *img;
     int32_t w, h;
+    bool light; /* made for a light face (its edge shade) */
     lens_px_t *px;
     uint8_t *cov;
 } arc_lens_t;
@@ -1565,6 +1569,8 @@ static uint32_t s_live_frame0; /* the frame count when this slide began */
 
 static struct {
     bool on;
+    bool all;       /* every control this frame (the last one of a slide) */
+    bool finishing; /* this frame's drawing is what the controls keep */
     uint32_t frame;
     const lv_draw_buf_t *face[2];
     const lv_draw_buf_t *frost[2]; /* NULL: the face itself, unfrosted */
@@ -1574,6 +1580,7 @@ static struct {
 /* The neighbours' frost (slots 1 and 2 of the face slide), built at idle. */
 static lv_draw_buf_t *s_side_frost[3];
 static uint32_t s_side_stamp[3];
+static bool s_side_light[3];
 
 static const lens_t *lens_get(const bake_t *b, ui_glass_kind_t kind, lv_color_t tint)
 {
@@ -1772,6 +1779,7 @@ void ui_glass_side_frost(int slot, const lv_draw_buf_t *face, uint32_t stamp)
     s_side_stamp[slot] = 0;
     if (s_side_frost[slot] != NULL && frost_make(face, s_side_frost[slot], false, &light)) {
         s_side_stamp[slot] = stamp;
+        s_side_light[slot] = light;
     }
 }
 
@@ -1814,7 +1822,8 @@ void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int
         return;
     }
     for (int i = 0; i < 4 && e == NULL; i++) {
-        if (s_arc_lenses[i].img == img->data && s_arc_lenses[i].w == w && s_arc_lenses[i].h == h) {
+        if (s_arc_lenses[i].img == img->data && s_arc_lenses[i].w == w && s_arc_lenses[i].h == h &&
+            s_arc_lenses[i].light == s_light) {
             e = &s_arc_lenses[i];
             slot = i;
         }
@@ -1871,8 +1880,9 @@ void ui_glass_arc_live(lv_draw_buf_t *img, const lv_area_t *box, int32_t cx, int
         e->img = img->data;
         e->w = w;
         e->h = h;
+        e->light = s_light;
     }
-    if (s_arc_frame[slot] == s_live.frame || ((s_live.frame & 1) && s_arc_live[slot])) {
+    if (s_arc_frame[slot] == s_live.frame || ((s_live.frame & 1) && s_arc_live[slot] && !s_live.all)) {
         return;
     }
     s_arc_frame[slot] = s_live.frame;
@@ -1927,6 +1937,70 @@ bool ui_glass_live_active(void)
     return s_live.on;
 }
 
+bool ui_glass_live_finish(const lv_draw_buf_t *face, int slot, uint32_t slot_stamp, int back_slot, uint32_t back_stamp)
+{
+    bool adopted = false;
+
+    if (!s_live.on || face == NULL) {
+        return false;
+    }
+    if (slot >= 1 && slot <= 2) {
+        lv_draw_buf_t *old_frost = s_frost;
+        bool old_light = s_light;
+
+        if (!ui_glass_side_frost_ready(slot, slot_stamp) || back_slot < 1 || back_slot > 2 || back_slot == slot) {
+            return false;
+        }
+        /* The new face's frost is ready (built at idle): it becomes the backdrop's, the face
+         * left behind becomes the neighbour it now is, and the third buffer is free. */
+        s_frost = s_side_frost[slot];
+        s_light = s_side_light[slot];
+        s_side_frost[slot] = s_side_frost[back_slot];
+        s_side_stamp[slot] = 0;
+        s_side_frost[back_slot] = old_frost;
+        s_side_stamp[back_slot] = back_stamp;
+        s_side_light[back_slot] = old_light;
+        s_deep_ok = false; /* made again with the next full build; sheets frost lighter till then */
+        s_sharp = face;
+        s_sharp_ok = true;
+        back_build(face, UI_GLASS_FACE);
+        adopted = true;
+    }
+    /* One more frame with the face at rest under the controls, all of them: what they keep. */
+    s_live.face[0] = face;
+    s_live.x[0] = 0;
+    s_live.frost[0] = s_frost;
+    s_live.face[1] = NULL;
+    s_live.frost[1] = NULL;
+    s_live.frame++;
+    s_live.all = true;
+    s_live.finishing = true;
+    for (int i = 0; i < BAKE_MAX; i++) {
+        if (s_bakes[i].live) {
+            s_bakes[i].gen = s_generation;
+        }
+    }
+    LV_UNUSED(adopted);
+    return true;
+}
+
+/* After the last frame of a slide: the controls keep what it drew. */
+static void live_finished(void)
+{
+    if (!s_live.finishing) {
+        return;
+    }
+    s_live.finishing = false;
+    s_live.all = false;
+    s_live.on = false;
+    for (int i = 0; i < BAKE_MAX; i++) {
+        s_bakes[i].live = false;
+    }
+    for (int i = 0; i < 4; i++) {
+        s_arc_live[i] = false;
+    }
+}
+
 void ui_glass_live_end(void)
 {
     for (int i = 0; i < 4; i++) {
@@ -1976,7 +2050,7 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     }
     /* Keys and pills on odd frames, the rim tabs on even ones: half the work in each. */
     if (b != NULL && s_live.on && b->mode == UI_GLASS_FACE && kind != UI_GLASS_SHEET && !b->deep &&
-        b->live_frame != s_live.frame && ((s_live.frame & 1) || !b->live)) {
+        b->live_frame != s_live.frame && ((s_live.frame & 1) || !b->live || s_live.all)) {
         live_render(b, kind, tint);
     }
     if (b != NULL && kind == UI_GLASS_SHEET) {

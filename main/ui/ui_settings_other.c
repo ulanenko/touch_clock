@@ -110,6 +110,12 @@ static void restart_row_cb(lv_event_t *e)
     lv_obj_add_event_cb(b, restart_confirm_cb, LV_EVENT_CLICKED, ctx);
 }
 
+/* The style chosen (ui_skin_style() is the layouts it uses: Liquid Glass uses Orbit's). */
+static clock_ui_style_t chosen_style(const clock_ui_context_t *ctx)
+{
+    return (clock_ui_style_t)ctx->applied_style;
+}
+
 static void language_row_cb(lv_event_t *e)
 {
     st_show_page(lv_event_get_user_data(e), UI_ST_LANGUAGE);
@@ -477,7 +483,7 @@ void st_other_sync(clock_ui_context_t *ctx, bool force)
     }
     kit_label_set_text_if_changed(st->other_lang_value,
                                   l10n_language_name((clock_language_t)ctx->settings->language));
-    kit_label_set_text_if_changed(st->other_style_value, ui_skin_style_name(ui_skin_style()));
+    kit_label_set_text_if_changed(st->other_style_value, ui_skin_style_name(chosen_style(ctx)));
 
     kit_switch_set(st->other_sound_sw, sound);
     if (!lv_slider_is_dragged(st->other_vol_slider)) {
@@ -625,7 +631,7 @@ static void style_pick_cb(lv_event_t *e)
     ui_st_item_t *item = lv_event_get_user_data(e);
     clock_ui_context_t *ctx = item->ui;
 
-    if (item->index != ui_skin_style()) {
+    if (item->index != chosen_style(ctx)) {
         /* The core rebuilds the chrome in the new style and reopens Other. */
         request_set_ui_style(ctx, (clock_ui_style_t)item->index);
     } else {
@@ -705,9 +711,9 @@ void st_style_sync(clock_ui_context_t *ctx)
         if (st->style_check[i] == NULL) {
             continue;
         }
-        st_show(st->style_check[i], i == (int)ui_skin_style());
+        st_show(st->style_check[i], i == (int)chosen_style(ctx));
         holder = lv_obj_get_child(lv_obj_get_parent(lv_obj_get_parent(st->style_check[i])), 0);
-        lv_obj_set_style_border_width(holder, i == (int)ui_skin_style() ? 3 : 1, 0);
-        lv_obj_set_style_border_color(holder, i == (int)ui_skin_style() ? sk->accent : sk->line_strong, 0);
+        lv_obj_set_style_border_width(holder, i == (int)chosen_style(ctx) ? 3 : 1, 0);
+        lv_obj_set_style_border_color(holder, i == (int)chosen_style(ctx) ? sk->accent : sk->line_strong, 0);
     }
 }

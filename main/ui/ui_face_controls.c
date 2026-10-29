@@ -360,7 +360,8 @@ static void draw_rim_bands(lv_layer_t *layer, clock_ui_face_chrome_state_t *fc, 
     /* Pre-rendered once: wide round-capped arcs cost a per-row angle mask every frame. Glass
      * bands refract the face, so they are baked again when the glass backdrop changes. */
     if (ui_skin_is_glass() && fc->rim_band_glass != ui_glass_backdrop_generation()) {
-        for (int i = 0; i < 2; i++) {
+        /* Over a face slide (and its last frame) the bands are drawn live instead. */
+        for (int i = 0; i < 2 && !ui_glass_live_active(); i++) {
             ui_glass_image_free(fc->rim_band[i]);
             fc->rim_band[i] = NULL;
         }

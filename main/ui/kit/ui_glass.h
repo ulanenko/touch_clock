@@ -82,6 +82,11 @@ bool ui_glass_side_frost_ready(int slot, uint32_t stamp);
 void ui_glass_live_frame(const lv_draw_buf_t *a, int32_t ax, const lv_draw_buf_t *b, int32_t bx, int b_slot,
                          uint32_t b_stamp);
 void ui_glass_live_end(void);
+/* The slide is over with face at rest (slot: the side it came from, 0 if it is the face the
+ * slide began on): instead of building its backdrop, the neighbour's frost made at idle
+ * becomes it, the face left behind (now at back_slot) keeps its own, and the controls keep
+ * what the next frame draws of them live. False if that frost is not ready: build as usual. */
+bool ui_glass_live_finish(const lv_draw_buf_t *face, int slot, uint32_t slot_stamp, int back_slot, uint32_t back_stamp);
 bool ui_glass_live_active(void);
 /* During such a slide: an arc image from ui_glass_arc_image (at box, with the same shape)
  * drawn again over what is under it now. */
