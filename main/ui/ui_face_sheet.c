@@ -9,7 +9,10 @@
  * - At rest the panel is live over the live face under a translucent overlay, so the face
  *   keeps ticking (and a theme picked in the sheet shows at once below it).
  */
+#include <string.h>
+
 #include "sdkconfig.h"
+#include "src/misc/lv_area_private.h"
 #include "ui/kit/ui_glass.h"
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
 #include <stdio.h>
@@ -520,6 +523,88 @@ static void sheet_auto_close_cb(lv_timer_t *timer)
     face_sheet_close(s, true);
 }
 
+/* The face behind a moving sheet, drawn only where the sheet does not cover it: under the
+ * sheet's body (all but its rounded corners) it would be drawn for nothing every frame. */
+static int cut_rects(lv_area_t *rects, int n, int max, const lv_area_t *cut)
+{
+    lv_area_t out[12];
+    int m = 0;
+
+    for (int i = 0; i < n; i++) {
+        lv_area_t in;
+
+        if (!lv_area_intersect(&in, &rects[i], cut)) {
+            if (m < 12) {
+                out[m++] = rects[i];
+            }
+            continue;
+        }
+        lv_area_t parts[4] = {
+            {rects[i].x1, rects[i].y1, rects[i].x2, in.y1 - 1},
+            {rects[i].x1, in.y2 + 1, rects[i].x2, rects[i].y2},
+            {rects[i].x1, in.y1, in.x1 - 1, in.y2},
+            {in.x2 + 1, in.y1, rects[i].x2, in.y2},
+        };
+
+        for (int k = 0; k < 4; k++) {
+            if (parts[k].x1 <= parts[k].x2 && parts[k].y1 <= parts[k].y2 && m < 12) {
+                out[m++] = parts[k];
+            }
+        }
+    }
+    m = LV_MIN(m, max);
+    memcpy(rects, out, (size_t)m * sizeof(lv_area_t));
+    return m;
+}
+
+static void sheet_backdrop_draw_cb(lv_event_t *e)
+{
+    face_sheet_t *s = (face_sheet_t *)lv_event_get_user_data(e);
+    lv_obj_t *img = lv_event_get_current_target(e);
+    lv_layer_t *layer = lv_event_get_layer(e);
+    const void *src = lv_image_get_src(img);
+    lv_area_t coords;
+    lv_area_t body;
+    lv_area_t rects[12];
+    lv_area_t clip_was = layer->_clip_area;
+    int32_t r = lv_obj_get_style_radius(s->panel, LV_PART_MAIN);
+    int32_t ext;
+    int n = 1;
+
+    if (src == NULL || !s->snapshot_visible || s->snapshot_buf == NULL) {
+        return; /* drawn as an image, as usual */
+    }
+    lv_event_stop_processing(e);
+    lv_obj_get_coords(img, &coords);
+    if (!lv_area_intersect(&rects[0], &coords, &clip_was)) {
+        return;
+    }
+    ext = sheet_ext(s);
+    lv_obj_get_coords(s->snapshot_img, &body);
+    lv_area_increase(&body, -ext, -ext);
+    r = LV_MIN(r, LV_MIN(lv_area_get_width(&body), lv_area_get_height(&body)) / 2);
+    {
+        lv_area_t across = {body.x1, body.y1 + r, body.x2, body.y2 - r};
+        lv_area_t down = {body.x1 + r, body.y1, body.x2 - r, body.y2};
+
+        n = cut_rects(rects, n, 12, &across);
+        n = cut_rects(rects, n, 12, &down);
+    }
+    for (int i = 0; i < n; i++) {
+        lv_draw_image_dsc_t d;
+
+        if (!lv_area_intersect(&layer->_clip_area, &clip_was, &rects[i])) {
+            continue;
+        }
+        lv_draw_image_dsc_init(&d);
+        d.src = src;
+        d.image_area = coords;
+        d.opa = lv_obj_get_style_image_opa(img, LV_PART_MAIN);
+        lv_draw_image(layer, &d, &coords);
+    }
+    layer->_clip_area = clip_was;
+}
+
 /* Liquid Glass: the sheet's body under its moving (hollow) snapshot, fixed to the screen. */
 static void sheet_snapshot_ground_cb(lv_event_t *e)
 {
@@ -556,6 +641,8 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
     lv_obj_add_event_cb(s->overlay, sheet_overlay_click_cb, LV_EVENT_CLICKED, s);
 
     s->backdrop_img = ui_backdrop_create(s->overlay);
+    lv_obj_add_event_cb(s->backdrop_img, sheet_backdrop_draw_cb, (lv_event_code_t)(LV_EVENT_DRAW_MAIN | LV_EVENT_PREPROCESS),
+                        s);
 
     s->panel = lv_obj_create(s->overlay);
     lv_obj_remove_style_all(s->panel);

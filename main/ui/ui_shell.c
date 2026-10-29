@@ -329,13 +329,12 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         update_face(ctx, current);
         return;
     }
-    /* Liquid Glass: keep the face's glass ready, so the controls come up at once, and bake
-     * what the chrome will show a little at a time (one tick does at most a few shapes). */
-    if (!face_controls_visible(ctx)) {
-        face_glass_capture(ctx, UI_GLASS_FACE);
-        if (ui_glass_backdrop_ready()) {
-            ui_glass_prewarm(ctx->chrome_root, 20);
-        }
+    /* Liquid Glass: keep the face's glass ready, so pages and sheets come up at once, and bake
+     * what they will show a little at a time (one tick does at most a few shapes). The face
+     * controls hold nothing of it: this goes on while they are up too. */
+    face_glass_capture(ctx, UI_GLASS_FACE);
+    if (ui_glass_backdrop_ready()) {
+        ui_glass_prewarm(ctx->chrome_root, 20);
     }
 }
 
