@@ -1173,7 +1173,7 @@ typedef struct {
     bool flat;    /* past the rim: the flat top, as away from the corners */
 } corner_opt_t;
 
-#define CORNER_TABS 6
+#define CORNER_TABS 16 /* a page has a dozen corner shapes: keys, pills, rows */
 
 typedef struct {
     int16_t r, corner;
