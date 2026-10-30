@@ -15,6 +15,9 @@ DROP = (
     "CONFIG_LV_PROFILER",
     "CONFIG_SOC_",
     "CONFIG_FREERTOS",
+    # The simulator has no network: no copy of the telemetry token or the update URL.
+    "CONFIG_TOUCH_CLOCK_TELEMETRY_",
+    "CONFIG_TOUCH_CLOCK_OTA_",
 )
 OVERRIDES = {
     "CONFIG_LV_OS_NONE": "1",
