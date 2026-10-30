@@ -47,6 +47,8 @@ void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 #define VIEWS 256
 #define COVER_MIN 24 /* the least coverage a blurred colour is divided by */
 #define PAGE_GROUND 80 /* a page's ground: the frost at 80 / 256 */
+#define HROW_BYTES (3 * 2 * FROST * sizeof(uint32_t))
+#define INTERNAL_FLOOR (16 * 1024) /* internal RAM a backdrop build leaves free */
 
 /* --- Backdrop ---------------------------------------------------------------------------- */
 
@@ -333,10 +335,13 @@ static bool frost_make(const lv_draw_buf_t *face, lv_draw_buf_t *frost, bool dee
 
     tables_init();
     low = lv_malloc(LOW * LOW * 4);
-    /* Three widened rows (red and blue, then green), small and hot: internal RAM if there is room. */
-    hrow = heap_caps_malloc(3 * 2 * FROST * sizeof(uint32_t), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    /* Three widened rows (red and blue, then green), small and hot: internal RAM if that still
+     * leaves the network its share (this runs every minute, maybe in the middle of a TLS handshake). */
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) >= HROW_BYTES + INTERNAL_FLOOR) {
+        hrow = heap_caps_malloc(HROW_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    }
     if (hrow == NULL) {
-        hrow = heap_caps_malloc(3 * 2 * FROST * sizeof(uint32_t), MALLOC_CAP_DEFAULT);
+        hrow = heap_caps_malloc(HROW_BYTES, MALLOC_CAP_DEFAULT);
     }
     if (low == NULL || hrow == NULL) {
         lv_free(low);

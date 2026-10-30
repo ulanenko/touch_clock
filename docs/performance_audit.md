@@ -360,6 +360,14 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   previewed (Wind chimes 2.2 s, Marimba 0.4 s, Singing bowl 0.8 s on the clock) and freed when
   the preview stops. With the alarms on the recorded tone, PSRAM free after boot 4.3 -> 7.4 MB;
   the full tour's low point 0.8 -> 2.4 MB.
+- **Internal RAM through an update check (same day)**: the check's 12 KB task stack and its
+  3 KB manifest buffer come from PSRAM (a check never writes flash; an install, which does, keeps
+  its stack in internal RAM). The Liquid Glass backdrop, rebuilt every minute, takes its 8.4 KB
+  of rows from internal RAM only if 16 KB stays free, else from PSRAM. Internal RAM low point
+  through the first check 6.6 -> 20.8 KB, and the minute rebuild no longer dips. The first two
+  checks keep about 4 KB (set up once); seven checks in a row settled at 21 KB with no leak. The
+  settings pages built at 20 s take about 17 KB of internal RAM (LVGL allocates with `malloc`,
+  and under 16 KB that is internal RAM).
 
 ## Open findings, by priority (*unverified* unless measured)
 

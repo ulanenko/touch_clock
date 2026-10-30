@@ -9,6 +9,7 @@
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
 #include "esp_crt_bundle.h"
+#include "esp_heap_caps.h"
 #include "esp_http_client.h"
 #include "esp_log.h"
 #include "esp_ota_ops.h"
@@ -16,6 +17,7 @@
 #include "esp_system.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
+#include "freertos/idf_additions.h"
 #include "freertos/task.h"
 #include "mbedtls/sha256.h"
 #include "sdkconfig.h"
@@ -284,7 +286,7 @@ static esp_err_t fetch_manifest(ota_manifest_t *manifest)
         return ESP_ERR_INVALID_STATE;
     }
 
-    json = calloc(1, OTA_MANIFEST_MAX_BYTES);
+    json = heap_caps_calloc(1, OTA_MANIFEST_MAX_BYTES, MALLOC_CAP_SPIRAM);
     if (json == NULL) {
         return ESP_ERR_NO_MEM;
     }
@@ -550,12 +552,17 @@ static void ota_task(void *arg)
         s_ota.progress = 0;
     }
     xSemaphoreGive(s_ota.lock);
-    vTaskDelete(NULL);
+    if (request == OTA_REQUEST_INSTALL) {
+        vTaskDelete(NULL);
+    } else {
+        vTaskDeleteWithCaps(NULL);
+    }
 }
 
 static esp_err_t start_ota_task(ota_request_t request)
 {
     bool can_start;
+    BaseType_t created;
 
     if (!s_ota.initialized) {
         return ESP_ERR_INVALID_STATE;
@@ -574,12 +581,21 @@ static esp_err_t start_ota_task(ota_request_t request)
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (xTaskCreate(ota_task,
-                    request == OTA_REQUEST_INSTALL ? "ota_install" : "ota_check",
-                    OTA_TASK_STACK_BYTES,
-                    (void *)(uintptr_t)request,
-                    4,
-                    NULL) != pdPASS) {
+    /* A check never writes flash, so its stack can live in PSRAM: the first check after boot
+     * otherwise took 12 KB of internal RAM just as the TLS handshake needs it. An install
+     * writes the OTA slot, which needs a stack in internal RAM while the cache is off. */
+    if (request == OTA_REQUEST_INSTALL) {
+        created = xTaskCreate(ota_task, "ota_install", OTA_TASK_STACK_BYTES, (void *)(uintptr_t)request, 4, NULL);
+    } else {
+        created = xTaskCreateWithCaps(ota_task,
+                                      "ota_check",
+                                      OTA_TASK_STACK_BYTES,
+                                      (void *)(uintptr_t)request,
+                                      4,
+                                      NULL,
+                                      MALLOC_CAP_SPIRAM);
+    }
+    if (created != pdPASS) {
         set_busy(false, 0, "Update task failed");
         return ESP_ERR_NO_MEM;
     }
