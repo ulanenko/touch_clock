@@ -53,6 +53,7 @@ static time_t find_next_alarm_for_entry(const app_settings_t *settings,
             candidate_tm.tm_hour = alarm->hour;
             candidate_tm.tm_min = alarm->minute;
             candidate_tm.tm_sec = 0;
+            candidate_tm.tm_isdst = -1; /* that day's, not today's: a DST change between */
 
             candidate = mktime(&candidate_tm);
             if (candidate <= now || is_skipped_occurrence(settings, alarm_index, candidate)) {
@@ -73,6 +74,7 @@ static time_t find_next_alarm_for_entry(const app_settings_t *settings,
         candidate_tm.tm_hour = alarm->hour;
         candidate_tm.tm_min = alarm->minute;
         candidate_tm.tm_sec = 0;
+        candidate_tm.tm_isdst = -1; /* that day's, not today's: a DST change between */
 
         candidate = mktime(&candidate_tm);
         if (candidate <= now || is_skipped_occurrence(settings, alarm_index, candidate)) {
@@ -119,37 +121,18 @@ static next_alarm_info_t compute_next_alarm(const app_settings_t *settings, time
     return result;
 }
 
-static int find_alarm_to_trigger_now(const app_settings_t *settings, time_t now)
+/* The alarm due now: an occurrence in the last minute. Occurrences are times, so a DST change
+ * neither moves one nor loses it (an alarm in the hour the clocks skip rings an hour on), and
+ * a tick late by under a minute still finds it. */
+static next_alarm_info_t find_alarm_due(const app_settings_t *settings, time_t now)
 {
-    struct tm now_tm;
+    next_alarm_info_t due = compute_next_alarm(settings, now - 60);
 
-    localtime_r(&now, &now_tm);
-
-    for (int i = 0; i < MAX_ALARMS; ++i) {
-        const alarm_config_t *alarm = &settings->alarms[i];
-        struct tm candidate_tm = now_tm;
-        time_t candidate;
-
-        if (!alarm->enabled) {
-            continue;
-        }
-        if (alarm->hour != now_tm.tm_hour || alarm->minute != now_tm.tm_min) {
-            continue;
-        }
-        if (alarm->repeat_mode == ALARM_REPEAT_WEEKLY && !alarm_matches_weekday(alarm, now_tm.tm_wday)) {
-            continue;
-        }
-
-        candidate_tm.tm_sec = 0;
-        candidate = mktime(&candidate_tm);
-        if (is_skipped_occurrence(settings, i, candidate)) {
-            continue;
-        }
-
-        return i;
+    if (due.epoch == 0 || due.epoch > now) {
+        due.epoch = 0;
+        due.alarm_index = -1;
     }
-
-    return -1;
+    return due;
 }
 
 void alarm_scheduler_init(app_runtime_state_t *runtime, const app_settings_t *settings)
@@ -164,11 +147,10 @@ void alarm_scheduler_init(app_runtime_state_t *runtime, const app_settings_t *se
 bool alarm_scheduler_tick(app_runtime_state_t *runtime, app_settings_t *settings, time_t now)
 {
     struct tm now_tm;
-    time_t epoch_minute = now / 60;
     bool settings_changed = false;
     bool was_in_night_mode = runtime->in_night_mode;
     next_alarm_info_t next_alarm;
-    int trigger_alarm_index = -1;
+    next_alarm_info_t due = {.epoch = 0, .alarm_index = -1};
 
     localtime_r(&now, &now_tm);
     if (runtime->night_now != 0 && now >= runtime->night_now_until) {
@@ -200,16 +182,14 @@ bool alarm_scheduler_tick(app_runtime_state_t *runtime, app_settings_t *settings
     }
 
     if (!runtime->alarm_ringing && !runtime->snooze_active) {
-        trigger_alarm_index = find_alarm_to_trigger_now(settings, now);
+        due = find_alarm_due(settings, now);
     }
 
-    if (!runtime->alarm_ringing &&
-        !runtime->snooze_active &&
-        runtime->last_trigger_epoch_minute != epoch_minute &&
-        trigger_alarm_index >= 0) {
-        int alarm_index = trigger_alarm_index;
+    /* Once per occurrence: stopped within its minute, it does not ring again. */
+    if (due.alarm_index >= 0 && runtime->last_trigger_epoch_minute != due.epoch / 60) {
+        int alarm_index = due.alarm_index;
 
-        runtime->last_trigger_epoch_minute = epoch_minute;
+        runtime->last_trigger_epoch_minute = due.epoch / 60;
         runtime->alarm_ringing = true;
         runtime->active_alarm_index = (int8_t)alarm_index;
 

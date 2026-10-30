@@ -199,6 +199,131 @@ static int test_sunrise_off_or_from_day(void)
     return 0;
 }
 
+/* The night the clocks go forward (Sunday 2026-03-29, 02:00 -> 03:00 in Central Europe): the
+ * next 07:00 is 07:00 summer time, an hour less away than a day later on the same flag. */
+static int test_dst_spring_next_alarm_and_skip(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime;
+    time_t evening;
+    time_t seven;
+
+    test_use_cet();
+    evening = make_local_time(2026, 3, 28, 23, 0, 0);
+    seven = make_local_time(2026, 3, 29, 7, 0, 0);
+    EXPECT_EQ_INT(make_utc_time(2026, 3, 29, 5, 0, 0), seven);
+    test_use_cet();
+
+    init_state(&settings, &runtime);
+    settings.alarms[0].enabled = true;
+    settings.alarms[0].hour = 7;
+    settings.alarms[0].minute = 0;
+    settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    settings.alarms[0].days_mask = 0x7F;
+
+    alarm_scheduler_tick(&runtime, &settings, evening);
+    EXPECT_EQ_INT(seven, runtime.next_alarm_epoch);
+
+    /* Skipped for tomorrow: it does not ring at 07:00 summer time. */
+    EXPECT_TRUE(alarm_scheduler_cancel_next(&runtime, &settings, evening));
+    EXPECT_EQ_INT(seven, settings.skipped_alarm_epoch);
+    for (time_t t = seven - 120; t <= seven + 120; t += 5) {
+        alarm_scheduler_tick(&runtime, &settings, t);
+        EXPECT_FALSE(runtime.alarm_ringing);
+    }
+    test_use_utc();
+    return 0;
+}
+
+/* The night the clocks go back (Sunday 2026-10-25, 03:00 -> 02:00): 07:00 winter time. */
+static int test_dst_autumn_next_alarm(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime;
+    time_t evening;
+    time_t seven;
+
+    test_use_cet();
+    evening = make_local_time(2026, 10, 24, 23, 0, 0);
+    seven = make_local_time(2026, 10, 25, 7, 0, 0);
+    EXPECT_EQ_INT(make_utc_time(2026, 10, 25, 6, 0, 0), seven);
+    test_use_cet();
+
+    init_state(&settings, &runtime);
+    settings.alarms[0].enabled = true;
+    settings.alarms[0].hour = 7;
+    settings.alarms[0].minute = 0;
+    settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    settings.alarms[0].days_mask = 0x7F;
+
+    alarm_scheduler_tick(&runtime, &settings, evening);
+    EXPECT_EQ_INT(seven, runtime.next_alarm_epoch);
+
+    for (time_t t = seven - 30; t < seven + 60; t += 5) {
+        alarm_scheduler_tick(&runtime, &settings, t);
+        if (runtime.alarm_ringing) {
+            EXPECT_TRUE(t >= seven);
+            break;
+        }
+    }
+    EXPECT_TRUE(runtime.alarm_ringing);
+    test_use_utc();
+    return 0;
+}
+
+/* A one-time alarm at 02:30, in the hour the clocks skip: it rings that night, once, and is
+ * then off (matching the wall clock, it never rang and stayed on). */
+static int test_dst_alarm_in_skipped_hour_rings(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime;
+    time_t t;
+    time_t end;
+    int rang = 0;
+
+    test_use_cet();
+    t = make_local_time(2026, 3, 29, 0, 0, 0);
+    end = make_local_time(2026, 3, 29, 6, 0, 0);
+
+    init_state(&settings, &runtime);
+    settings.alarms[0].enabled = true;
+    settings.alarms[0].hour = 2;
+    settings.alarms[0].minute = 30;
+    settings.alarms[0].repeat_mode = ALARM_REPEAT_ONCE;
+
+    for (; t < end; t += 10) {
+        alarm_scheduler_tick(&runtime, &settings, t);
+        if (runtime.alarm_ringing) {
+            rang++;
+            alarm_scheduler_stop(&runtime);
+        }
+    }
+    EXPECT_EQ_INT(1, rang);
+    EXPECT_FALSE(settings.alarms[0].enabled);
+    test_use_utc();
+    return 0;
+}
+
+/* A tick late (the UI busy for half a minute) still rings the alarm of the minute before. */
+static int test_late_tick_still_rings(void)
+{
+    app_settings_t settings;
+    app_runtime_state_t runtime;
+
+    init_state(&settings, &runtime);
+    settings.alarms[0].enabled = true;
+    settings.alarms[0].hour = 7;
+    settings.alarms[0].minute = 0;
+    settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    settings.alarms[0].days_mask = 0x7F;
+
+    alarm_scheduler_tick(&runtime, &settings, make_utc_time(2026, 3, 12, 6, 59, 50));
+    EXPECT_FALSE(runtime.alarm_ringing);
+    alarm_scheduler_tick(&runtime, &settings, make_utc_time(2026, 3, 12, 7, 0, 45));
+    EXPECT_TRUE(runtime.alarm_ringing);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -235,5 +360,25 @@ int main(void)
         return status;
     }
 
-    return test_cancel_next_one_time_disables_alarm();
+    status = test_cancel_next_one_time_disables_alarm();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_dst_spring_next_alarm_and_skip();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_dst_autumn_next_alarm();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_dst_alarm_in_skipped_hour_rings();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_late_tick_still_rings();
 }
