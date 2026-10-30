@@ -2,7 +2,6 @@ build/
 **/build/
 .codex-host-tests/
 managed_components/
-dependencies.lock
 sdkconfig
 sdkconfig.old
 .cache/

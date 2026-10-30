@@ -29,7 +29,7 @@ function(lvgl_patch_sources lvgl_dir out_dir originals_var patched_var)
         if(already_fixed GREATER -1)
             message(STATUS "LVGL already frees the clip_radius mask; no patch needed")
         elseif(fixable EQUAL -1)
-            message(WARNING "LVGL clip_radius mask fix does not apply to ${original}; check whether LVGL "
+            message(FATAL_ERROR "LVGL clip_radius mask fix does not apply to ${original}; check whether LVGL "
                             "frees the mask in radius_only() and update cmake/lvgl_patches.cmake")
         else()
             string(REPLACE "${LVGL_FIX_IMG_BEFORE}" "${LVGL_FIX_IMG_AFTER}" text "${text}")
