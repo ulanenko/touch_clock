@@ -43,6 +43,8 @@
     bool snapshot_visible;                                                                     \
     bool snapshot_dirty;                                                                       \
     uint32_t snapshot_glass; /* Liquid Glass: the backdrop generation the snapshot shows */  \
+    bool snapshot_kept;        /* taken ahead at idle: closing keeps the buffer */             \
+    uint32_t snapshot_failed;  /* 1 + the generation an idle snapshot found no memory for */  \
     bool freeze_face;          /* at rest too the face behind is the backdrop snapshot */      \
     lv_timer_t *refresh_timer; /* keeps that snapshot up with the face */
 

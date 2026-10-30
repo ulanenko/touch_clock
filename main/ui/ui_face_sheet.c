@@ -183,6 +183,12 @@ static bool sheet_take_snapshot_now(face_sheet_t *s)
     return true;
 }
 
+static bool sheet_snapshot_stale(const face_sheet_t *s)
+{
+    return s->snapshot_dirty || s->snapshot_buf == NULL ||
+           (ui_skin_is_glass() && s->snapshot_glass != ui_glass_backdrop_generation());
+}
+
 static void sheet_set_snapshot_visible(face_sheet_t *s, bool visible)
 {
     int32_t y;
@@ -192,8 +198,7 @@ static void sheet_set_snapshot_visible(face_sheet_t *s, bool visible)
     }
     y = sheet_current_y(s);
     if (visible) {
-        if (s->snapshot_dirty || s->snapshot_buf == NULL ||
-            (ui_skin_is_glass() && s->snapshot_glass != ui_glass_backdrop_generation())) {
+        if (sheet_snapshot_stale(s)) {
             if (!sheet_take_snapshot(s)) {
                 return; /* no memory: the live panel moves instead */
             }
@@ -252,8 +257,8 @@ static void sheet_show_overlay(face_sheet_t *s)
     }
 }
 
-/* A closed sheet gives the snapshot buffer back (about 1 MB, ARGB in Liquid Glass): the next
- * pull takes the snapshot again anyway once a minute has turned. */
+/* A closed sheet gives the snapshot buffer back (about 1 MB, ARGB in Liquid Glass), unless it
+ * is taken ahead at idle (face_sheet_presnapshot). */
 static void sheet_release_snapshot(face_sheet_t *s)
 {
     if (s_snapshot_owner != s || s_snapshot_pool == NULL) {
@@ -281,7 +286,9 @@ static void sheet_finish(face_sheet_t *s)
         s->overlay_open = false;
         lv_obj_add_flag(s->overlay, LV_OBJ_FLAG_HIDDEN);
         sheet_auto_close_pause(s);
-        sheet_release_snapshot(s);
+        if (!s->snapshot_kept) {
+            sheet_release_snapshot(s);
+        }
     }
     sheet_notify(s);
 }
@@ -664,6 +671,30 @@ bool face_sheet_prewarm(face_sheet_t *s, uint32_t budget_ms)
     return done;
 }
 
+/* The pull's first frame otherwise takes it: 85 ms on the clock, more when the keys' glass is
+ * baked in it. A snapshot that found no memory is not tried again until the next minute's glass
+ * (taking it makes the glass cache give way first). */
+bool face_sheet_presnapshot(face_sheet_t *s)
+{
+    uint32_t gen = ui_glass_backdrop_generation();
+
+    /* A style change builds the sheets again: one keeps its snapshot in Liquid Glass only. */
+    if (s->panel == NULL || !ui_skin_is_glass() || !ui_glass_backdrop_ready() ||
+        !lv_obj_has_flag(s->overlay, LV_OBJ_FLAG_HIDDEN)) {
+        return false;
+    }
+    s->snapshot_kept = true;
+    if (!sheet_snapshot_stale(s) || s->snapshot_failed == gen + 1) {
+        return false;
+    }
+    if (!sheet_take_snapshot(s)) {
+        s->snapshot_failed = gen + 1;
+        return false;
+    }
+    s->snapshot_dirty = false;
+    return true;
+}
+
 /* Liquid Glass: the sheet's body under its moving (hollow) snapshot, fixed to the screen. */
 static void sheet_snapshot_ground_cb(lv_event_t *e)
 {
@@ -689,6 +720,8 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
     s->auto_close_ms = o->auto_close_ms;
     s->on_state = o->on_state;
     s->snapshot_dirty = true;
+    s->snapshot_kept = false;
+    s->snapshot_failed = 0;
     s->freeze_face = o->freeze_face;
 
     s->overlay = lv_obj_create(ui_chrome_root(ctx));

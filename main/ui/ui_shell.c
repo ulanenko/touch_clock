@@ -359,6 +359,10 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
             !face_sheet_prewarm(&ctx->brightness.sheet, 20 - LV_MIN(20, lv_tick_elaps(start)))) {
             return;
         }
+        /* Its snapshot too, taken in a tick of its own once its glass is baked. */
+        if (face_sheet_presnapshot(&ctx->brightness.sheet)) {
+            return;
+        }
         for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++) {
             uint32_t spent = lv_tick_elaps(start);
 

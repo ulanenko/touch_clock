@@ -97,6 +97,9 @@ void face_sheet_attach_drag(face_sheet_t *sheet, lv_obj_t *obj);
 /* Liquid Glass: bakes a closed sheet's glass where it opens, within budget_ms; false if
  * there is more to do. */
 bool face_sheet_prewarm(face_sheet_t *sheet, uint32_t budget_ms);
+/* Liquid Glass: takes a closed sheet's snapshot ahead of its pull, when it is out of date (the
+ * minute turned, the panel changed); the sheet then keeps it while closed. Whether it took one. */
+bool face_sheet_presnapshot(face_sheet_t *sheet);
 /* Restarts the auto-close timer (user activity). */
 void face_sheet_activity(face_sheet_t *sheet);
 /* The panel content changed: take a new snapshot before it moves again. */
