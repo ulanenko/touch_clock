@@ -425,7 +425,6 @@ static void show_digital_face_snapshot(clock_ui_context_t *ctx)
     live_visible = !lv_obj_has_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
     if (live_visible) {
         refresh_digital_face_snapshot(ctx);
-        return;
     }
 
     if (ctx->faces.digital_snapshot_buf != NULL) {
@@ -918,29 +917,33 @@ static void make_face_layer_passive(lv_obj_t *obj)
     }
 }
 
+/* Takes the digital face's snapshot. Whether the live face or the snapshot shows is left as
+ * it was (sync_face_animation_state decides): the glass and the face previews take one while
+ * the face ticks on, and hiding the live face here froze it on the snapshot. */
 void refresh_digital_face_snapshot(clock_ui_context_t *ctx)
 {
     lv_coord_t ext_draw;
+    bool live_shown;
+    bool ok;
 
     if (ctx->faces.digital_live_root == NULL || ctx->faces.digital_snapshot_img == NULL) {
         return;
     }
 
+    live_shown = !lv_obj_has_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 
     if (ctx->faces.digital_snapshot_buf == NULL) {
         ctx->faces.digital_snapshot_buf = lv_snapshot_create_draw_buf(ctx->faces.digital_live_root,
                                                                       LV_COLOR_FORMAT_RGB565);
-        if (ctx->faces.digital_snapshot_buf == NULL) {
-            lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
-            return;
-        }
     }
-
-    if (lv_snapshot_take_to_draw_buf(ctx->faces.digital_live_root,
-                                     LV_COLOR_FORMAT_RGB565,
-                                     ctx->faces.digital_snapshot_buf) != LV_RESULT_OK) {
+    ok = ctx->faces.digital_snapshot_buf != NULL &&
+         lv_snapshot_take_to_draw_buf(ctx->faces.digital_live_root, LV_COLOR_FORMAT_RGB565,
+                                      ctx->faces.digital_snapshot_buf) == LV_RESULT_OK;
+    if (!live_shown) {
         lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
+    }
+    if (!ok) {
         return;
     }
 
@@ -951,8 +954,6 @@ void refresh_digital_face_snapshot(clock_ui_context_t *ctx)
     ctx->faces.digital_snapshot_ext_draw = ext_draw;
     lv_image_set_src(ctx->faces.digital_snapshot_img, ctx->faces.digital_snapshot_buf);
     lv_obj_set_pos(ctx->faces.digital_snapshot_img, -ext_draw, -ext_draw);
-    lv_obj_clear_flag(ctx->faces.digital_snapshot_img, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(ctx->faces.digital_live_root, LV_OBJ_FLAG_HIDDEN);
 }
 
 const void *ui_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face)
