@@ -405,6 +405,23 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   snapshots. Pulled at the minute on the clock: the worst frame 228 -> 67 ms, the step 602 ->
   333 ms (the drag's start still makes the frost, 70 ms, and the keys' glass). The frost every
   minute 111 -> 70 ms, the page ground twice as fast. Identical pixels in the simulator.
+- **The quick sheet's snapshot is taken at idle (2026-10-30, simulator only).** Every pull took
+  the panel's snapshot in its first frame (85 ms on the clock), and closing the sheet freed the
+  buffer, so every pull paid it. `face_sheet_presnapshot` takes it in the idle tick once the
+  sheet's glass is baked, whenever it is out of date (a turned minute, a page's glass, the panel
+  changed), and the closed sheet keeps the buffer (about 1 MB of PSRAM; the theme sheet still
+  borrows it and gives it back). In the simulator no quick-sheet pull takes a snapshot and every
+  frame is identical to before. *To measure on the clock*: the drag-start frame of the
+  brightness pull, and PSRAM's low point.
+- **Night's first open baked its rows again (2026-10-30, simulator only).** The pages built at
+  idle were laid out before their first sync, and Night's first row was 51 px taller until it
+  was shown: the glass baked ahead had the wrong size, and the rows under it moved. The pages
+  are now synced when built. Night's first open bakes nothing in the simulator (it baked 8
+  shapes, two in its first frame), and its face thumbnail is drawn at idle. *To measure*:
+  `settings_night_open` (63 ms max before).
+- **Not done: the style picker's first open (117 ms)** bakes its four style rows. It is built
+  on demand and opened only to change the style; building and baking it ahead would hold about
+  0.5 MB of the glass cache for a page rarely seen.
 
 ## Open findings, by priority (*unverified* unless measured)
 
