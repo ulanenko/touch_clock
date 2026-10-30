@@ -27,10 +27,14 @@
 #define GLASS_PERF_STEP(what) printf("PERF glass_step %s us=%d\n", what, (int)(esp_timer_get_time() - perf_t0))
 #define GLASS_PERF_END(what, w, h)                                                                                      \
     printf("PERF glass_%s w=%d h=%d us=%d\n", what, (int)(w), (int)(h), (int)(esp_timer_get_time() - perf_t0))
+#define GLASS_PERF_EVICT(why, b)                                                                                        \
+    printf("PERF glass_evict why=%s w=%d h=%d bytes=%u budget=%u\n", why, (b)->w, (b)->h, (unsigned)s_bake_bytes,      \
+           (unsigned)bake_budget())
 #else
 #define GLASS_PERF_START()
 #define GLASS_PERF_STEP(what)
 #define GLASS_PERF_END(what, w, h)
+#define GLASS_PERF_EVICT(why, b)
 #endif
 
 #include "src/misc/lv_area_private.h"
@@ -898,7 +902,7 @@ static void bezel_for(bezel_t *bz, int32_t w, int32_t h)
  * lit, as an RGB565 image drawn with its corners clipped. A shape that moved (a scrolled row)
  * keeps its image while moving and is baked again once it has stayed put for a moment. */
 #define BAKE_MAX 96 /* the settings pages, the alarm list and the quick sheet: about 80 shapes */
-#define BAKE_BYTES (4000u * 1024u)
+#define BAKE_BYTES (6000u * 1024u)
 #define BAKE_SETTLE_MS 120
 
 typedef struct {
@@ -931,6 +935,12 @@ static lv_timer_t *s_settle_timer;
 static lv_draw_buf_t *s_grave[GRAVE_MAX];
 static bool s_grave_hooked;
 
+/* The opaque page shapes that hide the ground this frame (ground_draw_uncovered), -1: not yet.
+ * A page shows fewer; any past the last are drawn over the ground, as before. */
+#define COVER_MAX 32
+static lv_area_t s_cover[COVER_MAX];
+static int s_cover_n = -1;
+
 static void grave_free(void)
 {
     for (int i = 0; i < GRAVE_MAX; i++) {
@@ -946,6 +956,13 @@ static void render_ready_cb(lv_event_t *e)
     LV_UNUSED(e);
     grave_free();
     s_resettle_left = 1;
+    s_cover_n = -1;
+}
+
+static void render_start_cb(lv_event_t *e)
+{
+    LV_UNUSED(e);
+    s_cover_n = -1;
 }
 
 static void bake_drop(bake_t *b)
@@ -971,9 +988,10 @@ static void bake_drop(bake_t *b)
 
 /* The cache keeps to BAKE_BYTES and leaves PSRAM_FLOOR of PSRAM to everything else: a long
  * session (sheets, pages, the alarm editor) took PSRAM down to about 100 KB, and shapes whose
- * bake could not be made fell back to slow translucent boxes. Dropped bakes waiting for their
- * frame to end count as free. */
-#define PSRAM_FLOOR (1024u * 1024u)
+ * bake could not be made fell back to slow translucent boxes. 2 MB leaves room for a sound
+ * rendered for a preview (up to about 1 MB); a sheet's snapshot asks for its room
+ * (ui_glass_make_room). Dropped bakes waiting for their frame to end count as free. */
+#define PSRAM_FLOOR (2048u * 1024u)
 
 static size_t bake_budget(void)
 {
@@ -983,6 +1001,36 @@ static size_t bake_budget(void)
         have += s_grave[i] != NULL ? s_grave[i]->data_size : 0;
     }
     return have > PSRAM_FLOOR ? LV_MIN((size_t)BAKE_BYTES, have - PSRAM_FLOOR) : 0;
+}
+
+void ui_glass_make_room(size_t bytes)
+{
+    size_t have = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    bool dropped = false;
+
+    for (int i = 0; i < GRAVE_MAX; i++) {
+        have += s_grave[i] != NULL ? s_grave[i]->data_size : 0;
+    }
+    while (have < PSRAM_FLOOR + bytes) {
+        bake_t *oldest = NULL;
+
+        for (int i = 0; i < BAKE_MAX; i++) {
+            if (s_bakes[i].buf != NULL && (oldest == NULL || s_bakes[i].stamp < oldest->stamp)) {
+                oldest = &s_bakes[i];
+            }
+        }
+        if (oldest == NULL) {
+            break;
+        }
+        have += oldest->buf->data_size;
+        GLASS_PERF_EVICT("room", oldest);
+        bake_drop(oldest);
+        dropped = true;
+    }
+    if (dropped) {
+        lv_draw_wait_for_finish();
+        grave_free();
+    }
 }
 
 /* The bezel at one distance from a straight edge, in integers: how far each channel is bent
@@ -1822,6 +1870,7 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
     }
     if (!s_grave_hooked && lv_display_get_default() != NULL) {
         lv_display_add_event_cb(lv_display_get_default(), render_ready_cb, LV_EVENT_REFR_READY, NULL);
+        lv_display_add_event_cb(lv_display_get_default(), render_start_cb, LV_EVENT_REFR_START, NULL);
         s_grave_hooked = true;
     }
     budget = bake_budget();
@@ -1840,6 +1889,7 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
         if (oldest == NULL || (slot != NULL && s_bake_bytes + need <= budget)) {
             break;
         }
+        GLASS_PERF_EVICT(slot == NULL ? "slots" : "bytes", oldest);
         bake_drop(oldest);
     }
     if (slot == NULL || s_bake_bytes + need > budget) {
@@ -2505,14 +2555,19 @@ static void ground_draw_uncovered(lv_layer_t *layer, const lv_area_t *area)
     if (!lv_area_intersect(&rects[0], area, &layer->_clip_area)) {
         return;
     }
-    for (int i = 0; i < BAKE_MAX && n > 0; i++) {
-        lv_area_t c;
-        int m;
-
-        if (!covers(&s_bakes[i], &c)) {
-            continue;
+    /* What covers the ground is found once a frame: covers() looks each object up in the whole
+     * tree, and the cache holds the shapes of the hidden pages too. */
+    if (s_cover_n < 0) {
+        s_cover_n = 0;
+        for (int i = 0; i < BAKE_MAX && s_cover_n < COVER_MAX; i++) {
+            if (covers(&s_bakes[i], &s_cover[s_cover_n])) {
+                s_cover_n++;
+            }
         }
-        m = rects_subtract(rects, n, &c);
+    }
+    for (int i = 0; i < s_cover_n && n > 0; i++) {
+        int m = rects_subtract(rects, n, &s_cover[i]);
+
         if (m < 0) {
             break; /* too many pieces: the rest is drawn under the glass, as before */
         }
@@ -3026,6 +3081,7 @@ static bool bake_room(size_t need, bool evict_ahead)
         if (!evict_ahead || ahead == NULL) {
             return false;
         }
+        GLASS_PERF_EVICT(slot ? "ahead_bytes" : "ahead_slots", ahead);
         bake_drop(ahead);
     }
 }

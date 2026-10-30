@@ -44,6 +44,9 @@ uint32_t ui_glass_backdrop_generation(void);
 bool ui_glass_backdrop_light(void);
 /* Frees the backdrop and the cached overlays (a style change). */
 void ui_glass_release(void);
+/* Drops the least recently drawn bakes until bytes more of PSRAM would still leave the cache's
+ * floor free: called before making a large buffer of one's own (a sheet's snapshot). */
+void ui_glass_make_room(size_t bytes);
 
 /* Draws a glass shape over area (screen coordinates), baked for key (the object it is). */
 void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind,

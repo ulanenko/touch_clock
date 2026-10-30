@@ -150,6 +150,9 @@ static bool sheet_take_snapshot_now(face_sheet_t *s)
         if (*buf != NULL) {
             lv_draw_buf_destroy(*buf);
         }
+        /* The glass cache fills PSRAM down to its floor: it makes way for the snapshot first. */
+        ui_glass_make_room((size_t)lv_obj_get_width(s->panel) * (size_t)lv_obj_get_height(s->panel) *
+                           (glass ? 4u : 2u));
         *buf = lv_snapshot_create_draw_buf(s->panel, cf);
         ok = *buf != NULL;
     }

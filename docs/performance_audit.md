@@ -368,6 +368,18 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   checks keep about 4 KB (set up once); seven checks in a row settled at 21 KB with no leak. The
   settings pages built at 20 s take about 17 KB of internal RAM (LVGL allocates with `malloc`,
   and under 16 KB that is internal RAM).
+- **The glass bake cache keeps 6 MB (was 4 MB) and leaves 2 MB of PSRAM free (was 1 MB)**, now
+  that the alarm sounds left PSRAM to spare. Every shape dropped in a full tour had been dropped
+  for the 4 MB cap (130 in two loops). A sheet's snapshot makes its own room first
+  (`ui_glass_make_room`), so a sheet over a full cache keeps PSRAM at about 1.75 MB, not 0.6 MB;
+  a sound preview's render takes it to about 1.1 MB. Second visits: Night 133 -> 24 ms, Other
+  118 -> 26 ms, the style picker 114 -> 26 ms, alarms 97 -> 33 ms; first visits: alarms 97 ->
+  49 ms, the alarm editor 68 -> 41 ms, Night 66 -> 64 ms; the style picker's first open stays
+  at 117 ms (five large rows baked).
+- **The ground under page shapes is cut around them once a frame**: each ground draw looked every
+  cached shape's object up in the whole tree (`lv_obj_is_valid`), and the bigger cache made
+  scrolling 0.5-0.9 ms a frame slower. Night page scrolling 29.1 -> 28.2 ms (slow scroll 31.4 ->
+  30.3 ms, frames over 33 ms 45 -> 12), Other 27.4 -> 25.4 ms, alarms 21.3 -> 19.0 ms.
 
 ## Open findings, by priority (*unverified* unless measured)
 
