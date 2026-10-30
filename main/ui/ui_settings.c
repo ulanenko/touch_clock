@@ -1423,6 +1423,9 @@ bool ui_settings_prebuild_step(clock_ui_context_t *ctx)
     for (size_t i = 0; i < sizeof(pages) / sizeof(pages[0]); i++) {
         if (!st->built[pages[i]]) {
             build_page(ctx, pages[i]);
+            /* Laid out as it opens: built unsynced, Night's first row was 51 px taller, and
+             * the glass baked ahead at idle was all baked again on its first open. */
+            sync_page(ctx, pages[i], true);
             return false;
         }
     }
