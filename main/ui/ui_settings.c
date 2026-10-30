@@ -18,6 +18,7 @@
 
 #include "app_version.h"
 #include "domain/timezone_rules.h"
+#include "ui/kit/ui_glass.h"
 
 static const ui_l10n_str_t s_settings_n = UI_L10N_STR("%s · %02d", "%s · %02d", "%s · %02d", "%s · %02d", "%s · %02d");
 static const ui_l10n_str_t s_months = UI_L10N_STR("Jan Feb Mar Apr May Jun Jul Aug Sep Oct Nov Dec",
@@ -1234,6 +1235,42 @@ static void debug_scroll_end(clock_ui_context_t *ctx)
     }
 }
 
+/* Liquid Glass: while a page sits still, bakes ahead what comes next: the rows of this page
+ * below the fold (where they come into view at the end of its scroll) and the other pages
+ * already built. Within one budget a tick, as the face's idle prewarm. */
+static void prewarm_timer_cb(lv_timer_t *timer)
+{
+    clock_ui_context_t *ctx = (clock_ui_context_t *)lv_timer_get_user_data(timer);
+    clock_ui_settings_state_t *st = ST(ctx);
+    uint32_t start = lv_tick_get();
+
+    if (!ui_skin_is_glass() || !ui_settings_is_open(ctx) || lv_anim_count_running() > 0 ||
+        lv_display_get_inactive_time(NULL) < 400) {
+        return;
+    }
+    for (int i = 0; i < UI_ST_PAGE_COUNT; i++) {
+        kit_page_t *p = &st->pages[i];
+        uint32_t spent = lv_tick_elaps(start);
+        bool done;
+
+        if (!st->built[i] || p->root == NULL) {
+            continue;
+        }
+        if (spent >= 20) {
+            return;
+        }
+        if (lv_obj_has_flag(p->root, LV_OBJ_FLAG_HIDDEN)) {
+            done = ui_glass_prewarm(p->root, 20 - spent);
+        } else {
+            done = lv_obj_get_scroll_bottom(p->scroll) <= 0 ||
+                   ui_glass_prewarm_at(p->scroll, -lv_obj_get_scroll_bottom(p->scroll), 20 - spent);
+        }
+        if (!done) {
+            return;
+        }
+    }
+}
+
 void ui_settings_create(clock_ui_context_t *ctx)
 {
     clock_ui_settings_state_t *st = ST(ctx);
@@ -1243,6 +1280,9 @@ void ui_settings_create(clock_ui_context_t *ctx)
     st->applied_language = (clock_language_t)ctx->settings->language;
     if (st_atelier()) {
         kit_minute_rim_prewarm(REGISTER_RIM_SKIP_FROM, REGISTER_RIM_SKIP_TO);
+    }
+    if (ui_skin_is_glass()) {
+        ui_chrome_timer_create(ctx, prewarm_timer_cb, 250, ctx);
     }
     ui_debug_register("open_settings", debug_open_settings);
     ui_debug_register("open_wifi", debug_open_wifi);

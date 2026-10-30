@@ -66,13 +66,19 @@ static int32_t sheet_progress(const face_sheet_t *s, int32_t y)
     return (LV_ABS(sheet_clamp(s, y) - s->closed_y) * 256) / travel;
 }
 
+/* At rest, a freeze_face sheet keeps the face behind it as the backdrop snapshot. */
+static bool sheet_face_frozen(const face_sheet_t *s)
+{
+    return s->freeze_face && s->target_open && s->overlay_open;
+}
+
 static void sheet_apply(face_sheet_t *s, int32_t y)
 {
     lv_opa_t opa;
 
     y = sheet_clamp(s, y);
     opa = (lv_opa_t)((sheet_progress(s, y) * s->dim_opa) / 256);
-    ui_backdrop_set(s->ui, s->overlay, s->backdrop_img, s->snapshot_visible, opa);
+    ui_backdrop_set(s->ui, s->overlay, s->backdrop_img, s->snapshot_visible || sheet_face_frozen(s), opa);
     if (s->snapshot_visible) {
         int32_t ext = sheet_ext(s);
 
@@ -523,8 +529,9 @@ static void sheet_auto_close_cb(lv_timer_t *timer)
     face_sheet_close(s, true);
 }
 
-/* The face behind a moving sheet, drawn only where the sheet does not cover it: under the
- * sheet's body (all but its rounded corners) it would be drawn for nothing every frame. */
+/* The face behind a moving (or frozen_face) sheet, drawn only where the sheet does not cover
+ * it: under the sheet's body (all but its rounded corners) it would be drawn for nothing every
+ * frame. */
 static int cut_rects(lv_area_t *rects, int n, int max, const lv_area_t *cut)
 {
     lv_area_t out[12];
@@ -571,7 +578,7 @@ static void sheet_backdrop_draw_cb(lv_event_t *e)
     int32_t ext;
     int n = 1;
 
-    if (src == NULL || !s->snapshot_visible || s->snapshot_buf == NULL) {
+    if (src == NULL || (s->snapshot_visible ? s->snapshot_buf == NULL : !sheet_face_frozen(s))) {
         return; /* drawn as an image, as usual */
     }
     lv_event_stop_processing(e);
@@ -579,9 +586,13 @@ static void sheet_backdrop_draw_cb(lv_event_t *e)
     if (!lv_area_intersect(&rects[0], &coords, &clip_was)) {
         return;
     }
-    ext = sheet_ext(s);
-    lv_obj_get_coords(s->snapshot_img, &body);
-    lv_area_increase(&body, -ext, -ext);
+    if (s->snapshot_visible) {
+        ext = sheet_ext(s);
+        lv_obj_get_coords(s->snapshot_img, &body);
+        lv_area_increase(&body, -ext, -ext);
+    } else {
+        lv_obj_get_coords(s->panel, &body);
+    }
     r = LV_MIN(r, LV_MIN(lv_area_get_width(&body), lv_area_get_height(&body)) / 2);
     {
         lv_area_t across = {body.x1, body.y1 + r, body.x2, body.y2 - r};
@@ -603,6 +614,34 @@ static void sheet_backdrop_draw_cb(lv_event_t *e)
         lv_draw_image(layer, &d, &coords);
     }
     layer->_clip_area = clip_was;
+}
+
+static void sheet_refresh_cb(lv_timer_t *timer)
+{
+    face_sheet_t *s = (face_sheet_t *)lv_timer_get_user_data(timer);
+
+    if (sheet_face_frozen(s) && !s->snapshot_visible && !s->animating && !s->dragging) {
+        ui_backdrop_refresh(s->ui, s->overlay, s->backdrop_img);
+    }
+}
+
+/* The overlay is hidden while the sheet is closed, so moving its panel to where it opens and
+ * back redraws nothing. */
+bool face_sheet_prewarm(face_sheet_t *s, uint32_t budget_ms)
+{
+    int32_t y;
+    bool done;
+
+    if (s->panel == NULL || !ui_skin_is_glass() || !lv_obj_has_flag(s->overlay, LV_OBJ_FLAG_HIDDEN)) {
+        return true;
+    }
+    y = lv_obj_get_y(s->panel);
+    lv_obj_set_y(s->panel, s->open_y);
+    lv_obj_update_layout(s->panel);
+    done = ui_glass_prewarm_first(s->panel, budget_ms);
+    lv_obj_set_y(s->panel, y);
+    lv_obj_update_layout(s->panel);
+    return done;
 }
 
 /* Liquid Glass: the sheet's body under its moving (hollow) snapshot, fixed to the screen. */
@@ -630,6 +669,7 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
     s->auto_close_ms = o->auto_close_ms;
     s->on_state = o->on_state;
     s->snapshot_dirty = true;
+    s->freeze_face = o->freeze_face;
 
     s->overlay = lv_obj_create(ui_chrome_root(ctx));
     lv_obj_remove_style_all(s->overlay);
@@ -672,6 +712,9 @@ void face_sheet_create(face_sheet_t *s, clock_ui_context_t *ctx, const face_shee
     s->auto_close_timer = ui_chrome_timer_create(ctx, sheet_auto_close_cb, o->auto_close_ms, s);
     if (s->auto_close_timer != NULL) {
         lv_timer_pause(s->auto_close_timer);
+    }
+    if (s->freeze_face) {
+        s->refresh_timer = ui_chrome_timer_create(ctx, sheet_refresh_cb, 250, s);
     }
 }
 

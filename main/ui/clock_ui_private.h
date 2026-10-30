@@ -100,6 +100,9 @@ bool ui_sparse_image_known(const void *data);
 void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 lv_obj_t *ui_backdrop_create(lv_obj_t *overlay);
 void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop, bool moving, lv_opa_t dim_opa);
+/* Captures the face again if the shown backdrop no longer matches it (a new minute, or a
+ * second on a face that shows them). */
+void ui_backdrop_refresh(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop);
 void ui_l10n_reset(clock_ui_context_t *ctx);
 const char *ui_l10n_text(const clock_ui_context_t *ctx, l10n_text_id_t text_id);
 void ui_l10n_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id);

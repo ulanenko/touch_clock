@@ -42,7 +42,9 @@
     bool target_open;                                                                          \
     bool snapshot_visible;                                                                     \
     bool snapshot_dirty;                                                                       \
-    uint32_t snapshot_glass; /* Liquid Glass: the backdrop generation the snapshot shows */
+    uint32_t snapshot_glass; /* Liquid Glass: the backdrop generation the snapshot shows */  \
+    bool freeze_face;          /* at rest too the face behind is the backdrop snapshot */      \
+    lv_timer_t *refresh_timer; /* keeps that snapshot up with the face */
 
 typedef struct {
     FACE_SHEET_FIELDS

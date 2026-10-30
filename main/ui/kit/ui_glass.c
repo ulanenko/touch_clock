@@ -870,8 +870,8 @@ static void bezel_for(bezel_t *bz, int32_t w, int32_t h)
 /* Each glass shape is baked once at its place: the backdrop refracted through it, tinted and
  * lit, as an RGB565 image drawn with its corners clipped. A shape that moved (a scrolled row)
  * keeps its image while moving and is baked again once it has stayed put for a moment. */
-#define BAKE_MAX 48
-#define BAKE_BYTES (3200u * 1024u)
+#define BAKE_MAX 96 /* the settings pages, the alarm list and the quick sheet: about 80 shapes */
+#define BAKE_BYTES (4000u * 1024u)
 #define BAKE_SETTLE_MS 120
 
 typedef struct {
@@ -888,6 +888,7 @@ typedef struct {
     int16_t pend_x, pend_y;
     uint32_t pend_since;
     bool opaque; /* corners baked against the ground: drawn as a plain image */
+    bool ahead;  /* baked ahead where it may come into view (below a page's fold), not yet drawn */
     int16_t bez, corner; /* the rim's width and the corners' size (a sheet bakes only these) */
 } bake_t;
 
@@ -1685,10 +1686,26 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
  * is touched: off the frames of a scroll and of the next flick. */
 #define SETTLE_IDLE_MS 600
 
+/* A flicked page goes on gliding after the finger has left. */
+static bool page_gliding(void)
+{
+    for (lv_indev_t *indev = lv_indev_get_next(NULL); indev != NULL; indev = lv_indev_get_next(indev)) {
+        if (lv_indev_get_scroll_obj(indev) != NULL) {
+            return true;
+        }
+    }
+    return false;
+}
+
+/* Page glass bakes again only once nothing is touched or gliding. Meanwhile a row is drawn
+ * as row_draw_moving draws it, anything else as its image where it was baked, moved along: a
+ * card baked ahead (below the fold) that stops part-way through a slow drag waits too. */
 static bool settle_can_wait(const bake_t *b)
 {
-    return b->kind == UI_GLASS_CLEAR && b->opaque && b->mode == UI_GLASS_PAGE && !b->deep &&
-           (int32_t)b->w * b->h <= 100000 && page_ground_ready() && lv_display_get_inactive_time(NULL) < SETTLE_IDLE_MS;
+    bool row = b->kind == UI_GLASS_CLEAR && b->opaque && !b->deep && (int32_t)b->w * b->h <= 100000;
+
+    return b->mode == UI_GLASS_PAGE && (!row || page_ground_ready()) &&
+           (lv_display_get_inactive_time(NULL) < SETTLE_IDLE_MS || page_gliding());
 }
 
 static void settle_timer_cb(lv_timer_t *t)
@@ -1797,6 +1814,7 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
     slot->opaque = opaque;
     slot->mode = (uint8_t)mode;
     slot->deep = deep;
+    slot->ahead = false;
     slot->stamp = ++s_bake_stamp;
     bake_render(slot, area, radius, kind, tint);
     return slot;
@@ -2328,6 +2346,9 @@ void ui_glass_draw(lv_layer_t *layer, const void *key, const lv_area_t *area, in
     }
     if (can_bake(mode)) {
         b = bake_get(key, &rest, radius, kind, tint, opaque, mode, deep);
+    }
+    if (b != NULL) {
+        b->ahead = false;
     }
     if (b != NULL && kind == UI_GLASS_SHEET) {
         sheet_draw(layer, b, area, radius);
@@ -2936,8 +2957,47 @@ static bool has_glass_cb(lv_obj_t *obj)
     return false;
 }
 
-/* Bakes obj's glass now if it would draw some and has none current. */
-static void prewarm_one(lv_obj_t *obj)
+static bool s_prewarm_evict; /* ui_glass_prewarm_first: room made as for a draw */
+
+/* Whether need bytes and a slot are free; with evict_ahead, dropping bakes made ahead (the least
+ * recently made first) to free them. */
+static bool bake_room(size_t need, bool evict_ahead)
+{
+    while (true) {
+        bool slot = false;
+        bake_t *ahead = NULL;
+
+        for (int i = 0; i < BAKE_MAX; i++) {
+            bake_t *b = &s_bakes[i];
+
+            slot = slot || b->buf == NULL;
+            if (b->buf != NULL && b->ahead && (ahead == NULL || b->stamp < ahead->stamp)) {
+                ahead = b;
+            }
+        }
+        if (slot && s_bake_bytes + need <= BAKE_BYTES) {
+            return true;
+        }
+        if (!evict_ahead || ahead == NULL) {
+            return false;
+        }
+        bake_drop(ahead);
+    }
+}
+
+static bake_t *bake_find(const void *key, int32_t w, int32_t h)
+{
+    for (int i = 0; i < BAKE_MAX; i++) {
+        if (s_bakes[i].buf != NULL && s_bakes[i].key == key && s_bakes[i].w == w && s_bakes[i].h == h) {
+            return &s_bakes[i];
+        }
+    }
+    return NULL;
+}
+
+/* Bakes obj's glass now if it would draw some and has none current. With dy, only what is off
+ * the screen now, has no bake, and would be on it moved by dy, baked there. */
+static void prewarm_one(lv_obj_t *obj, int32_t dy)
 {
     lv_area_t screen = {0, 0, SCREEN - 1, SCREEN - 1};
     ui_glass_kind_t kind = UI_GLASS_CLEAR;
@@ -2959,6 +3019,12 @@ static void prewarm_one(lv_obj_t *obj)
     lv_obj_get_coords(obj, &coords);
     w = lv_area_get_width(&coords);
     h = lv_area_get_height(&coords);
+    if (dy != 0) {
+        if (lv_area_intersect(&vis, &coords, &screen) || bake_find(obj, w, h) != NULL) {
+            return;
+        }
+        lv_area_move(&coords, 0, dy);
+    }
     if (w <= 0 || h <= 0 || !lv_area_intersect(&vis, &coords, &screen)) {
         return;
     }
@@ -2972,13 +3038,48 @@ static void prewarm_one(lv_obj_t *obj)
         shell_get(obj, w, h, radius, kind, color);
         return;
     }
-    /* Only into free room: a prewarm that evicted would bake round and round at idle. */
-    if (can_bake(mode) && s_bake_bytes + (size_t)w * (size_t)h * 2 <= BAKE_BYTES) {
-        bake_get(obj, &rest, radius, kind, color, opaque, mode, deep);
+    /* Only into free room (bytes and a slot): a prewarm that evicted would bake round and
+     * round at idle, the shapes of one page pushing out another's. What was baked ahead below
+     * a fold gives way to what shows where it is. */
+    /* A current bake is left alone: touching it would make it look recently drawn, and the
+     * cache drops the least recently drawn when it needs room. */
+    if (bake_find(obj, w, h) != NULL && bake_current(bake_find(obj, w, h), kind, w, h)) {
+        return;
+    }
+    if (can_bake(mode) &&
+        (s_prewarm_evict || bake_find(obj, w, h) != NULL || bake_room((size_t)w * (size_t)h * 2, dy == 0))) {
+        bake_t *b = bake_get(obj, &rest, radius, kind, color, opaque, mode, deep);
+
+        if (b != NULL && dy != 0) {
+            b->ahead = true;
+        }
     }
 }
 
 bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms)
+{
+    uint32_t start = lv_tick_get();
+
+    if (!ui_skin_is_glass() || root == NULL || !s_frost_ok || !s_back_ok) {
+        return true;
+    }
+    if (s_mode == UI_GLASS_FACE && !sheet_ground_build(budget_ms)) {
+        return false;
+    }
+    return ui_glass_prewarm_at(root, 0, budget_ms - LV_MIN(budget_ms, lv_tick_elaps(start)));
+}
+
+bool ui_glass_prewarm_first(lv_obj_t *root, uint32_t budget_ms)
+{
+    bool done;
+
+    s_prewarm_evict = true;
+    done = ui_glass_prewarm(root, budget_ms);
+    s_prewarm_evict = false;
+    return done;
+}
+
+bool ui_glass_prewarm_at(lv_obj_t *root, int32_t dy, uint32_t budget_ms)
 {
     uint32_t start = lv_tick_get();
     lv_obj_t *stack[64];
@@ -2987,16 +3088,13 @@ bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms)
     if (!ui_skin_is_glass() || root == NULL || !s_frost_ok || !s_back_ok) {
         return true;
     }
-    if (s_mode == UI_GLASS_FACE && !sheet_ground_build(budget_ms)) {
-        return false;
-    }
 
     stack[depth++] = root;
     while (depth > 0) {
         lv_obj_t *obj = stack[--depth];
         uint32_t n = lv_obj_get_child_count(obj);
 
-        prewarm_one(obj);
+        prewarm_one(obj, dy);
         if (lv_tick_elaps(start) >= budget_ms) {
             return false;
         }

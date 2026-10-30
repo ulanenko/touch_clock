@@ -543,6 +543,7 @@ void face_quick_create(clock_ui_context_t *ctx)
         .border_side = LV_BORDER_SIDE_TOP,
         .auto_close_ms = QUICK_AUTO_CLOSE_MS,
         .on_state = quick_on_state,
+        .freeze_face = true, /* the rim control redraws every frame while dragged */
     };
     static const kit_icon_t icons[3][QUICK_KEY_COUNT] = {
         [CLOCK_UI_STYLE_INSTRUMENT] = {KIT_ICON_ALARM, KIT_ICON_MOON, KIT_ICON_SOUND, KIT_ICON_SETTINGS},

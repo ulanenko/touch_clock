@@ -221,7 +221,7 @@ static const perf_step_t s_steps[] = {
 #elif CONFIG_TOUCH_CLOCK_PERF_TOUR_SHORT
 /* A short tour around the night face picker, to check what stays slow after it. */
 static const perf_step_t s_steps[] = {
-    IDLE("idle_face", 4000),
+    IDLE("idle_face", 15000), /* long enough for Liquid Glass to prewarm, as at the bedside */
     CALL("settings_tap", call_open_settings_root, 1200),
     CALL("settings_night_open", call_open_night, 1500),
     CALL("night_faces", call_night_face_picker, 2500),
@@ -239,6 +239,7 @@ static const perf_step_t s_steps[] = {
     CALL("alarms_open", call_open_alarms, 1200),
     FLICK_BURST("alarms_scroll"),
     CALL("alarms_close", call_close_alarms, 1200),
+    IDLE("idle_before_quick", 5000), /* the face idles (and prewarms) before a pull */
     /* Slider drags, each back to where it started. */
     CALL("quick_open", call_open_quick, 1500),
     DRAG("brightness_drag", 207, 602, 515, 602, 1500, 600),

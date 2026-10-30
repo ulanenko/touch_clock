@@ -81,6 +81,13 @@ void ui_glass_page_enter(lv_obj_t *root, lv_obj_t *const *targets, int count, bo
 /* Bakes, while the face is idle, the glass of everything under root that has none current yet
  * (hidden pages included), so opening them does not wait; returns true once all is baked. */
 bool ui_glass_prewarm(lv_obj_t *root, uint32_t budget_ms);
+/* Bakes ahead the glass of what under root is off the screen now but on it moved by dy (a
+ * page's rows below the fold where they will be once it scrolls by -dy) and has no bake yet;
+ * they are baked again where they stop. Returns true once all is baked. */
+bool ui_glass_prewarm_at(lv_obj_t *root, int32_t dy, uint32_t budget_ms);
+/* As ui_glass_prewarm, but making room as a draw would (the least recently drawn bakes go):
+ * for what must come up at once, ahead of everything else. */
+bool ui_glass_prewarm_first(lv_obj_t *root, uint32_t budget_ms);
 
 /* For timing (debug calls): bakes a w x h shape of kind once, as a row on a page would be. */
 void ui_glass_debug_bake(int32_t w, int32_t h, int32_t radius, ui_glass_kind_t kind);

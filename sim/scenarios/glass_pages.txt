@@ -1,0 +1,30 @@
+# Liquid Glass: settings pages, a scrolled page and the quick sheet, each shot once settled.
+set style 3
+set face 0
+clock 10:09:30
+wait 6000
+shot glass_face
+call open_settings
+wait 1500
+shot glass_settings
+call open_night
+wait 1500
+shot glass_night
+call settings_back
+wait 1000
+call open_other
+wait 1500
+shot glass_other
+drag 360 560 360 200 300
+wait 300
+shot glass_other_scrolling
+wait 1500
+shot glass_other_scrolled
+call close_settings
+wait 2000
+call open_quick
+wait 1500
+shot glass_quick
+drag 207 602 515 602 800
+wait 1500
+shot glass_quick_dragged

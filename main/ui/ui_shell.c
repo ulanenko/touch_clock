@@ -339,6 +339,11 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
                                    ctx->chrome_root};
         uint32_t start = lv_tick_get();
 
+        /* The quick sheet first, the one pulled up most from the face (it sits below the screen
+         * until then): it makes room for itself, the pages then take what is left. */
+        if (!face_sheet_prewarm(&ctx->brightness.sheet, 20)) {
+            return;
+        }
         for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++) {
             uint32_t spent = lv_tick_elaps(start);
 
@@ -583,6 +588,9 @@ static lv_draw_buf_t *screen_scratch(clock_ui_context_t *ctx)
     return &ctx->backdrop_buf;
 }
 
+/* What the backdrop shows: the face as it was when captured. */
+static ui_face_slide_shot_t s_backdrop_shot = {.face = CLOCK_FACE_COUNT};
+
 static bool backdrop_capture(clock_ui_context_t *ctx, lv_obj_t *overlay)
 {
     lv_result_t res;
@@ -595,7 +603,28 @@ static bool backdrop_capture(clock_ui_context_t *ctx, lv_obj_t *overlay)
     lv_obj_add_flag(overlay, LV_OBJ_FLAG_HIDDEN);
     res = lv_snapshot_take_to_draw_buf(ctx->screen, LV_COLOR_FORMAT_RGB565, &ctx->backdrop_buf);
     lv_obj_remove_flag(overlay, LV_OBJ_FLAG_HIDDEN);
+    s_backdrop_shot = face_slide_shot_now(ctx, face_slide_current(ctx));
     return res == LV_RESULT_OK;
+}
+
+void ui_backdrop_refresh(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop)
+{
+    clock_face_id_t face;
+    ui_face_slide_shot_t now;
+
+    if (ctx == NULL || overlay == NULL || backdrop == NULL || lv_obj_has_flag(backdrop, LV_OBJ_FLAG_HIDDEN)) {
+        return;
+    }
+    face = face_slide_current(ctx);
+    now = face_slide_shot_now(ctx, face);
+    if (s_backdrop_shot.face == face && s_backdrop_shot.minute == now.minute && s_backdrop_shot.theme == now.theme &&
+        s_backdrop_shot.language == now.language &&
+        (!face_shows_seconds(face) || lv_tick_elaps(s_backdrop_shot.taken_ms) < 1000)) {
+        return;
+    }
+    if (backdrop_capture(ctx, overlay)) {
+        lv_obj_invalidate(backdrop);
+    }
 }
 
 void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backdrop, bool moving, lv_opa_t dim_opa)

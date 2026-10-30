@@ -296,6 +296,44 @@ in the frame buffer.
   rebuilt it (163 ms); Atelier's dials now come to 4.9 MB. The alarm screens drew a second whole
   rim to mean "no gap" (skip 999); they draw the plain one.
 
+## Liquid Glass quick sheet and pages (2026-10-30, tours 20261030-100118 -> 20261030-111421)
+
+Measured in Glass with the short tour, now 15 s of idle face first and 5 s before the quick
+sheet (as at the bedside: the idle prewarm needs that long after a boot or a style change).
+"Again" is the tour's second loop, the pages built and prewarmed.
+
+| step | before | after |
+|---|---|---|
+| quick sheet open (first frame) | 288 ms | 31 ms |
+| brightness drag | 35.8 ms, every frame over 33 | 30.9 ms, none |
+| Night page open, again | 139 ms | 24 ms |
+| Other page open, again | 124 ms | 24 ms |
+| Other scroll, again: worst frame while touching | 64 ms | 33 ms (the rebake at rest still costs one 60 ms frame) |
+
+- **The quick sheet's glass was never prewarmed**: closed, it sits below the screen, and the idle
+  prewarm skips what is off it. Its first frame baked the panel (64 ms), the sheet ground (92 ms)
+  and the four keys (104 ms). `face_sheet_prewarm` moves the panel to where it opens and back
+  inside its hidden overlay (nothing is redrawn) and bakes it there, first in the idle prewarm and
+  making room for itself (`ui_glass_prewarm_first`); the pages take what is left.
+- **At rest the quick sheet keeps the face as the backdrop snapshot** (`freeze_face`), drawn only
+  around the panel, instead of the live face drawn whole under it on every frame of a drag. The
+  snapshot is taken again when the face changes (a minute, or a second on faces that show them;
+  `ui_backdrop_refresh`).
+- **Settings prewarms while a page sits still**: the other pages already built, and the rows of
+  this page below the fold, baked where they come into view at the end of its scroll
+  (`ui_glass_prewarm_at`). Those are marked as baked ahead and give way first.
+- **The bake cache thrashed**: more glass shapes than its 48 slots, and the prewarm only checked
+  bytes, so prewarms evicted each other round and round. It has 96 slots and 4 MB; a prewarm
+  needs a free slot as well, and leaves current bakes alone (touching them made them look
+  recently drawn, so the cache dropped what was actually in use). 4.6 MB took internal RAM's
+  low point from 25 KB to 13 KB (medium buffers spill into it when PSRAM runs short), so it stays
+  at 4 MB; PSRAM's low point in the tour is 1.5 MB.
+- **Page glass that moved bakes again only once nothing is touched or gliding**, cards too (rows
+  already did): a card baked ahead that stops part-way through a slow drag no longer bakes inside
+  the drag.
+- The first visit to each page after a boot still bakes in its first frame (about 110 ms):
+  pages are built on first open.
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High

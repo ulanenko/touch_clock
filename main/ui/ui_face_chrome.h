@@ -73,6 +73,10 @@ typedef struct {
     lv_border_side_t border_side;
     uint32_t auto_close_ms;
     void (*on_state)(clock_ui_context_t *ctx);
+    /* At rest, show the face as a snapshot drawn only around the panel (recaptured when the
+     * face changes) instead of live under it: for a sheet whose controls redraw every frame
+     * while dragged. */
+    bool freeze_face;
 } face_sheet_opts_t;
 
 void face_sheet_create(face_sheet_t *sheet, clock_ui_context_t *ctx, const face_sheet_opts_t *opts);
@@ -90,6 +94,9 @@ void face_sheet_drag_to(face_sheet_t *sheet, int32_t dy);
 void face_sheet_drag_end(face_sheet_t *sheet, bool cancel);
 /* Lets the user drag the open sheet by obj (the panel, or children that bubble). */
 void face_sheet_attach_drag(face_sheet_t *sheet, lv_obj_t *obj);
+/* Liquid Glass: bakes a closed sheet's glass where it opens, within budget_ms; false if
+ * there is more to do. */
+bool face_sheet_prewarm(face_sheet_t *sheet, uint32_t budget_ms);
 /* Restarts the auto-close timer (user activity). */
 void face_sheet_activity(face_sheet_t *sheet);
 /* The panel content changed: take a new snapshot before it moves again. */
