@@ -205,6 +205,131 @@ void ui_sparse_image_unregister(const lv_draw_buf_t *buf)
     }
 }
 
+/* --- Moving glass rows ------------------------------------------------------------------ */
+
+/* A page's glass row that has moved from where it was baked (a scroll) keeps only its rim from
+ * its image: inside the rim it shows the ground, which stays fixed to the screen. Liquid Glass
+ * marks such an image for the frame and its blend takes the pixels inside the rim from the
+ * ground at their place on the screen: one draw task a row, each pixel copied once. Marked on
+ * the UI thread while the draw threads may blend others; cleared with no draw task running. */
+#define MOVING_MAX 16
+
+typedef struct {
+    const uint8_t *data; /* NULL for a free slot; published last */
+    size_t size;
+    uint32_t stride;
+    int32_t w;
+    int32_t h;
+    int32_t rim;    /* the rim bands' width */
+    int32_t corner; /* the corner squares' size: the rim's curve reaches into them */
+    const uint8_t *ground;
+    uint32_t ground_stride;
+    int32_t ground_w;
+    int32_t ground_h;
+} moving_row_t;
+
+static moving_row_t s_moving[MOVING_MAX];
+static int s_moving_count;
+
+bool ui_moving_row_mark(const lv_draw_buf_t *row, int32_t rim, int32_t corner, const lv_draw_buf_t *ground)
+{
+    moving_row_t *m;
+
+    if (row->header.cf != LV_COLOR_FORMAT_RGB565 || ground->header.cf != LV_COLOR_FORMAT_RGB565 ||
+        s_moving_count >= MOVING_MAX) {
+        return false;
+    }
+    m = &s_moving[s_moving_count];
+    m->size = (size_t)row->header.h * row->header.stride;
+    m->stride = row->header.stride;
+    m->w = (int32_t)row->header.w;
+    m->h = (int32_t)row->header.h;
+    m->rim = rim;
+    m->corner = LV_MAX(corner, rim);
+    m->ground = ground->data;
+    m->ground_stride = ground->header.stride;
+    m->ground_w = (int32_t)ground->header.w;
+    m->ground_h = (int32_t)ground->header.h;
+    __atomic_store_n(&m->data, row->data, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_moving_count, s_moving_count + 1, __ATOMIC_RELEASE);
+    return true;
+}
+
+void ui_moving_rows_clear(void)
+{
+    for (int i = 0; i < s_moving_count; i++) {
+        s_moving[i].data = NULL;
+    }
+    __atomic_store_n(&s_moving_count, 0, __ATOMIC_RELEASE);
+}
+
+void ui_moving_row_forget(const void *data)
+{
+    for (int i = 0; i < s_moving_count; i++) {
+        if (s_moving[i].data == data) {
+            __atomic_store_n(&s_moving[i].data, NULL, __ATOMIC_RELEASE);
+        }
+    }
+}
+
+/* Copies image columns [from, to) of one row to dest (indexed by image column), clipped to the
+ * blended columns [lo, hi). */
+static inline void moving_span(uint16_t *dest, const uint16_t *src, int32_t from, int32_t to, int32_t lo, int32_t hi)
+{
+    from = LV_MAX(from, lo);
+    to = LV_MIN(to, hi);
+    if (to > from) {
+        memcpy(dest + from, src + from, (size_t)(to - from) * sizeof(uint16_t));
+    }
+}
+
+/* Blends an opaque RGB565 image marked as a moving row; area: the blended area on the screen. */
+static bool moving_row_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc, const lv_area_t *area)
+{
+    const uint8_t *src = dsc->src_buf;
+    int count = __atomic_load_n(&s_moving_count, __ATOMIC_ACQUIRE);
+
+    for (int i = 0; i < count; i++) {
+        const uint8_t *data = __atomic_load_n(&s_moving[i].data, __ATOMIC_ACQUIRE);
+        const moving_row_t *m = &s_moving[i];
+        size_t off;
+        int32_t sx;
+        int32_t sy;
+
+        if (data == NULL || src < data || src >= data + m->size || (uint32_t)dsc->src_stride != m->stride) {
+            continue;
+        }
+        if (area->x1 < 0 || area->y1 < 0 || area->x2 >= m->ground_w || area->y2 >= m->ground_h) {
+            return false; /* off the ground (a snapshot): the image as it is */
+        }
+        off = (size_t)(src - data);
+        sy = (int32_t)(off / m->stride);
+        sx = (int32_t)((off % m->stride) / 2);
+        for (int32_t j = 0; j < dsc->dest_h; j++) {
+            int32_t y = sy + j;
+            /* Indexed by image column: dest, the row's image and the ground under it. */
+            uint16_t *dest = (uint16_t *)(dsc->dest_buf + (size_t)j * dsc->dest_stride) - sx;
+            const uint16_t *img = (const uint16_t *)(data + (size_t)y * m->stride);
+            const uint16_t *gnd = (const uint16_t *)(m->ground + (size_t)(area->y1 + j) * m->ground_stride) +
+                                  (area->x1 - sx);
+            int32_t in0 = m->w;
+            int32_t in1 = m->w;
+
+            if (y >= m->rim && y < m->h - m->rim) {
+                bool in_corners = y < m->corner || y >= m->h - m->corner;
+
+                in0 = in_corners ? m->corner : m->rim;
+                in1 = LV_MAX(in0, m->w - in0);
+            }
+            moving_span(dest, img, 0, in0, sx, sx + dsc->dest_w);
+            moving_span(dest, gnd, in0, in1, sx, sx + dsc->dest_w);
+            moving_span(dest, img, in1, m->w, sx, sx + dsc->dest_w);
+        }
+        return true;
+    }
+    return false;
+}
+
 static inline uint16_t argb_mix(uint32_t px, uint16_t c)
 {
     uint32_t mix = px >> 24;
@@ -381,6 +506,11 @@ static void sw_blend(lv_layer_t *layer, const lv_draw_sw_blend_dsc_t *dsc, const
             argb8888_over_rgb565(&image_dsc);
             return;
         }
+    }
+    if (image_dsc.src_color_format == LV_COLOR_FORMAT_RGB565 && image_dsc.mask_buf == NULL &&
+        image_dsc.blend_mode == LV_BLEND_MODE_NORMAL && image_dsc.opa >= LV_OPA_MAX &&
+        moving_row_over_rgb565(&image_dsc, &blend_area)) {
+        return;
     }
     lv_draw_sw_blend_image_to_rgb565(&image_dsc);
 }

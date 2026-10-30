@@ -43,6 +43,9 @@
 /* From ui_ppa_blend.c (clock_ui_private.h). */
 void ui_sparse_image_register(const lv_draw_buf_t *buf);
 void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
+bool ui_moving_row_mark(const lv_draw_buf_t *row, int32_t rim, int32_t corner, const lv_draw_buf_t *ground);
+void ui_moving_rows_clear(void);
+void ui_moving_row_forget(const void *data);
 
 #define SCREEN 720
 #define LOW 180   /* the blur works at a quarter of the resolution */
@@ -945,6 +948,7 @@ static void grave_free(void)
 {
     for (int i = 0; i < GRAVE_MAX; i++) {
         if (s_grave[i] != NULL) {
+            ui_moving_row_forget(s_grave[i]->data);
             lv_draw_buf_destroy(s_grave[i]);
             s_grave[i] = NULL;
         }
@@ -954,6 +958,7 @@ static void grave_free(void)
 static void render_ready_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
+    ui_moving_rows_clear();
     grave_free();
     s_resettle_left = 1;
     s_cover_n = -1;
@@ -962,6 +967,7 @@ static void render_ready_cb(lv_event_t *e)
 static void render_start_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
+    ui_moving_rows_clear();
     s_cover_n = -1;
 }
 
@@ -2175,6 +2181,17 @@ static void row_draw_moving(lv_layer_t *layer, const bake_t *b, const lv_area_t 
         {area->x2 - e + 1, area->y1 + k, area->x2, area->y2 - k},
     };
 
+    /* As one image, the blend taking the inside from the ground (ui_ppa_blend.c); else in
+     * parts: the ground inside, the image's rim around it. */
+    if (ui_moving_row_mark(b->buf, b->bez, b->corner, s_sheet_ground)) {
+        lv_draw_image_dsc_t d;
+
+        lv_draw_image_dsc_init(&d);
+        d.src = b->buf;
+        d.image_area = *area;
+        lv_draw_image(layer, &d, area);
+        return;
+    }
     if (top.x1 <= top.x2 && top.y1 <= top.y2) {
         draw_view(layer, s_sheet_ground, &top, 0);
     }

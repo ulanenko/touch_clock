@@ -350,8 +350,7 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   output), 41 ms; the open waits 56 ms.
 - **The face controls are prewarmed first**, before the quick sheet and the pages.
 - **LVGL's draw buffers come from PSRAM** (under 16 KB they came from internal RAM).
-- Still open: Night page scrolling about 29-32 ms (the moving rows' nine draw tasks each, for the
-  ground that stays put); alarms open (97 ms) and the Night page and style picker on a second
+- Still open: Night page scrolling about 29-32 ms (since: 25.8-27.8 ms, see below); alarms open (97 ms) and the Night page and style picker on a second
   visit (about 110-125 ms) bake rows evicted under the PSRAM floor; internal RAM dips to about
   7 KB during the first network burst after a boot (update check), with the settings pages built.
   The 3 MB of pre-rendered alarm sounds is the largest PSRAM user left.
@@ -380,6 +379,13 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   cached shape's object up in the whole tree (`lv_obj_is_valid`), and the bigger cache made
   scrolling 0.5-0.9 ms a frame slower. Night page scrolling 29.1 -> 28.2 ms (slow scroll 31.4 ->
   30.3 ms, frames over 33 ms 45 -> 12), Other 27.4 -> 25.4 ms, alarms 21.3 -> 19.0 ms.
+- **A moving row is one draw task, not nine**: a page row scrolled away from where it was baked
+  showed the ground inside its rim and the rim from its image, as nine draw tasks (the ground
+  and eight bands and corners). It is now drawn as its image, marked for the frame
+  (`ui_moving_row_mark`), and the blend takes the pixels inside the rim from the ground at their
+  place on the screen (identical pixels in the simulator). Night page dragged: 102 -> 55 draw
+  tasks. On the clock, Night scrolling 28.2 -> 25.8 ms (slow scroll 30.3 -> 27.8 ms, no frame
+  over 33 ms, was 12), Other slow scroll 29.0 -> 27.0 ms.
 
 ## Open findings, by priority (*unverified* unless measured)
 
