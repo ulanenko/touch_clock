@@ -10,6 +10,8 @@
 #define DISPLAY_BRIGHTNESS_MAX_PERCENT 100
 #define CLOCK_WIFI_SCAN_RESULT_MAX 16
 #define CLOCK_FACE_THEME_COUNT 3
+/* 2023-11-14: a clock reading earlier has never been set (nor synced). */
+#define CLOCK_EPOCH_VALID_MIN ((time_t)1700000000)
 #define CLOCK_FACE_ENABLE_SLAVA 0
 #define CLOCK_FACE_ENABLE_SLAVA_DARK 0
 

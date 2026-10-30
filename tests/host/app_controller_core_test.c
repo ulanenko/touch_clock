@@ -382,7 +382,8 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_EQ_INT(1, env.telemetry_init_calls);
     EXPECT_EQ_INT(timezone_id_from_legacy_offset(2), env.applied_timezone);
     EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
-    EXPECT_EQ_INT(env.stored_settings.last_synced_epoch, env.set_epoch_value);
+    /* The clock kept its time through the restart: it is not set back to the checkpoint. */
+    EXPECT_EQ_INT(0, env.set_epoch_value);
 
     result = app_action_set_base_brightness(&core.state, 77, env.now);
     app_controller_core_apply_action_result(&core, &result, env.now);
@@ -735,6 +736,42 @@ static int test_kept_alarm_sounds(void)
     return 0;
 }
 
+/* A clock that comes up with no time (powered off) takes the last time it knew, else the
+ * build's; one set by hand keeps a checkpoint too, as a synced one does. */
+static int test_boot_time_restore_and_manual_checkpoint(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+    time_t fallback = make_utc_time(2025, 3, 9, 6, 0, 0);
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.last_synced_epoch = make_utc_time(2026, 3, 12, 8, 0, 0);
+    env.stored_settings.wifi.time_sync_mode = TIME_SYNC_MODE_MANUAL;
+    env.now = 0;
+    core = make_core(&env);
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, fallback));
+    EXPECT_EQ_INT(env.stored_settings.last_synced_epoch, env.set_epoch_value);
+
+    /* Running on (manual time, never synced): the checkpoint follows the clock. */
+    env.now = env.stored_settings.last_synced_epoch + 400;
+    env.monotonic_ms = 1000;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(env.now, core.state.settings.last_synced_epoch);
+
+    memset(&env, 0, sizeof(env));
+    settings_policy_set_defaults(&env.stored_settings);
+    core = make_core(&env);
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, fallback));
+    EXPECT_EQ_INT(fallback, env.set_epoch_value);
+
+    /* Auto sync, not synced yet: no checkpoint of a time nobody knows. */
+    env.now = fallback + 400;
+    env.monotonic_ms = 1000;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(0, core.state.settings.last_synced_epoch);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -776,5 +813,10 @@ int main(void)
         return status;
     }
 
-    return test_temporary_brightness_floor();
+    status = test_temporary_brightness_floor();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_boot_time_restore_and_manual_checkpoint();
 }

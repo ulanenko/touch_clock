@@ -469,10 +469,13 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
         core->config.clock_service->apply_timezone(core->state.settings.wifi.timezone_id);
     }
 
-    if (core->state.settings.last_synced_epoch > 1700000000) {
-        boot_epoch = core->state.settings.last_synced_epoch;
-    }
-    if (core->config.clock_service != NULL && core->config.clock_service->set_epoch != NULL) {
+    /* The clock keeps its time through a restart (an update, Restart, a crash): it is set only
+     * when it has none, to the last time it knew, or failing that to the build's. */
+    if (core->config.clock_service != NULL && core->config.clock_service->set_epoch != NULL &&
+        (core->config.clock_service->now == NULL || core->config.clock_service->now() <= CLOCK_EPOCH_VALID_MIN)) {
+        if (core->state.settings.last_synced_epoch > CLOCK_EPOCH_VALID_MIN) {
+            boot_epoch = core->state.settings.last_synced_epoch;
+        }
         core->config.clock_service->set_epoch(boot_epoch);
     }
 
@@ -664,8 +667,10 @@ time_t app_controller_core_tick(app_controller_core_t *core)
     reconcile_alarm_audio(core);
     maybe_play_sunrise_chime(core, now);
 
-    if (core->state.runtime.time_synced &&
-        now > 1700000000 &&
+    /* A checkpoint of a known time (synced, or set by hand), for a clock that loses power. */
+    if ((core->state.runtime.time_synced || (core->state.settings.wifi.time_sync_mode == TIME_SYNC_MODE_MANUAL &&
+                                             core->state.settings.last_synced_epoch > CLOCK_EPOCH_VALID_MIN)) &&
+        now > CLOCK_EPOCH_VALID_MIN &&
         (core->state.settings.last_synced_epoch == 0 ||
          (now - core->state.settings.last_synced_epoch) >= 300)) {
         core->state.settings.last_synced_epoch = now;

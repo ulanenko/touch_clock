@@ -249,7 +249,7 @@ void telemetry_update_tick(const app_runtime_state_t *runtime, const app_setting
         runtime == NULL ||
         settings == NULL ||
         !runtime->wifi_connected ||
-        now <= 1700000000) {
+        now <= CLOCK_EPOCH_VALID_MIN) {
         return;
     }
 
