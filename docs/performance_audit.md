@@ -355,6 +355,11 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   visit (about 110-125 ms) bake rows evicted under the PSRAM floor; internal RAM dips to about
   7 KB during the first network burst after a boot (update check), with the settings pages built.
   The 3 MB of pre-rendered alarm sounds is the largest PSRAM user left.
+- **Alarm sounds (same day): only the sounds the enabled alarms use stay rendered**
+  (`alarm_audio_keep_sounds`, told by the core when the alarms change). Others are rendered when
+  previewed (Wind chimes 2.2 s, Marimba 0.4 s, Singing bowl 0.8 s on the clock) and freed when
+  the preview stops. With the alarms on the recorded tone, PSRAM free after boot 4.3 -> 7.4 MB;
+  the full tour's low point 0.8 -> 2.4 MB.
 
 ## Open findings, by priority (*unverified* unless measured)
 

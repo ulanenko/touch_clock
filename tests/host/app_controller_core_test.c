@@ -22,6 +22,8 @@ typedef struct {
     int audio_start_alarm_calls;
     int audio_start_test_calls;
     uint8_t audio_last_sound;
+    int audio_keep_calls;
+    uint8_t audio_keep_mask;
     int audio_stop_calls;
     uint8_t audio_last_volume;
     bool audio_ascending_enabled;
@@ -130,6 +132,12 @@ static bool fake_audio_is_alarm_active(void)
 static bool fake_audio_is_test_active(void)
 {
     return g_env->test_active;
+}
+
+static void fake_audio_keep_sounds(uint8_t mask)
+{
+    g_env->audio_keep_calls += 1;
+    g_env->audio_keep_mask = mask;
 }
 
 static int fake_wifi_init(const app_settings_t *settings)
@@ -290,6 +298,7 @@ static const audio_service_t s_audio_service = {
     .stop = fake_audio_stop,
     .is_alarm_active = fake_audio_is_alarm_active,
     .is_test_active = fake_audio_is_test_active,
+    .keep_sounds = fake_audio_keep_sounds,
     .play_sunrise_chime = fake_audio_play_sunrise_chime,
 };
 
@@ -685,6 +694,47 @@ static int test_sunrise_preview(void)
     return 0;
 }
 
+/* The audio keeps rendered only the sounds the enabled alarms use, told when that changes. */
+static int test_kept_alarm_sounds(void)
+{
+    fake_env_t env;
+    app_controller_core_t core;
+    app_action_result_t result;
+    alarm_config_t alarm;
+
+    memset(&env, 0, sizeof(env));
+    settings_policy_set_defaults(&env.stored_settings);
+    for (int i = 0; i < MAX_ALARMS; i++) {
+        env.stored_settings.alarms[i].enabled = false;
+    }
+    env.stored_settings.alarms[1].enabled = true;
+    env.stored_settings.alarms[1].sound = ALARM_SOUND_MARIMBA;
+    env.stored_settings.alarms[2].sound = ALARM_SOUND_SINGING_BOWL; /* off: not kept */
+    env.now = make_utc_time(2026, 3, 12, 8, 5, 0);
+    core = make_core(&env);
+
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    EXPECT_EQ_INT(1, env.audio_keep_calls);
+    EXPECT_EQ_INT(1u << ALARM_SOUND_MARIMBA, env.audio_keep_mask);
+
+    result = app_action_set_base_brightness(&core.state, 70, env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(1, env.audio_keep_calls);
+
+    result = app_action_set_alarm_enabled(&core.state, 2, true, env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(2, env.audio_keep_calls);
+    EXPECT_EQ_INT((1u << ALARM_SOUND_MARIMBA) | (1u << ALARM_SOUND_SINGING_BOWL), env.audio_keep_mask);
+
+    alarm = core.state.settings.alarms[1];
+    alarm.sound = ALARM_SOUND_WIND_CHIMES;
+    result = app_action_save_alarm(&core.state, 1, &alarm, env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(3, env.audio_keep_calls);
+    EXPECT_EQ_INT((1u << ALARM_SOUND_WIND_CHIMES) | (1u << ALARM_SOUND_SINGING_BOWL), env.audio_keep_mask);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -717,6 +767,11 @@ int main(void)
     }
 
     status = test_sunrise_preview();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_kept_alarm_sounds();
     if (status != 0) {
         return status;
     }

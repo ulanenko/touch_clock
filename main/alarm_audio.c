@@ -71,17 +71,23 @@ typedef struct {
 static const char *TAG = "alarm_audio";
 static alarm_audio_state_t s_alarm_audio = {0};
 
-/* Synthesised tones, rendered once into PSRAM and kept (about 3 MB for all of them). A
- * background task renders them all a little after boot, so a preview or an alarm starts at
- * once; one asked for before that is rendered on the spot. */
+/* Synthesised tones, rendered into PSRAM (about 1 MB each). The ones the alarms use are kept:
+ * a background task renders them a little after boot (and when the alarms change), so an
+ * alarm starts at once. Others are rendered when previewed (up to about 2 s) and freed once
+ * they stop. One asked for before its render is rendered on the spot. */
 #define TONE_PRERENDER_DELAY_MS 20000
 #define TONE_PRERENDER_STACK 4096
+#define TONE_NONE ALARM_SOUND_COUNT
 
 static int16_t *s_tone_pcm[ALARM_SOUND_COUNT];
 static SemaphoreHandle_t s_tone_lock;
+static TaskHandle_t s_tone_task;
+static volatile uint8_t s_keep_mask = 0xFF; /* all, until the alarms are known */
+static uint8_t s_playing = TONE_NONE;       /* the loop the audio task reads (s_tone_lock) */
 
-/* The rendered loop for a synthesised sound, rendering it first if need be. */
-static const int16_t *tone_pcm(uint8_t sound)
+/* The rendered loop for a synthesised sound, rendering it first if need be; with play, it is
+ * the one being played from now on (not freed under the audio task). */
+static const int16_t *tone_pcm(uint8_t sound, bool play)
 {
     const int16_t *pcm;
 
@@ -103,8 +109,25 @@ static const int16_t *tone_pcm(uint8_t sound)
         heap_caps_free(block);
     }
     pcm = s_tone_pcm[sound];
+    if (play && pcm != NULL) {
+        s_playing = sound;
+    }
     xSemaphoreGive(s_tone_lock);
     return pcm;
+}
+
+/* The audio task is done with the loop it played: the tone task may free it now. */
+static void tone_release(void)
+{
+    if (s_tone_lock == NULL) {
+        return;
+    }
+    xSemaphoreTake(s_tone_lock, portMAX_DELAY);
+    s_playing = TONE_NONE;
+    xSemaphoreGive(s_tone_lock);
+    if (s_tone_task != NULL) {
+        xTaskNotifyGive(s_tone_task);
+    }
 }
 
 /* The chimes (the start chime, the sunrise's), rendered when first played (on the audio task)
@@ -132,17 +155,50 @@ static const int16_t *chime_pcm(unsigned variant)
     return s_chime_pcm[variant];
 }
 
+/* Renders the kept sounds and frees the others (unless one is playing). */
+static void tone_reconcile(void)
+{
+    uint8_t keep = s_keep_mask;
+    bool freed = false;
+
+    for (uint8_t sound = 0; sound < ALARM_SOUND_COUNT; sound++) {
+        if (!alarm_tone_is_synth(sound)) {
+            continue;
+        }
+        if (keep & (1u << sound)) {
+            tone_pcm(sound, false);
+            continue;
+        }
+        xSemaphoreTake(s_tone_lock, portMAX_DELAY);
+        if (s_tone_pcm[sound] != NULL && s_playing != sound) {
+            heap_caps_free(s_tone_pcm[sound]);
+            s_tone_pcm[sound] = NULL;
+            freed = true;
+        }
+        xSemaphoreGive(s_tone_lock);
+    }
+    if (freed || keep != 0) {
+        ESP_LOGI(TAG, "Alarm sounds kept 0x%02x; PSRAM free %u KB", keep,
+                 (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
+    }
+}
+
 static void tone_prerender_task(void *arg)
 {
     (void)arg;
     vTaskDelay(pdMS_TO_TICKS(TONE_PRERENDER_DELAY_MS));
-    for (uint8_t sound = 0; sound < ALARM_SOUND_COUNT; sound++) {
-        if (alarm_tone_is_synth(sound)) {
-            tone_pcm(sound);
-        }
+    for (;;) {
+        tone_reconcile();
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     }
-    ESP_LOGI(TAG, "Alarm sounds ready; PSRAM free %u KB", (unsigned)(heap_caps_get_free_size(MALLOC_CAP_SPIRAM) / 1024));
-    vTaskDelete(NULL);
+}
+
+void alarm_audio_keep_sounds(uint8_t mask)
+{
+    s_keep_mask = mask;
+    if (s_tone_task != NULL) {
+        xTaskNotifyGive(s_tone_task);
+    }
 }
 
 /* Returns the loop for a sound; the recorded tone if a synthesised one cannot be had. */
@@ -154,7 +210,7 @@ static alarm_audio_loop_t loop_for_sound(uint8_t sound)
     if (!alarm_tone_is_synth(sound)) {
         return recorded;
     }
-    pcm = tone_pcm(sound);
+    pcm = tone_pcm(sound, true);
     if (pcm == NULL) {
         ESP_LOGW(TAG, "Could not render alarm sound %u, playing the recorded tone", sound);
         return recorded;
@@ -260,6 +316,12 @@ static void handle_command(const alarm_audio_cmd_t *cmd,
                            uint8_t *applied_volume,
                            uint64_t *elapsed_samples)
 {
+    /* Whatever played before is let go (a click plays over nothing, or not at all). */
+    if (cmd->type != ALARM_AUDIO_CMD_PLAY_CLICK && cmd->type != ALARM_AUDIO_CMD_SET_VOLUME &&
+        !(cmd->type == ALARM_AUDIO_CMD_PLAY_START &&
+          (*mode == ALARM_AUDIO_MODE_ALARM || *mode == ALARM_AUDIO_MODE_TEST))) {
+        tone_release();
+    }
     switch (cmd->type) {
     case ALARM_AUDIO_CMD_PLAY_ALARM:
         *loop = loop_for_sound(cmd->sound);
@@ -396,6 +458,7 @@ static void alarm_audio_task(void *arg)
 
         if (esp_codec_dev_write(s_alarm_audio.speaker, chunk, chunk_samples * sizeof(int16_t)) != ESP_CODEC_DEV_OK) {
             ESP_LOGW(TAG, "Alarm audio write failed");
+            tone_release();
             mode = ALARM_AUDIO_MODE_IDLE;
             sample_index = 0;
             elapsed_samples = 0;
@@ -545,7 +608,7 @@ esp_err_t alarm_audio_init(uint8_t initial_volume)
      * render when first played. */
     s_tone_lock = xSemaphoreCreateMutex();
     if (s_tone_lock != NULL && xTaskCreate(tone_prerender_task, "alarm_tones", TONE_PRERENDER_STACK, NULL,
-                                           tskIDLE_PRIORITY + 1, NULL) != pdPASS) {
+                                           tskIDLE_PRIORITY + 1, &s_tone_task) != pdPASS) {
         ESP_LOGW(TAG, "Alarm sounds will render when first played");
     }
 

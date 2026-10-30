@@ -98,6 +98,11 @@ static bool esp_audio_is_test_active(void)
     return alarm_audio_is_test_active();
 }
 
+static void esp_audio_keep_sounds(uint8_t mask)
+{
+    alarm_audio_keep_sounds(mask);
+}
+
 static int esp_wifi_init_service(const app_settings_t *settings)
 {
     return wifi_time_init(settings);
@@ -261,6 +266,7 @@ static const audio_service_t s_audio_service = {
     .stop = esp_audio_stop,
     .is_alarm_active = esp_audio_is_alarm_active,
     .is_test_active = esp_audio_is_test_active,
+    .keep_sounds = esp_audio_keep_sounds,
 };
 
 static const wifi_service_t s_wifi_service = {

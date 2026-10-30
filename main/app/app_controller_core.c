@@ -397,6 +397,30 @@ static void apply_audio_preferences(app_controller_core_t *core)
     }
 }
 
+/* The sounds the enabled alarms ring with: kept rendered (about 1 MB of PSRAM each), the rest
+ * rendered only to be previewed. */
+static void apply_kept_sounds(app_controller_core_t *core)
+{
+    const audio_service_t *audio = core->config.audio_service;
+    uint8_t mask = 0;
+
+    if (!core->state.audio_available || audio == NULL || audio->keep_sounds == NULL) {
+        return;
+    }
+    for (int i = 0; i < MAX_ALARMS; i++) {
+        const alarm_config_t *a = &core->state.settings.alarms[i];
+
+        if (a->enabled && a->sound < ALARM_SOUND_COUNT) {
+            mask |= (uint8_t)(1u << a->sound);
+        }
+    }
+    if (!core->state.applied_sounds_known || core->state.applied_sound_mask != mask) {
+        audio->keep_sounds(mask);
+        core->state.applied_sound_mask = mask;
+        core->state.applied_sounds_known = true;
+    }
+}
+
 static void reconcile_settings_side_effects(app_controller_core_t *core, time_t now)
 {
     app_state_t *s = &core->state;
@@ -414,6 +438,7 @@ static void reconcile_settings_side_effects(app_controller_core_t *core, time_t 
         s->applied_auto_sync = auto_sync;
     }
     s->applied_time_known = true;
+    apply_kept_sounds(core);
 
     core->state.runtime.effective_brightness =
         brightness_policy_get_target(&core->state.runtime, &core->state.settings, now);
@@ -461,6 +486,7 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
             if (core->config.audio_service->set_ascending_enabled != NULL) {
                 core->config.audio_service->set_ascending_enabled(core->state.settings.ascending_alarm_enabled);
             }
+            apply_kept_sounds(core);
         }
     }
 

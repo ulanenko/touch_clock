@@ -25,6 +25,9 @@ typedef struct {
     uint8_t applied_timezone_id;
     bool applied_auto_sync;
     bool applied_time_known;
+    /* The alarm sounds last handed to the audio service to keep rendered. */
+    uint8_t applied_sound_mask;
+    bool applied_sounds_known;
     bool sunrise_preview;
     bool sunrise_preview_chimed;
     uint8_t brightness_fade_start;

@@ -18,3 +18,6 @@ esp_err_t alarm_audio_play_sunrise_chime(uint8_t volume);
 void alarm_audio_stop(void);
 bool alarm_audio_is_alarm_active(void);
 bool alarm_audio_is_test_active(void);
+/* The sounds (bit per alarm_sound_t) the alarms use, kept rendered (about 1 MB each). The rest
+ * are rendered when played and freed when they stop. Until it is called, all are kept. */
+void alarm_audio_keep_sounds(uint8_t mask);

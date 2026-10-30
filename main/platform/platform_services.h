@@ -25,6 +25,9 @@ typedef struct {
     void (*stop)(void);
     bool (*is_alarm_active)(void);
     bool (*is_test_active)(void);
+    /* The synthesised sounds (bit per alarm_sound_t) the alarms use: kept rendered; the rest
+     * are rendered when previewed and freed after. */
+    void (*keep_sounds)(uint8_t mask);
 } audio_service_t;
 
 typedef struct {
