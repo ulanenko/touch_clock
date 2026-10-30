@@ -13,6 +13,9 @@
 #include "ui/ui_face_chrome.h"
 #include "ui/kit/ui_glass.h"
 
+#include "esp_heap_caps.h"
+#include "src/draw/lv_draw_buf_private.h"
+
 #include <math.h>
 #include <string.h>
 
@@ -329,6 +332,10 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         update_face(ctx, current);
         return;
     }
+    /* The settings pages opened most, built ahead once the clock has settled after a boot. */
+    if (lv_tick_get() > 20000 && !ui_settings_prebuild_step(ctx)) {
+        return;
+    }
     /* Liquid Glass: keep the face's glass ready, so pages and sheets come up at once, and bake
      * what they will show a little at a time (one tick does at most a few shapes). The face
      * controls hold nothing of it: this goes on while they are up too. */
@@ -339,9 +346,11 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
                                    ctx->chrome_root};
         uint32_t start = lv_tick_get();
 
-        /* The quick sheet first, the one pulled up most from the face (it sits below the screen
+        /* The face controls first (a tap shows them; their smoked shells take no bake room),
+         * then the quick sheet, the one pulled up most from the face (it sits below the screen
          * until then): it makes room for itself, the pages then take what is left. */
-        if (!face_sheet_prewarm(&ctx->brightness.sheet, 20)) {
+        if (!ui_glass_prewarm(ctx->face_chrome.layer, 20) ||
+            !face_sheet_prewarm(&ctx->brightness.sheet, 20 - LV_MIN(20, lv_tick_elaps(start)))) {
             return;
         }
         for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++) {
@@ -1029,8 +1038,30 @@ static void tileview_scroll_event_cb(lv_event_t *event)
     }
 }
 
+/* LVGL's draw buffers (the layers of faded and scaled objects, snapshots, canvases) come from
+ * PSRAM. Through lv_malloc, those under 16 KB came from internal RAM, which the Wi-Fi and the
+ * system need: the face controls' first entrance took it down to about 8 KB. */
+static void *draw_buf_malloc_psram(size_t size, lv_color_format_t cf)
+{
+    void *buf;
+
+    LV_UNUSED(cf);
+    size += LV_DRAW_BUF_ALIGN - 1;
+    buf = heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    return buf != NULL ? buf : lv_malloc(size);
+}
+
+static void draw_buf_free_psram(void *buf)
+{
+    lv_free(buf); /* the C library's free, for either heap */
+}
+
 void build_root_ui(clock_ui_context_t *ctx)
 {
+    lv_draw_buf_handlers_t *handlers = lv_draw_buf_get_handlers();
+
+    handlers->buf_malloc_cb = draw_buf_malloc_psram;
+    handlers->buf_free_cb = draw_buf_free_psram;
     ui_install_theme_overrides(lv_display_get_default());
     ui_ppa_blend_install();
     ui_l10n_reset(ctx);

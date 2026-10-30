@@ -1412,6 +1412,23 @@ bool ui_settings_is_open(const clock_ui_context_t *ctx)
     return ctx->settings_ui.open;
 }
 
+/* Pages are built when first opened, which made that open wait for the build and (in Liquid
+ * Glass) for every bake on it: about 110 ms. Built ahead, the idle prewarm bakes them too. The
+ * Wi-Fi page is left to its first open: showing it starts a scan. */
+bool ui_settings_prebuild_step(clock_ui_context_t *ctx)
+{
+    static const ui_st_page_t pages[] = {UI_ST_HOME, UI_ST_NIGHT, UI_ST_OTHER};
+    clock_ui_settings_state_t *st = ST(ctx);
+
+    for (size_t i = 0; i < sizeof(pages) / sizeof(pages[0]); i++) {
+        if (!st->built[pages[i]]) {
+            build_page(ctx, pages[i]);
+            return false;
+        }
+    }
+    return true;
+}
+
 void ui_settings_close_all(clock_ui_context_t *ctx)
 {
     close_surface(ctx);

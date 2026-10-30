@@ -334,6 +334,28 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
 - The first visit to each page after a boot still bakes in its first frame (about 110 ms):
   pages are built on first open.
 
+## Memory and page opens (2026-10-30, full Glass tours 20261030-112240 -> 20261030-115445)
+
+- **PSRAM ran down to 119 KB over one full tour** (theme sheet, settings, Wi-Fi, the alarm
+  editor): the bake cache grew to its fixed 4 MB whatever else needed, and shapes whose bake
+  could not be allocated fell back to translucent boxes (slow, and wrong). The cache now also
+  leaves 1 MB of PSRAM free (`bake_budget`, dropped bakes awaiting their frame counted as free),
+  and a closed pull sheet gives its 1 MB snapshot buffer back. Low point over two loops: about
+  0.8-1 MB. Other page scrolling 32.4 -> 27.6 ms.
+- **The settings pages opened most are built ahead** (Home, Night, Other; one per idle tick from
+  20 s after a boot), so the idle prewarm bakes them: the first settings open 111 -> 36 ms,
+  Other 116 -> 25 ms.
+- **Every page opened from the face waited 85 ms** for the page backdrop (the frost dimmed, a
+  full-screen image): it is now worked out once per 2 x 2 block and dithered per pixel (identical
+  output), 41 ms; the open waits 56 ms.
+- **The face controls are prewarmed first**, before the quick sheet and the pages.
+- **LVGL's draw buffers come from PSRAM** (under 16 KB they came from internal RAM).
+- Still open: Night page scrolling about 29-32 ms (the moving rows' nine draw tasks each, for the
+  ground that stays put); alarms open (97 ms) and the Night page and style picker on a second
+  visit (about 110-125 ms) bake rows evicted under the PSRAM floor; internal RAM dips to about
+  7 KB during the first network burst after a boot (update check), with the settings pages built.
+  The 3 MB of pre-rendered alarm sounds is the largest PSRAM user left.
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High

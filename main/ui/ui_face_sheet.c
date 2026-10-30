@@ -249,6 +249,22 @@ static void sheet_show_overlay(face_sheet_t *s)
     }
 }
 
+/* A closed sheet gives the snapshot buffer back (about 1 MB, ARGB in Liquid Glass): the next
+ * pull takes the snapshot again anyway once a minute has turned. */
+static void sheet_release_snapshot(face_sheet_t *s)
+{
+    if (s_snapshot_owner != s || s_snapshot_pool == NULL) {
+        return;
+    }
+    lv_image_set_src(s->snapshot_img, NULL);
+    ui_sparse_image_unregister(s_snapshot_pool);
+    lv_draw_buf_destroy(s_snapshot_pool);
+    s_snapshot_pool = NULL;
+    s_snapshot_owner = NULL;
+    s->snapshot_buf = NULL;
+    s->snapshot_dirty = true;
+}
+
 static void sheet_finish(face_sheet_t *s)
 {
     s->animating = false;
@@ -262,6 +278,7 @@ static void sheet_finish(face_sheet_t *s)
         s->overlay_open = false;
         lv_obj_add_flag(s->overlay, LV_OBJ_FLAG_HIDDEN);
         sheet_auto_close_pause(s);
+        sheet_release_snapshot(s);
     }
     sheet_notify(s);
 }

@@ -253,15 +253,33 @@ static void back_build(const lv_draw_buf_t *face, ui_glass_mode_t mode)
         }
         if (s_frost_ok) {
             /* Pages stand on the face frosted and dimmed (PAGE_GROUND / 256): its shapes and
-             * colour stay, none of its detail competes with what the page says. */
+             * colour stay, none of its detail competes with what the page says. A frost pixel
+             * is a 2 x 2 block here: its colour is worked out once and dithered four times
+             * (pack's clamps are not needed, the dimmed channels stay under 256). It is made
+             * on every page opened from the face, so it is kept tight. */
             const uint16_t *f = (const uint16_t *)(s_frost->data + (size_t)(y >> 1) * s_frost->header.stride);
+            uint16_t *out2 = (uint16_t *)(s_back->data + (size_t)(y + 1) * s_back->header.stride);
+            const uint8_t *row0 = s_bayer[y & 3];
+            const uint8_t *row1 = s_bayer[(y + 1) & 3];
 
-            for (int x = 0; x < SCREEN; x++) {
-                uint16_t v = f[x >> 1];
+            for (int fx = 0; fx < SCREEN / 2; fx++) {
+                uint16_t v = f[fx];
+                int r = (s_e5[v >> 11] * PAGE_GROUND) >> 8;
+                int g = (s_e6[(v >> 5) & 63] * PAGE_GROUND) >> 8;
+                int b = (s_e5[v & 31] * PAGE_GROUND) >> 8;
+                int x = fx << 1;
+                int d;
 
-                out[x] = pack((s_e5[v >> 11] * PAGE_GROUND) >> 8, (s_e6[(v >> 5) & 63] * PAGE_GROUND) >> 8,
-                              (s_e5[v & 31] * PAGE_GROUND) >> 8, x, y);
+                d = row0[x & 3];
+                out[x] = (uint16_t)(s_q5[d][r] << 11 | s_q6[d][g] << 5 | s_q5[d][b]);
+                d = row0[(x + 1) & 3];
+                out[x + 1] = (uint16_t)(s_q5[d][r] << 11 | s_q6[d][g] << 5 | s_q5[d][b]);
+                d = row1[x & 3];
+                out2[x] = (uint16_t)(s_q5[d][r] << 11 | s_q6[d][g] << 5 | s_q5[d][b]);
+                d = row1[(x + 1) & 3];
+                out2[x + 1] = (uint16_t)(s_q5[d][r] << 11 | s_q6[d][g] << 5 | s_q5[d][b]);
             }
+            y++; /* the row under it is done too */
             continue;
         }
         /* No frost yet: v * 3/8 per channel on the packed pixel, half less an eighth. */
@@ -292,7 +310,11 @@ bool ui_glass_backdrop_to_page(lv_draw_buf_t *keep_sharp)
     }
     s_sharp = keep_sharp;
     s_sharp_ok = true;
-    back_build(keep_sharp, UI_GLASS_PAGE);
+    {
+        GLASS_PERF_START();
+        back_build(keep_sharp, UI_GLASS_PAGE);
+        GLASS_PERF_END("back_page", SCREEN, SCREEN);
+    }
     return true;
 }
 
@@ -940,6 +962,22 @@ static void bake_drop(bake_t *b)
     s_grave[0] = b->buf;
     b->buf = NULL;
     b->key = NULL;
+}
+
+/* The cache keeps to BAKE_BYTES and leaves PSRAM_FLOOR of PSRAM to everything else: a long
+ * session (sheets, pages, the alarm editor) took PSRAM down to about 100 KB, and shapes whose
+ * bake could not be made fell back to slow translucent boxes. Dropped bakes waiting for their
+ * frame to end count as free. */
+#define PSRAM_FLOOR (1024u * 1024u)
+
+static size_t bake_budget(void)
+{
+    size_t have = s_bake_bytes + heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+
+    for (int i = 0; i < GRAVE_MAX; i++) {
+        have += s_grave[i] != NULL ? s_grave[i]->data_size : 0;
+    }
+    return have > PSRAM_FLOOR ? LV_MIN((size_t)BAKE_BYTES, have - PSRAM_FLOOR) : 0;
 }
 
 /* The bezel at one distance from a straight edge, in integers: how far each channel is bent
@@ -1746,6 +1784,7 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
     int32_t h = lv_area_get_height(area);
     uint32_t t = kind == UI_GLASS_TINT ? lv_color_to_u32(tint) : 0;
     size_t need = (size_t)w * (size_t)h * 2;
+    size_t budget;
     bake_t *slot = NULL;
 
     for (int i = 0; i < BAKE_MAX; i++) {
@@ -1780,6 +1819,7 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
         lv_display_add_event_cb(lv_display_get_default(), render_ready_cb, LV_EVENT_REFR_READY, NULL);
         s_grave_hooked = true;
     }
+    budget = bake_budget();
     /* Room: the least recently drawn go first. */
     while (true) {
         bake_t *oldest = NULL;
@@ -1792,12 +1832,12 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
                 oldest = &s_bakes[i];
             }
         }
-        if (oldest == NULL || (slot != NULL && s_bake_bytes + need <= BAKE_BYTES)) {
+        if (oldest == NULL || (slot != NULL && s_bake_bytes + need <= budget)) {
             break;
         }
         bake_drop(oldest);
     }
-    if (slot == NULL) {
+    if (slot == NULL || s_bake_bytes + need > budget) {
         return NULL;
     }
     slot->buf = lv_draw_buf_create((uint32_t)w, (uint32_t)h, LV_COLOR_FORMAT_RGB565, LV_STRIDE_AUTO);
@@ -2975,7 +3015,7 @@ static bool bake_room(size_t need, bool evict_ahead)
                 ahead = b;
             }
         }
-        if (slot && s_bake_bytes + need <= BAKE_BYTES) {
+        if (slot && s_bake_bytes + need <= bake_budget()) {
             return true;
         }
         if (!evict_ahead || ahead == NULL) {

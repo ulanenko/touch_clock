@@ -101,6 +101,8 @@ void ui_settings_open(clock_ui_context_t *ctx);
 void ui_settings_open_page(clock_ui_context_t *ctx, ui_settings_page_t page);
 ui_settings_page_t ui_settings_current_page(const clock_ui_context_t *ctx);
 bool ui_settings_is_open(const clock_ui_context_t *ctx);
+/* Builds one of the pages opened most (hidden) while the face idles; true once all are. */
+bool ui_settings_prebuild_step(clock_ui_context_t *ctx);
 void ui_settings_close_all(clock_ui_context_t *ctx);
 
 /* --- Alarms ------------------------------------------------------------------------------ */
