@@ -38,10 +38,14 @@
 
 /* Mostly transparent ARGB8888 images (the kit's ring and dial tiles) can be registered with
  * the runs of visible pixels in each row. Blending one then touches only those pixels: the
- * Atelier rim's tiles cover about 125k pixels for about 4k visible ones. The kit registers a
- * tile when it builds it and unregisters it before freeing it, both on the UI thread; the
- * draw threads only read. */
+ * Atelier rim's tiles cover about 125k pixels for about 4k visible ones. Opaque stretches of
+ * one colour (the body of a band, like the Atelier bezel's 146k pixels) are runs of their
+ * own, filled without reading the image or the screen under them. The other runs' pixels are
+ * copied out, one after another: in the image they lie one or two to a cache line, and a
+ * miss in PSRAM costs more than blending a run. The kit registers a tile when it builds it
+ * and unregisters it before freeing it, both on the UI thread; the draw threads only read. */
 #define SPARSE_MAX 192
+#define SPARSE_SOLID_MIN 8 /* shorter opaque stretches stay with the blended pixels */
 
 typedef struct {
     const uint8_t *data; /* NULL for a free slot; published last */
@@ -49,16 +53,97 @@ typedef struct {
     uint32_t stride;
     uint32_t *row_start; /* h + 1 indices into runs */
     uint16_t *runs;      /* (x, length) pairs */
+    uint32_t *solid;     /* per run: its one opaque ARGB colour, or 0 to blend it */
+    uint32_t *packed_at; /* per blended run: where its pixels start in packed */
+    uint32_t *packed;    /* the blended runs' pixels, in order */
 } sparse_image_t;
 
 static sparse_image_t s_sparse[SPARSE_MAX];
 static int s_sparse_count; /* slots in use or once used: the lookup scans these */
 
+typedef struct {
+    sparse_image_t *img; /* NULL: only count */
+    uint32_t runs;
+    uint32_t pixels; /* in blended runs */
+} sparse_build_t;
+
+static void sparse_emit(sparse_build_t *b, const uint32_t *row, uint32_t x, uint32_t len, bool solid)
+{
+    if (b->img != NULL) {
+        b->img->runs[b->runs * 2] = (uint16_t)x;
+        b->img->runs[b->runs * 2 + 1] = (uint16_t)len;
+        b->img->solid[b->runs] = solid ? row[x] : 0;
+        b->img->packed_at[b->runs] = b->pixels;
+        if (!solid) {
+            memcpy(b->img->packed + b->pixels, row + x, len * sizeof(uint32_t));
+        }
+    }
+    b->runs++;
+    b->pixels += solid ? 0 : len;
+}
+
+/* Splits a row's visible pixels into solid and blended runs. */
+static void sparse_row_runs(sparse_build_t *b, const uint32_t *row, uint32_t w)
+{
+    uint32_t x = 0;
+
+    while (x < w) {
+        uint32_t end;
+        uint32_t blend_from;
+
+        if ((row[x] >> 24) == 0) {
+            x++;
+            continue;
+        }
+        for (end = x; end < w && (row[end] >> 24) != 0; end++) {
+        }
+        /* [x, end) is visible: find the solid stretches in it. */
+        blend_from = x;
+        while (x < end) {
+            uint32_t s = x;
+
+            if ((row[x] >> 24) == 0xFF) {
+                while (s < end && row[s] == row[x]) {
+                    s++;
+                }
+            }
+            if (s - x < SPARSE_SOLID_MIN) {
+                x = s > x ? s : x + 1;
+                continue;
+            }
+            if (x > blend_from) {
+                sparse_emit(b, row, blend_from, x - blend_from, false);
+            }
+            sparse_emit(b, row, x, s - x, true);
+            x = s;
+            blend_from = s;
+        }
+        if (end > blend_from) {
+            sparse_emit(b, row, blend_from, end - blend_from, false);
+        }
+        x = end;
+    }
+}
+
+static void sparse_free(sparse_image_t *slot)
+{
+    lv_free(slot->row_start);
+    lv_free(slot->runs);
+    lv_free(slot->solid);
+    lv_free(slot->packed_at);
+    lv_free(slot->packed);
+    slot->row_start = NULL;
+    slot->runs = NULL;
+    slot->solid = NULL;
+    slot->packed_at = NULL;
+    slot->packed = NULL;
+}
+
 void ui_sparse_image_register(const lv_draw_buf_t *buf)
 {
     uint32_t h = buf->header.h;
     uint32_t w = buf->header.w;
-    uint32_t runs = 0;
+    sparse_build_t b = {0};
     sparse_image_t *slot = NULL;
 
     if (buf->header.cf != LV_COLOR_FORMAT_ARGB8888) {
@@ -73,39 +158,24 @@ void ui_sparse_image_register(const lv_draw_buf_t *buf)
         return; /* blended in full instead */
     }
     for (uint32_t y = 0; y < h; y++) {
-        const lv_color32_t *row = (const lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
-
-        for (uint32_t x = 0; x < w; x++) {
-            if (row[x].alpha != 0 && (x == 0 || row[x - 1].alpha == 0)) {
-                runs++;
-            }
-        }
+        sparse_row_runs(&b, (const uint32_t *)(buf->data + (size_t)y * buf->header.stride), w);
     }
     slot->row_start = lv_malloc((h + 1) * sizeof(uint32_t));
-    slot->runs = lv_malloc((runs ? runs : 1) * 2 * sizeof(uint16_t));
-    if (slot->row_start == NULL || slot->runs == NULL) {
-        lv_free(slot->row_start);
-        lv_free(slot->runs);
+    slot->runs = lv_malloc((b.runs ? b.runs : 1) * 2 * sizeof(uint16_t));
+    slot->solid = lv_malloc((b.runs ? b.runs : 1) * sizeof(uint32_t));
+    slot->packed_at = lv_malloc((b.runs ? b.runs : 1) * sizeof(uint32_t));
+    slot->packed = lv_malloc((b.pixels ? b.pixels : 1) * sizeof(uint32_t));
+    if (slot->row_start == NULL || slot->runs == NULL || slot->solid == NULL || slot->packed_at == NULL ||
+        slot->packed == NULL) {
+        sparse_free(slot);
         return;
     }
-    runs = 0;
+    b = (sparse_build_t) {.img = slot};
     for (uint32_t y = 0; y < h; y++) {
-        const lv_color32_t *row = (const lv_color32_t *)(buf->data + (size_t)y * buf->header.stride);
-
-        slot->row_start[y] = runs;
-        for (uint32_t x = 0; x < w; x++) {
-            if (row[x].alpha == 0) {
-                continue;
-            }
-            if (x == 0 || row[x - 1].alpha == 0) {
-                slot->runs[runs * 2] = (uint16_t)x;
-                slot->runs[runs * 2 + 1] = 0;
-                runs++;
-            }
-            slot->runs[(runs - 1) * 2 + 1]++;
-        }
+        slot->row_start[y] = b.runs;
+        sparse_row_runs(&b, (const uint32_t *)(buf->data + (size_t)y * buf->header.stride), w);
     }
-    slot->row_start[h] = runs;
+    slot->row_start[h] = b.runs;
     slot->size = (size_t)h * buf->header.stride;
     slot->stride = buf->header.stride;
     __atomic_store_n(&slot->data, buf->data, __ATOMIC_RELEASE);
@@ -129,10 +199,7 @@ void ui_sparse_image_unregister(const lv_draw_buf_t *buf)
     for (int i = 0; i < s_sparse_count; i++) {
         if (s_sparse[i].data == buf->data) {
             __atomic_store_n(&s_sparse[i].data, NULL, __ATOMIC_RELEASE);
-            lv_free(s_sparse[i].row_start);
-            lv_free(s_sparse[i].runs);
-            s_sparse[i].row_start = NULL;
-            s_sparse[i].runs = NULL;
+            sparse_free(&s_sparse[i]);
             return;
         }
     }
@@ -180,20 +247,34 @@ static bool sparse_over_rgb565(const lv_draw_sw_blend_image_dsc_t *dsc)
         sy = (int32_t)(off / img->stride);
         sx = (int32_t)((off % img->stride) / 4);
         for (int32_t y = 0; y < dsc->dest_h; y++) {
-            const uint32_t *src_px = (const uint32_t *)(data + (size_t)(sy + y) * img->stride);
             uint16_t *dest = (uint16_t *)dest_row - sx;
 
             for (uint32_t k = img->row_start[sy + y]; k < img->row_start[sy + y + 1]; k++) {
-                int32_t lo = LV_MAX((int32_t)img->runs[k * 2], sx);
-                int32_t hi = LV_MIN((int32_t)img->runs[k * 2] + (int32_t)img->runs[k * 2 + 1], sx + dsc->dest_w);
+                int32_t x0 = (int32_t)img->runs[k * 2];
+                int32_t lo = LV_MAX(x0, sx);
+                int32_t hi = LV_MIN(x0 + (int32_t)img->runs[k * 2 + 1], sx + dsc->dest_w);
+                uint32_t solid = img->solid[k];
+                const uint32_t *px = img->packed + img->packed_at[k]; /* from x0 */
 
-                if (opa >= LV_OPA_MAX) {
+                if (solid != 0 && opa >= LV_OPA_MAX) {
+                    uint16_t c = argb_mix(solid, 0);
+
                     for (int32_t x = lo; x < hi; x++) {
-                        dest[x] = argb_mix(src_px[x], dest[x]);
+                        dest[x] = c;
+                    }
+                } else if (solid != 0) {
+                    uint32_t faded = argb_fade(solid, opa);
+
+                    for (int32_t x = lo; x < hi; x++) {
+                        dest[x] = argb_mix(faded, dest[x]);
+                    }
+                } else if (opa >= LV_OPA_MAX) {
+                    for (int32_t x = lo; x < hi; x++) {
+                        dest[x] = argb_mix(px[x - x0], dest[x]);
                     }
                 } else {
                     for (int32_t x = lo; x < hi; x++) {
-                        dest[x] = argb_mix(argb_fade(src_px[x], opa), dest[x]);
+                        dest[x] = argb_mix(argb_fade(px[x - x0], opa), dest[x]);
                     }
                 }
             }

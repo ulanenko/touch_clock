@@ -263,10 +263,44 @@ allocated is drawn as a plain rounded rectangle instead of nothing.
 Idle prewarm order (Glass): the settings home and the alarm list are baked first, then the
 rest of the chrome, under one 20 ms budget a tick.
 
+## Atelier frame time (2026-10-30, tours 20261029-221406 -> 20261030-100118, avg ms)
+
+| step | before | after |
+|---|---|---|
+| Other page scroll | 19.7 | 15.2 |
+| face swipe with the controls up | 36.1 (27 frames over 33 ms) | 25.7 (none) |
+| tap to the controls | 35.9 (12 over) | 26.6 (4 over) |
+| settings close | 35.7 (24 over) | 26.1 (4 over) |
+| alarms close | 36.2 (8 over) | 26.5 (3 over) |
+
+A tour that scrolled the Other page with one part off at a time (20261030-093259) put the minute
+rim at 3.4 ms a frame and the scroll register at 2.7 ms (the band painting out the ticks under
+it 1.0, the track 0.6, the thumb about 1.1), although they blend only a few thousand pixels.
+What they pay for is PSRAM misses: each run of visible pixels is a miss in the tile and another
+in the frame buffer.
+
+- **The controls' bezel** (a 72 px band at 90 %, about 146k pixels blended over the face on
+  every frame the controls show) is opaque. The sparse blender keeps opaque runs of one colour
+  of 8 px or more as runs of their own and fills them without reading the tile or the screen.
+  The bezel no longer shows the dial's rim faintly through it.
+- **Sparse tiles keep their blended pixels packed** one run after another, so blending reads
+  them in order instead of missing on a cache line per run (1 MB of rim tiles for about 4k
+  visible pixels).
+- **The register's thumb** was a plain `lv_draw_arc`, whose task covers the whole 688 px circle
+  and holds up the rest of the frame; it is `kit_draw_arc` now.
+- **Atelier's minute rim leaves a gap under the register** instead of the register painting the
+  ticks out. A rim with a gap is the plain rim's tiles less those round the gap, plus those tiles
+  baked again without the gap's ticks (`kit_dial_t.tiles`, `kit_dial_draw_tiles`): 258 KB for
+  the settings gap and 517 KB for the theme sheet's, where each was a whole 1 MB rim. A first try
+  with whole gapped rims took the dial cache over 6 MB, and closing settings evicted the bezel and
+  rebuilt it (163 ms); Atelier's dials now come to 4.9 MB. The alarm screens drew a second whole
+  rim to mean "no gap" (skip 999); they draw the plain one.
+
 ## Open findings, by priority (*unverified* unless measured)
 
 ### High
-- **Atelier settings take 15-18 ms a frame** (Instrument and Orbit: 11-15 ms). What remains is about 75 draw tasks (each image task costs about 70 us of LVGL setup), the 164 px gradient scrim (about 2.5 ms) and pill borders (about 0.7 ms each).
+- **Atelier settings take about 15 ms a frame** (Instrument and Orbit: 11-15 ms). What remains is about 75 draw tasks (each image task costs about 70 us of LVGL setup), the 164 px gradient scrim (about 2.5 ms), pill borders (about 0.7 ms each) and the rim and register (about 4 ms, mostly PSRAM misses along the ring).
+- **Atelier screens with the face controls up take about 26 ms a frame** (Glass about 22 ms).
 
 
 ### Medium

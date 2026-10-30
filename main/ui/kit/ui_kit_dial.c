@@ -406,6 +406,9 @@ static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
         for (int i = 0; i < KIT_DIAL_RINGS && !needed; i++) {
             needed = ring_touches_sector(&dial->rings[i], a0, a1);
         }
+        if (dial->tiles != 0 && count == KIT_DIAL_TILES && (dial->tiles & (1u << t)) == 0) {
+            needed = false;
+        }
         tiles->buf[t] = needed ? build_tile(dial, a0, a1, r_min, r_max, &tiles->area[t]) : NULL;
     }
 }
@@ -483,7 +486,7 @@ static const dial_tiles_t *dial_get(const kit_dial_t *dial_in)
     return &slot->tiles;
 }
 
-static void dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t opa)
+static void dial_draw_tiles(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t opa, uint8_t mask)
 {
     const dial_tiles_t *tiles = dial_get(dial);
     lv_draw_image_dsc_t img;
@@ -494,7 +497,7 @@ static void dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t op
     for (int t = 0; t < KIT_DIAL_TILES; t++) {
         lv_area_t visible;
 
-        if (tiles->buf[t] == NULL) {
+        if (tiles->buf[t] == NULL || (mask & (1u << t)) == 0) {
             continue;
         }
         area = tiles->area[t];
@@ -507,6 +510,33 @@ static void dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t op
         img.src = tiles->buf[t];
         lv_draw_image(layer, &img, &area);
     }
+}
+
+static void dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t opa)
+{
+    dial_draw_tiles(layer, dial, opa, 0xFF);
+}
+
+void kit_dial_draw_tiles(lv_layer_t *layer, const kit_dial_t *dial, uint8_t tiles)
+{
+    dial_draw_tiles(layer, dial, LV_OPA_COVER, tiles);
+}
+
+uint8_t kit_dial_tiles_for(float a0, float a1)
+{
+    const float step = 360.0f / (float)KIT_DIAL_TILES;
+    uint8_t mask = 0;
+
+    for (int t = 0; t < KIT_DIAL_TILES; t++) {
+        for (int turn = -2; turn <= 2; turn++) {
+            float s0 = step * (float)t + 360.0f * (float)turn;
+
+            if (s0 < a1 && s0 + step > a0) {
+                mask |= (uint8_t)(1u << t);
+            }
+        }
+    }
+    return mask;
 }
 
 void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial)

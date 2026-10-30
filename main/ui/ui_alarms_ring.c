@@ -1004,7 +1004,7 @@ static lv_obj_t *math_key(clock_ui_context_t *ctx, lv_obj_t *parent, int k, int3
 
 static void math_rim_cb(lv_event_t *e)
 {
-    alm_draw_rim(lv_event_get_layer(e), 999, 999);
+    alm_draw_rim(lv_event_get_layer(e), -1, -1);
 }
 
 static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)

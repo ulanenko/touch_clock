@@ -447,9 +447,15 @@ static void legend_scroll_cb(lv_event_t *e)
     st_show(legend, lv_obj_get_scroll_y(scroll) > 96);
 }
 
+/* Atelier's minute rim leaves out the ticks under the register (clock degrees from 12). */
+#define REGISTER_RIM_SKIP_FROM 54
+#define REGISTER_RIM_SKIP_TO 126
+
 /* Scroll register on the right rim, drawn after the page (Instrument and Atelier). It reads
  * the scroll position when the screen is drawn, so it costs nothing extra while scrolling.
- * Drawn as cached rings: a live arc costs the device several ms per arc, every frame. */
+ * Drawn as cached rings: a live arc costs the device several ms per arc, every frame. On
+ * Atelier pages it draws the minute rim too, with a gap for the register while the page
+ * scrolls: painting the ticks out again cost about 1 ms a frame. */
 static void register_draw_cb(lv_event_t *e)
 {
     kit_page_t *page = lv_event_get_user_data(e);
@@ -465,6 +471,9 @@ static void register_draw_cb(lv_event_t *e)
     int32_t pos;
     int32_t radius;
 
+    if (st_atelier()) {
+        kit_draw_minute_rim(layer, total > 8 ? REGISTER_RIM_SKIP_FROM : -1, REGISTER_RIM_SKIP_TO);
+    }
     if (total <= 8) {
         return;
     }
@@ -473,8 +482,6 @@ static void register_draw_cb(lv_event_t *e)
         a0 = -30;
         a1 = 30;
         radius = 342;
-        /* Clear the minute track under the register. */
-        kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, 339, 22, -36, 36, sk->bg, LV_OPA_COVER);
     } else {
         a0 = -22;
         a1 = 22;
@@ -485,8 +492,9 @@ static void register_draw_cb(lv_event_t *e)
     pos = a0 + (span - len) * y / total;
 
     kit_draw_ring(layer, KIT_CENTER, KIT_CENTER, radius, 4, a0, a1, sk->line, LV_OPA_COVER);
-    /* The thumb moves with every scroll step: an LVGL arc, as the ring cache would build (and
-     * keep) a new image for each position. */
+    /* The thumb moves with every scroll step: a live arc, as the ring cache would build (and
+     * keep) a new image for each position. kit_draw_arc bounds it to its own area; a plain
+     * lv_draw_arc covers the whole circle and holds up the rest of the frame. */
     {
         lv_draw_arc_dsc_t arc;
 
@@ -499,7 +507,7 @@ static void register_draw_cb(lv_event_t *e)
         arc.rounded = 1;
         arc.color = st_atelier() ? sk->accent : sk->text_3;
         arc.opa = LV_OPA_COVER;
-        lv_draw_arc(layer, &arc);
+        kit_draw_arc(layer, &arc);
     }
 }
 
@@ -540,6 +548,7 @@ kit_page_t *st_page_begin(clock_ui_context_t *ctx, ui_st_page_t id, st_text_t ey
         ST(ctx)->legend[id] = legend;
         if (!(st_atelier() && id == UI_ST_NIGHT)) {
             lv_obj_add_event_cb(p->root, register_draw_cb, LV_EVENT_DRAW_POST, p);
+            kit_page_set_rim(p, false); /* the register draws it */
         }
     }
     return p;
@@ -1232,6 +1241,9 @@ void ui_settings_create(clock_ui_context_t *ctx)
     st->night_drag = -1;
     st->last_minute = -1;
     st->applied_language = (clock_language_t)ctx->settings->language;
+    if (st_atelier()) {
+        kit_minute_rim_prewarm(REGISTER_RIM_SKIP_FROM, REGISTER_RIM_SKIP_TO);
+    }
     ui_debug_register("open_settings", debug_open_settings);
     ui_debug_register("open_wifi", debug_open_wifi);
     ui_debug_register("open_night", debug_open_night);

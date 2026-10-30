@@ -31,7 +31,7 @@ static void atelier_rim_cb(lv_event_t *e)
     lv_layer_t *layer = lv_event_get_layer(e);
     bool details = ctx->alarms.editor_on_details;
 
-    alm_draw_rim(layer, details ? 54 : 999, details ? 126 : 999);
+    alm_draw_rim(layer, details ? 54 : -1, details ? 126 : -1);
     if (details) {
         lv_draw_arc_dsc_t arc;
 

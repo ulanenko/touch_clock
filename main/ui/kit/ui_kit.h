@@ -66,10 +66,16 @@ typedef struct {
     int32_t cx, cy;
     kit_dial_ring_t rings[KIT_DIAL_RINGS];      /* drawn in order, later on top */
     kit_dial_ticks_t ticks[KIT_DIAL_TICK_SETS]; /* drawn over the rings */
+    uint8_t tiles; /* 0: the whole dial; else only these tiles (see kit_dial_tiles_for) */
 } kit_dial_t;
 
 void kit_dial_draw(lv_layer_t *layer, const kit_dial_t *dial);
 void kit_dial_draw_opa(lv_layer_t *layer, const kit_dial_t *dial, lv_opa_t opa);
+/* Dials of 120 px radius and more are baked as eight tiles, bit t the 45 degrees from 45t.
+ * The tiles an arc from a0 to a1 touches (a0 <= a1, any turn): */
+uint8_t kit_dial_tiles_for(float a0, float a1);
+/* Draws only the given tiles of a dial (of its cached tiles, whatever its own tiles field). */
+void kit_dial_draw_tiles(lv_layer_t *layer, const kit_dial_t *dial, uint8_t tiles);
 /* Bakes a dial into the cache now (at chrome build) so its first frame does not pay for it. */
 void kit_dial_prewarm(const kit_dial_t *dial);
 /* Bakes the dials the kit itself draws for the current style. */

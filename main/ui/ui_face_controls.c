@@ -431,11 +431,12 @@ static void atelier_bezel_spec(kit_dial_t *dial)
     const ui_skin_t *sk = ui_skin();
 
     /* The ink bezel lifted over the dial's rim, its brass inner edge, outer hairline and minute
-     * track, baked once into cached tiles. */
+     * track, baked once into cached tiles. The band is opaque: its body is then filled
+     * rather than blended over the face, about 146k pixels on every frame the controls show. */
     memset(dial, 0, sizeof(*dial));
     dial->cx = KIT_CENTER;
     dial->cy = KIT_CENTER;
-    dial->rings[0] = (kit_dial_ring_t) {.r = 324, .width = 72, .end_deg = 360, .color = sk->bg, .opa = 230};
+    dial->rings[0] = (kit_dial_ring_t) {.r = 324, .width = 72, .end_deg = 360, .color = sk->bg, .opa = LV_OPA_COVER};
     dial->rings[1] = (kit_dial_ring_t) {.r = 289, .width = 1, .end_deg = 360, .color = sk->label, .opa = 230};
     dial->rings[2] = (kit_dial_ring_t) {.r = 357, .width = 1, .end_deg = 360, .color = sk->accent_deep, .opa = 180};
     dial->ticks[0] = (kit_dial_ticks_t) {
