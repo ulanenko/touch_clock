@@ -395,8 +395,16 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   alarms) about 1.5 ms and the night-face picker 1.3 ms (the objects and styles read through
   the cache). Keeping the blocks a frame makes and drops (its draw tasks) in internal RAM won
   only about 0.3 ms back on scrolls and nothing on page opens, so it was not kept.
-- Seen meanwhile: the quick sheet pulled as the minute turns stalls one frame about 230 ms (the
-  face's backdrop and frost, the sheet's snapshot and its ground all made again at once).
+- **The quick sheet pulled as the minute turns** stalled a frame about 230 ms: the pull made the
+  minute's glass itself (the face's frost, the keys' glass, the sheet's ground at once), the idle
+  tick having not got to it yet. The frost (each step: the scale down, the blur's passes, the
+  grade, the scale up), the full-size deep frost and the sheet and page grounds now run half on
+  each core (`split_rows`, the bakes' worker made general); the sheet's ground is built in bands,
+  for a sheet pulled before it is done only where the sheet is on the screen, so the pull's
+  frames share it; the idle tick makes a turned minute's glass before the neighbours'
+  snapshots. Pulled at the minute on the clock: the worst frame 228 -> 67 ms, the step 602 ->
+  333 ms (the drag's start still makes the frost, 70 ms, and the keys' glass). The frost every
+  minute 111 -> 70 ms, the page ground twice as fast. Identical pixels in the simulator.
 
 ## Open findings, by priority (*unverified* unless measured)
 

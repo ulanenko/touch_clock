@@ -44,8 +44,9 @@ void request_set_default_alarm_sound(clock_ui_context_t *ctx, uint8_t sound);
 void request_set_night_mode_enabled(clock_ui_context_t *ctx, bool enabled);
 void request_set_night_now(clock_ui_context_t *ctx, bool night);
 /* Liquid Glass: builds the glass backdrop from the face shown now, for the controls over the
- * face (0, UI_GLASS_FACE) or a page or sheet (1, UI_GLASS_PAGE). See ui_glass.h. */
-void face_glass_capture(clock_ui_context_t *ctx, int mode);
+ * face (0, UI_GLASS_FACE) or a page or sheet (1, UI_GLASS_PAGE); whether it built anything.
+ * See ui_glass.h. */
+bool face_glass_capture(clock_ui_context_t *ctx, int mode);
 void request_set_night_schedule(clock_ui_context_t *ctx,
                                 uint8_t start_hour,
                                 uint8_t start_minute,

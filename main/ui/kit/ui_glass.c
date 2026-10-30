@@ -92,13 +92,153 @@ static lv_draw_buf_t *screen_buf(lv_draw_buf_t **buf)
     return *buf;
 }
 
+/* Work on rows split between the two cores: the UI thread does the first part (part 0), a task
+ * on the other core the rest (part 1), each with what it keeps on the way (its scratch). */
+typedef void (*rows_fn_t)(int32_t y0, int32_t y1, int part);
+
+#if defined(ESP_PLATFORM)
+static TaskHandle_t s_split_task;
+static SemaphoreHandle_t s_split_go;
+static SemaphoreHandle_t s_split_done;
+static rows_fn_t s_split_fn;
+static int32_t s_split_from;
+static int32_t s_split_to;
+
+static void split_worker(void *arg)
+{
+    LV_UNUSED(arg);
+    for (;;) {
+        xSemaphoreTake(s_split_go, portMAX_DELAY);
+        s_split_fn(s_split_from, s_split_to, 1);
+        xSemaphoreGive(s_split_done);
+    }
+}
+
+static bool split_worker_ready(void)
+{
+    if (s_split_task == NULL) {
+        s_split_go = xSemaphoreCreateBinary();
+        s_split_done = xSemaphoreCreateBinary();
+        if (s_split_go == NULL || s_split_done == NULL ||
+            xTaskCreate(split_worker, "glass_bake", 6144, NULL, CONFIG_LV_DRAW_THREAD_PRIO + 2, &s_split_task) != pdPASS) {
+            s_split_task = NULL;
+            return false;
+        }
+    }
+    return true;
+}
+#endif
+
+/* fn over rows [y0, y1): [y0, mid) here and [mid, y1) on the other core, at once. */
+static void split_rows(rows_fn_t fn, int32_t y0, int32_t mid, int32_t y1)
+{
+#if defined(ESP_PLATFORM)
+    if (mid > y0 && mid < y1 && split_worker_ready()) {
+        s_split_fn = fn;
+        s_split_from = mid;
+        s_split_to = y1;
+        xSemaphoreGive(s_split_go);
+        fn(y0, mid, 0);
+        xSemaphoreTake(s_split_done, portMAX_DELAY);
+        return;
+    }
+#endif
+    fn(y0, mid, 0);
+    fn(mid, y1, 1);
+}
+
+/* What blur_rgba's passes work on, shared by the two cores. */
+static struct {
+    uint8_t *img;
+    uint8_t *tmp;
+    uint16_t *sums;
+    const int16_t *add;
+    const int16_t *sub;
+    int n;
+    int r;
+    int stride;
+    int recip;
+} s_blur;
+
+/* Across: img's rows [y0, y1) into tmp. */
+static void blur_rows(int32_t y0, int32_t y1, int part)
+{
+    const int r = s_blur.r;
+    const int n = s_blur.n;
+    const int recip = s_blur.recip;
+
+    LV_UNUSED(part);
+    for (int32_t y = y0; y < y1; y++) {
+        const uint8_t *in = s_blur.img + (size_t)y * s_blur.stride;
+        uint8_t *out = s_blur.tmp + (size_t)y * s_blur.stride;
+        int s0 = 0;
+        int s1 = 0;
+        int s2 = 0;
+        int s3 = 0;
+
+        for (int i = -r; i <= r; i++) {
+            const uint8_t *p = in + LV_CLAMP(0, i, n - 1) * 4;
+
+            s0 += p[0];
+            s1 += p[1];
+            s2 += p[2];
+            s3 += p[3];
+        }
+        for (int x = 0; x < n; x++) {
+            const uint8_t *pa = in + s_blur.add[x] * 4;
+            const uint8_t *pb = in + s_blur.sub[x] * 4;
+
+            out[0] = (uint8_t)((s0 * recip) >> 16);
+            out[1] = (uint8_t)((s1 * recip) >> 16);
+            out[2] = (uint8_t)((s2 * recip) >> 16);
+            out[3] = (uint8_t)((s3 * recip) >> 16);
+            out += 4;
+            s0 += pa[0] - pb[0];
+            s1 += pa[1] - pb[1];
+            s2 += pa[2] - pb[2];
+            s3 += pa[3] - pb[3];
+        }
+    }
+}
+
+/* Down: tmp's byte columns [j0, j1) back into img. */
+static void blur_columns(int32_t j0, int32_t j1, int part)
+{
+    const int r = s_blur.r;
+    const int n = s_blur.n;
+    const int recip = s_blur.recip;
+    uint16_t *sums = s_blur.sums;
+
+    LV_UNUSED(part);
+    for (int32_t j = j0; j < j1; j++) {
+        sums[j] = 0;
+    }
+    for (int i = -r; i <= r; i++) {
+        const uint8_t *row = s_blur.tmp + (size_t)LV_CLAMP(0, i, n - 1) * s_blur.stride;
+
+        for (int32_t j = j0; j < j1; j++) {
+            sums[j] += row[j];
+        }
+    }
+    for (int y = 0; y < n; y++) {
+        const uint8_t *ra = s_blur.tmp + (size_t)s_blur.add[y] * s_blur.stride;
+        const uint8_t *rb = s_blur.tmp + (size_t)s_blur.sub[y] * s_blur.stride;
+        uint8_t *out = s_blur.img + (size_t)y * s_blur.stride;
+
+        for (int32_t j = j0; j < j1; j++) {
+            out[j] = (uint8_t)((sums[j] * recip) >> 16);
+            sums[j] = (uint16_t)(sums[j] + ra[j] - rb[j]);
+        }
+    }
+}
+
 /* Three box passes each way over an n x n RGBA image, in place: about a Gaussian of radius
  * 1.7 r. Rows run along each row with a sum per channel; columns run down the image a row at a
  * time with a sum per byte of the row, so both read memory in order, and the edges (clamped)
- * come from index tables rather than tests in the loops. False without memory. */
+ * come from index tables rather than tests in the loops. Each pass half on each core (rows
+ * across, columns down). False without memory. */
 static bool blur_rgba(uint8_t *img, int n, int r)
 {
-    const int recip = (65536 + 2 * r) / (2 * r + 1); /* sum / (2r + 1) as a multiply */
     const int stride = n * 4;
     uint8_t *tmp = lv_malloc((size_t)n * (size_t)stride);
     uint16_t *sums = lv_malloc((size_t)stride * sizeof(uint16_t));
@@ -115,56 +255,18 @@ static bool blur_rgba(uint8_t *img, int n, int r)
         add[i] = (int16_t)LV_MIN(i + r + 1, n - 1); /* the sample entering the sum */
         sub[i] = (int16_t)LV_MAX(i - r, 0);         /* and the one leaving it */
     }
+    s_blur.img = img;
+    s_blur.tmp = tmp;
+    s_blur.sums = sums;
+    s_blur.add = add;
+    s_blur.sub = sub;
+    s_blur.n = n;
+    s_blur.r = r;
+    s_blur.stride = stride;
+    s_blur.recip = (65536 + 2 * r) / (2 * r + 1); /* sum / (2r + 1) as a multiply */
     for (int pass = 0; pass < 3; pass++) {
-        for (int y = 0; y < n; y++) {
-            const uint8_t *in = img + (size_t)y * stride;
-            uint8_t *out = tmp + (size_t)y * stride;
-            int s0 = 0;
-            int s1 = 0;
-            int s2 = 0;
-            int s3 = 0;
-
-            for (int i = -r; i <= r; i++) {
-                const uint8_t *p = in + LV_CLAMP(0, i, n - 1) * 4;
-
-                s0 += p[0];
-                s1 += p[1];
-                s2 += p[2];
-                s3 += p[3];
-            }
-            for (int x = 0; x < n; x++) {
-                const uint8_t *pa = in + add[x] * 4;
-                const uint8_t *pb = in + sub[x] * 4;
-
-                out[0] = (uint8_t)((s0 * recip) >> 16);
-                out[1] = (uint8_t)((s1 * recip) >> 16);
-                out[2] = (uint8_t)((s2 * recip) >> 16);
-                out[3] = (uint8_t)((s3 * recip) >> 16);
-                out += 4;
-                s0 += pa[0] - pb[0];
-                s1 += pa[1] - pb[1];
-                s2 += pa[2] - pb[2];
-                s3 += pa[3] - pb[3];
-            }
-        }
-        memset(sums, 0, (size_t)stride * sizeof(uint16_t));
-        for (int i = -r; i <= r; i++) {
-            const uint8_t *row = tmp + (size_t)LV_CLAMP(0, i, n - 1) * stride;
-
-            for (int j = 0; j < stride; j++) {
-                sums[j] += row[j];
-            }
-        }
-        for (int y = 0; y < n; y++) {
-            const uint8_t *ra = tmp + (size_t)add[y] * stride;
-            const uint8_t *rb = tmp + (size_t)sub[y] * stride;
-            uint8_t *out = img + (size_t)y * stride;
-
-            for (int j = 0; j < stride; j++) {
-                out[j] = (uint8_t)((sums[j] * recip) >> 16);
-                sums[j] = (uint16_t)(sums[j] + ra[j] - rb[j]);
-            }
-        }
+        split_rows(blur_rows, 0, n / 2, n);
+        split_rows(blur_columns, 0, (stride / 2) & ~3, stride);
     }
     lv_free(tmp);
     lv_free(sums);
@@ -327,77 +429,172 @@ bool ui_glass_backdrop_to_page(lv_draw_buf_t *keep_sharp)
     return true;
 }
 
+/* What frost_make's steps work on, shared by the two cores. */
+static struct {
+    const lv_draw_buf_t *face;
+    lv_draw_buf_t *frost;
+    uint8_t *low;
+    uint16_t *acc[2];  /* per core: a low row's raw sums */
+    uint32_t *hrow[2]; /* per core: three widened low rows */
+    float gain;
+    float lift;
+    float sat;
+} s_fm;
+
+/* Down to a quarter: low rows [ly0, ly1). */
+static void frost_down_rows(int32_t ly0, int32_t ly1, int part)
+{
+    uint16_t *acc = s_fm.acc[part];
+
+    for (int32_t ly = ly0; ly < ly1; ly++) {
+        memset(acc, 0, LOW * 4 * sizeof(uint16_t));
+        /* Every other pixel of every other row: the blur that follows hides the difference. */
+        for (int y = ly * 4; y < ly * 4 + 4; y += 2) {
+            const uint16_t *row = (const uint16_t *)(s_fm.face->data + (size_t)y * s_fm.face->header.stride);
+            int half = circle_half(y);
+
+            for (int x = (SCREEN / 2 - half + 1) & ~1; half >= 0 && x < SCREEN / 2 + half; x += 2) {
+                uint16_t v = row[x];
+                uint16_t *c = acc + (x >> 2) * 4;
+
+                c[0] += (v >> 11) & 0x1F;
+                c[1] += (v >> 5) & 0x3F;
+                c[2] += v & 0x1F;
+                c[3]++;
+            }
+        }
+        for (int lx = 0; lx < LOW; lx++) {
+            const uint16_t *c = acc + lx * 4;
+            uint8_t *o = s_fm.low + ((size_t)ly * LOW + lx) * 4;
+
+            /* Four samples: x 255 / (31 x 4) and x 255 / (63 x 4) as multiply and shift. */
+            o[0] = (uint8_t)LV_MIN(255u, (c[0] * 134774u) >> 16);
+            o[1] = (uint8_t)LV_MIN(255u, (c[1] * 66313u) >> 16);
+            o[2] = (uint8_t)LV_MIN(255u, (c[2] * 134774u) >> 16);
+            o[3] = (uint8_t)LV_MIN(255, (c[3] * 255u) >> 2);
+        }
+    }
+}
+
+/* Graded in place at the low resolution: low rows [ly0, ly1). */
+static void frost_grade_rows(int32_t ly0, int32_t ly1, int part)
+{
+    LV_UNUSED(part);
+    for (int32_t i = ly0 * LOW; i < ly1 * LOW; i++) {
+        uint8_t *px = s_fm.low + (size_t)i * 3;
+        float r = px[0];
+        float g = px[1];
+        float b = px[2];
+        float y = 0.21f * r + 0.72f * g + 0.07f * b;
+
+        px[0] = (uint8_t)clampf((y + (r - y) * s_fm.sat) * s_fm.gain + s_fm.lift, 0.0f, 255.0f);
+        px[1] = (uint8_t)clampf((y + (g - y) * s_fm.sat) * s_fm.gain + s_fm.lift, 0.0f, 255.0f);
+        px[2] = (uint8_t)clampf((y + (b - y) * s_fm.sat) * s_fm.gain + s_fm.lift, 0.0f, 255.0f);
+    }
+}
+
+/* Up to half resolution bilinearly: frost rows [y0, y1). A frost pixel sits a quarter of the
+ * way between two low ones each way, so it is (3 near + 1 far) / 4 across and down: shifts and
+ * adds, red and blue at once in 16-bit lanes, green on its own. Each low row is widened once
+ * (three are kept: an output row needs its own and the one above or below); dithered so
+ * gradients do not band. */
+static void frost_up_rows(int32_t y0, int32_t y1, int part)
+{
+    uint32_t *hrow = s_fm.hrow[part];
+    int cached[3] = {-1, -1, -1};
+
+    for (int32_t y = y0; y < y1; y++) {
+        int near = y >> 1;
+        int far = LV_CLAMP(0, (y & 1) ? near + 1 : near - 1, LOW - 1);
+        uint16_t *out = (uint16_t *)(s_fm.frost->data + (size_t)y * s_fm.frost->header.stride);
+        const uint32_t *hn;
+        const uint32_t *hf;
+
+        for (int k = 0; k < 2; k++) {
+            int ly = k == 0 ? near : far;
+            int slot = ly % 3;
+
+            if (cached[slot] != ly) {
+                const uint8_t *lr = s_fm.low + (size_t)ly * LOW * 3;
+                uint32_t *rb = hrow + (size_t)slot * 2 * FROST;
+                uint32_t *g = rb + FROST;
+                uint32_t prev = RBLANES(lr);
+                uint32_t cur = prev;
+                uint32_t gprev = lr[1];
+                uint32_t gcur = gprev;
+
+                for (int lx = 0; lx < LOW; lx++) {
+                    const uint8_t *np = lr + (lx + 1 < LOW ? lx + 1 : lx) * 3;
+                    uint32_t next = RBLANES(np);
+                    uint32_t gnext = np[1];
+                    uint32_t c3 = cur * 3;
+                    uint32_t g3 = gcur * 3;
+
+                    rb[lx * 2] = c3 + prev;
+                    rb[lx * 2 + 1] = c3 + next;
+                    g[lx * 2] = g3 + gprev;
+                    g[lx * 2 + 1] = g3 + gnext;
+                    prev = cur;
+                    cur = next;
+                    gprev = gcur;
+                    gcur = gnext;
+                }
+                cached[slot] = ly;
+            }
+        }
+        hn = hrow + (size_t)(near % 3) * 2 * FROST;
+        hf = hrow + (size_t)(far % 3) * 2 * FROST;
+        for (int x = 0; x < FROST; x++) {
+            uint32_t v = hn[x] * 3 + hf[x];                 /* 16 x red and blue */
+            uint32_t g = hn[FROST + x] * 3 + hf[FROST + x]; /* 16 x green */
+
+            out[x] = pack((int)(v >> 4) & 0xFFF, (int)(g >> 4), (int)(v >> 20) & 0xFFF, x, y);
+        }
+    }
+}
+
 /* The frost of face into frost (FROST x FROST): down to a quarter, blurred, graded, up to
- * half. With deep, the deep frost (s_deep) too. light: whether the face is mostly light. */
+ * half. With deep, the deep frost (s_deep) too. light: whether the face is mostly light. Each step half on each core. */
 static bool frost_make(const lv_draw_buf_t *face, lv_draw_buf_t *frost, bool deep, bool *light)
 {
     uint8_t *low = NULL;
     uint32_t *hrow = NULL;
-    float gain;
-    float lift;
-    float sat;
+    uint16_t *acc = NULL;
     uint32_t luma = 0;
 
     GLASS_PERF_START();
 
     tables_init();
     low = lv_malloc(LOW * LOW * 4);
-    /* Three widened rows (red and blue, then green), small and hot: internal RAM if that still
-     * leaves the network its share (this runs every minute, maybe in the middle of a TLS handshake). */
-    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) >= HROW_BYTES + INTERNAL_FLOOR) {
-        hrow = heap_caps_malloc(HROW_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    acc = lv_malloc(2 * LOW * 4 * sizeof(uint16_t));
+    /* Widened rows (red and blue, then green), three per core, small and hot: internal RAM if
+     * that still leaves the network its share (this runs every minute, maybe in the middle of a
+     * TLS handshake). */
+    if (heap_caps_get_free_size(MALLOC_CAP_INTERNAL) >= 2 * HROW_BYTES + INTERNAL_FLOOR) {
+        hrow = heap_caps_malloc(2 * HROW_BYTES, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     }
     if (hrow == NULL) {
-        hrow = heap_caps_malloc(HROW_BYTES, MALLOC_CAP_DEFAULT);
+        hrow = heap_caps_malloc(2 * HROW_BYTES, MALLOC_CAP_DEFAULT);
     }
-    if (low == NULL || hrow == NULL) {
+    if (low == NULL || hrow == NULL || acc == NULL) {
         lv_free(low);
+        lv_free(acc);
         heap_caps_free(hrow);
         return false;
     }
+    s_fm.face = face;
+    s_fm.frost = frost;
+    s_fm.low = low;
+    s_fm.acc[0] = acc;
+    s_fm.acc[1] = acc + LOW * 4;
+    s_fm.hrow[0] = hrow;
+    s_fm.hrow[1] = hrow + HROW_BYTES / sizeof(uint32_t);
     /* Down to a quarter: the sum of each 4x4 block's pixels inside the screen's circle, and
      * how many there are as a fourth channel. Colours stay weighted by it through the blur, so
      * blurring near the rim spreads the face outward instead of pulling the black outside the
-     * circle in. */
-    {
-        /* Raw sums per cell over its four rows (at most 16 x 63), divided once. */
-        uint16_t *acc = lv_malloc(LOW * 4 * sizeof(uint16_t));
-
-        if (acc == NULL) {
-            lv_free(low);
-            heap_caps_free(hrow);
-            return false;
-        }
-        for (int ly = 0; ly < LOW; ly++) {
-            memset(acc, 0, LOW * 4 * sizeof(uint16_t));
-            /* Every other pixel of every other row: the blur that follows hides the difference. */
-            for (int y = ly * 4; y < ly * 4 + 4; y += 2) {
-                const uint16_t *row = (const uint16_t *)(face->data + (size_t)y * face->header.stride);
-                int half = circle_half(y);
-
-                for (int x = (SCREEN / 2 - half + 1) & ~1; half >= 0 && x < SCREEN / 2 + half; x += 2) {
-                    uint16_t v = row[x];
-                    uint16_t *c = acc + (x >> 2) * 4;
-
-                    c[0] += (v >> 11) & 0x1F;
-                    c[1] += (v >> 5) & 0x3F;
-                    c[2] += v & 0x1F;
-                    c[3]++;
-                }
-            }
-            for (int lx = 0; lx < LOW; lx++) {
-                const uint16_t *c = acc + lx * 4;
-                uint8_t *o = low + ((size_t)ly * LOW + lx) * 4;
-
-                /* Four samples: x 255 / (31 x 4) and x 255 / (63 x 4) as multiply and shift. */
-                o[0] = (uint8_t)LV_MIN(255u, (c[0] * 134774u) >> 16);
-                o[1] = (uint8_t)LV_MIN(255u, (c[1] * 66313u) >> 16);
-                o[2] = (uint8_t)LV_MIN(255u, (c[2] * 134774u) >> 16);
-                o[3] = (uint8_t)LV_MIN(255, (c[3] * 255u) >> 2);
-            }
-        }
-        lv_free(acc);
-    }
+     * circle in. Raw sums per cell over its four rows (at most 16 x 63), divided once. */
+    split_rows(frost_down_rows, 0, LOW / 2, LOW);
+    lv_free(acc);
     GLASS_PERF_STEP("down");
     /* Three box passes each way (close to a Gaussian of about 13 px at full size);
      * then, for the deep frost, down by two more and three passes again (about 30 px): a sheet
@@ -439,91 +636,19 @@ static bool frost_make(const lv_draw_buf_t *face, lv_draw_buf_t *frost, bool dee
     }
     /* Light: Sternglas and Modern Silver (white dials), not Avenir's orange. */
     *light = luma / (LOW * LOW) > 165;
-    if (*light) {
-        gain = 0.90f;
-        lift = 22.0f;
-        sat = 1.05f;
-    } else {
-        gain = 0.80f;
-        lift = 20.0f;
-        sat = 1.18f;
-    }
-    /* Graded in place at the low resolution. */
-    for (int i = 0; i < LOW * LOW; i++) {
-        float r = low[i * 3];
-        float g = low[i * 3 + 1];
-        float b = low[i * 3 + 2];
-        float y = 0.21f * r + 0.72f * g + 0.07f * b;
-
-        low[i * 3] = (uint8_t)clampf((y + (r - y) * sat) * gain + lift, 0.0f, 255.0f);
-        low[i * 3 + 1] = (uint8_t)clampf((y + (g - y) * sat) * gain + lift, 0.0f, 255.0f);
-        low[i * 3 + 2] = (uint8_t)clampf((y + (b - y) * sat) * gain + lift, 0.0f, 255.0f);
-    }
+    s_fm.gain = *light ? 0.90f : 0.80f;
+    s_fm.lift = *light ? 22.0f : 20.0f;
+    s_fm.sat = *light ? 1.05f : 1.18f;
+    split_rows(frost_grade_rows, 0, LOW / 2, LOW);
     if (deep && s_deep != NULL) {
-        unweight_grade(s_deep, DEEP, gain, lift, sat);
+        unweight_grade(s_deep, DEEP, s_fm.gain, s_fm.lift, s_fm.sat);
         s_deep_ok = true;
         for (int k = 0; k < 4; k++) {
             s_deep_row_y[k] = -1;
         }
     }
     GLASS_PERF_STEP("grade");
-    /* Up to half resolution bilinearly. A frost pixel sits a quarter of the way between two
-     * low ones each way, so it is (3 near + 1 far) / 4 across and down: shifts and adds, red
-     * and blue at once in 16-bit lanes, green on its own. Each low row is widened once (three
-     * are kept: an output row needs its own and the one above or below); dithered so
-     * gradients do not band. */
-    {
-        int cached[3] = {-1, -1, -1};
-
-        for (int y = 0; y < FROST; y++) {
-            int near = y >> 1;
-            int far = LV_CLAMP(0, (y & 1) ? near + 1 : near - 1, LOW - 1);
-            uint16_t *out = (uint16_t *)(frost->data + (size_t)y * frost->header.stride);
-            const uint32_t *hn;
-            const uint32_t *hf;
-
-            for (int k = 0; k < 2; k++) {
-                int ly = k == 0 ? near : far;
-                int slot = ly % 3;
-
-                if (cached[slot] != ly) {
-                    const uint8_t *lr = low + (size_t)ly * LOW * 3;
-                    uint32_t *rb = hrow + (size_t)slot * 2 * FROST;
-                    uint32_t *g = rb + FROST;
-                    uint32_t prev = RBLANES(lr);
-                    uint32_t cur = prev;
-                    uint32_t gprev = lr[1];
-                    uint32_t gcur = gprev;
-
-                    for (int lx = 0; lx < LOW; lx++) {
-                        const uint8_t *np = lr + (lx + 1 < LOW ? lx + 1 : lx) * 3;
-                        uint32_t next = RBLANES(np);
-                        uint32_t gnext = np[1];
-                        uint32_t c3 = cur * 3;
-                        uint32_t g3 = gcur * 3;
-
-                        rb[lx * 2] = c3 + prev;
-                        rb[lx * 2 + 1] = c3 + next;
-                        g[lx * 2] = g3 + gprev;
-                        g[lx * 2 + 1] = g3 + gnext;
-                        prev = cur;
-                        cur = next;
-                        gprev = gcur;
-                        gcur = gnext;
-                    }
-                    cached[slot] = ly;
-                }
-            }
-            hn = hrow + (size_t)(near % 3) * 2 * FROST;
-            hf = hrow + (size_t)(far % 3) * 2 * FROST;
-            for (int x = 0; x < FROST; x++) {
-                uint32_t v = hn[x] * 3 + hf[x];                 /* 16 x red and blue */
-                uint32_t g = hn[FROST + x] * 3 + hf[FROST + x]; /* 16 x green */
-
-                out[x] = pack((int)(v >> 4) & 0xFFF, (int)(g >> 4), (int)(v >> 20) & 0xFFF, x, y);
-            }
-        }
-    }
+    split_rows(frost_up_rows, 0, FROST / 2, FROST);
     GLASS_PERF_STEP("up");
     lv_free(low);
     heap_caps_free(hrow);
@@ -1099,38 +1224,38 @@ static inline uint16_t shade_px(const ilook_t *il, const rim_t *rp, uint16_t vr,
 }
 
 
-/* A deep frost row at the frost's size (bilinear from DEEP, x 4), made when first asked for: a
- * bake asks for the same few rows over and over. */
-static const uint16_t *deep_row(int32_t fy)
+/* Where each frost column falls between two deep frost columns. */
+static int16_t s_deep_x0[FROST];
+static uint8_t s_deep_wx[FROST];
+static bool s_deep_xs;
+
+static void deep_columns(void)
 {
-    static int16_t x0[FROST];
-    static uint8_t wx[FROST];
-    static bool xs;
-    int slot = fy & 3;
-    uint16_t *out = s_deep_rows[slot];
+    if (!s_deep_xs) {
+        for (int x = 0; x < FROST; x++) {
+            int fx = (x * 2 + 1) * 32 - 128;
+            int i = fx < 0 ? 0 : fx >> 8;
+
+            s_deep_x0[x] = (int16_t)LV_MIN(i, DEEP - 2);
+            s_deep_wx[x] = (uint8_t)(fx < 0 ? 0 : (i >= DEEP - 1 ? 255 : (fx & 255)));
+        }
+        s_deep_xs = true;
+    }
+}
+
+/* A deep frost row at the frost's size (bilinear from DEEP, x 4) into out. */
+static void deep_row_make(int32_t fy, uint16_t *out)
+{
     int f = (fy * 2 + 1) * 32 - 128; /* ((fy + 0.5) / 4 - 0.5) * 256 */
     int y0 = f < 0 ? 0 : LV_MIN(f >> 8, DEEP - 2);
     int wy = f < 0 ? 0 : ((f >> 8) >= DEEP - 1 ? 255 : (f & 255));
     const uint8_t *r0 = s_deep + (size_t)y0 * DEEP * 3;
     const uint8_t *r1 = r0 + DEEP * 3;
 
-    if (s_deep_row_y[slot] == fy) {
-        return out;
-    }
-    if (!xs) {
-        for (int x = 0; x < FROST; x++) {
-            int fx = (x * 2 + 1) * 32 - 128;
-            int i = fx < 0 ? 0 : fx >> 8;
-
-            x0[x] = (int16_t)LV_MIN(i, DEEP - 2);
-            wx[x] = (uint8_t)(fx < 0 ? 0 : (i >= DEEP - 1 ? 255 : (fx & 255)));
-        }
-        xs = true;
-    }
     for (int x = 0; x < FROST; x++) {
-        const uint8_t *a = r0 + x0[x] * 3;
-        const uint8_t *b = r1 + x0[x] * 3;
-        int w = wx[x];
+        const uint8_t *a = r0 + s_deep_x0[x] * 3;
+        const uint8_t *b = r1 + s_deep_x0[x] * 3;
+        int w = s_deep_wx[x];
         int c[3];
 
         for (int k = 0; k < 3; k++) {
@@ -1141,6 +1266,19 @@ static const uint16_t *deep_row(int32_t fy)
         }
         out[x] = pack(c[0], c[1], c[2], x, fy);
     }
+}
+
+/* A deep frost row made when first asked for: a bake asks for the same few rows over and over. */
+static const uint16_t *deep_row(int32_t fy)
+{
+    int slot = fy & 3;
+    uint16_t *out = s_deep_rows[slot];
+
+    if (s_deep_row_y[slot] == fy) {
+        return out;
+    }
+    deep_columns();
+    deep_row_make(fy, out);
     s_deep_row_y[slot] = (int16_t)fy;
     return out;
 }
@@ -1151,6 +1289,14 @@ static lv_draw_buf_t *s_deep_full;
 static uint32_t s_deep_full_gen;
 static bool s_deep_full_ok;
 
+static void deep_full_rows(int32_t y0, int32_t y1, int part)
+{
+    LV_UNUSED(part);
+    for (int32_t y = y0; y < y1; y++) {
+        deep_row_make(y, (uint16_t *)(s_deep_full->data + (size_t)y * s_deep_full->header.stride));
+    }
+}
+
 static const uint16_t *deep_full_row(int32_t fy)
 {
     if (!s_deep_full_ok || s_deep_full_gen != s_generation) {
@@ -1160,9 +1306,8 @@ static const uint16_t *deep_full_row(int32_t fy)
         if (s_deep_full == NULL) {
             return deep_row(fy);
         }
-        for (int32_t y = 0; y < FROST; y++) {
-            memcpy(s_deep_full->data + (size_t)y * s_deep_full->header.stride, deep_row(y), FROST * 2);
-        }
+        deep_columns();
+        split_rows(deep_full_rows, 0, FROST / 2, FROST);
         s_deep_full_gen = s_generation;
         s_deep_full_ok = true;
     }
@@ -1187,38 +1332,20 @@ static inline const uint16_t *frost_row(int32_t y)
  * time (at idle). */
 static lv_draw_buf_t *s_sheet_ground;
 static uint32_t s_sheet_ground_gen;
-static int32_t s_sheet_ground_row = -1; /* rows done; -1 none */
+static bool s_sheet_ground_ok; /* built (in part) for s_sheet_ground_gen */
 static bool s_hollow;                   /* drawing a moving sheet's snapshot: no body */
 /* On a page (no sheet then) the same buffer holds the page ground: what the page's clear glass
  * shows of the ground behind it, screen-fixed, for rows while they scroll. */
 static bool s_ground_is_page;
 
-static bool sheet_ground_build(uint32_t budget_ms)
+static ilook_t s_ground_il; /* the look a ground is being built with */
+
+static void sheet_ground_rows(int32_t y0, int32_t y1, int part)
 {
-    uint32_t start = lv_tick_get();
-    look_t l;
-    ilook_t il;
+    bake_scratch_t *sc = &s_scratch[part];
 
-    if (!s_frost_ok || !s_back_ok || s_mode != UI_GLASS_FACE || screen_buf(&s_sheet_ground) == NULL) {
-        return false;
-    }
-    if (s_sheet_ground_gen != s_generation || s_sheet_ground_row < 0 || s_ground_is_page) {
-        s_sheet_ground_gen = s_generation;
-        s_sheet_ground_row = 0;
-        s_ground_is_page = false;
-    }
-    if (s_sheet_ground_row >= SCREEN) {
-        return true;
-    }
-    l = look_of(UI_GLASS_SHEET, lv_color_black(), UI_GLASS_FACE);
-    il = ilook_of(&l, UI_GLASS_FACE);
-    GLASS_PERF_START();
-    int32_t row_from = s_sheet_ground_row;
-
-    (void)row_from;
-    while (s_sheet_ground_row < SCREEN) {
-        int32_t y = s_sheet_ground_row++;
-        const uint16_t *bk = back_row(&s_scratch[0], y);
+    for (int32_t y = y0; y < y1; y++) {
+        const uint16_t *bk = back_row(sc, y);
         const uint16_t *f = (const uint16_t *)(s_frost->data + (size_t)(y >> 1) * s_frost->header.stride);
         uint16_t *out = (uint16_t *)(s_sheet_ground->data + (size_t)y * s_sheet_ground->header.stride);
         int half = circle_half(y);
@@ -1232,16 +1359,82 @@ static bool sheet_ground_build(uint32_t budget_ms)
             uint16_t fv = f[x >> 1];
             int c[3];
 
-            body(&il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[fv >> 11], s_e6[(fv >> 5) & 63],
-                 s_e5[fv & 31], c);
+            body(&s_ground_il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[fv >> 11],
+                 s_e6[(fv >> 5) & 63], s_e5[fv & 31], c);
             out[x] = pack(c[0], c[1], c[2], x, y);
         }
-        if ((y & 15) == 15 && lv_tick_elaps(start) >= budget_ms) {
+    }
+}
+
+/* Grounds are built GROUND_ROWS rows at a time, half on each core: made in one go (a sheet
+ * pulled as the minute turns) it took the frame about 214 ms on one. */
+#define GROUND_ROWS 32
+
+/* The sheet's ground is built in bands, at idle from the top down and, for a sheet pulled up
+ * before it is done, the bands it shows first: the pull's frames share the rest. */
+#define GROUND_BAND 16
+#define GROUND_BANDS (SCREEN / GROUND_BAND)
+
+static uint64_t s_sheet_ground_bands; /* built for s_sheet_ground_gen, one bit a band */
+
+static bool sheet_ground_band_built(int32_t band)
+{
+    return (s_sheet_ground_bands >> band) & 1u;
+}
+
+/* Builds the bands of rows [y0, y1) not built yet, two at a time (half on each core), for at
+ * most budget_ms. Whether they are all built. */
+static bool sheet_ground_bands(int32_t y0, int32_t y1, uint32_t budget_ms)
+{
+    uint32_t start = lv_tick_get();
+    int32_t b1 = LV_MIN((y1 + GROUND_BAND - 1) / GROUND_BAND, GROUND_BANDS);
+    int32_t rows = 0;
+    look_t l;
+
+    if (!s_frost_ok || !s_back_ok || s_mode != UI_GLASS_FACE || screen_buf(&s_sheet_ground) == NULL) {
+        return false;
+    }
+    if (s_sheet_ground_gen != s_generation || !s_sheet_ground_ok || s_ground_is_page) {
+        s_sheet_ground_gen = s_generation;
+        s_sheet_ground_ok = true;
+        s_sheet_ground_bands = 0;
+        s_ground_is_page = false;
+    }
+    l = look_of(UI_GLASS_SHEET, lv_color_black(), UI_GLASS_FACE);
+    s_ground_il = ilook_of(&l, UI_GLASS_FACE);
+    s_scratch[0].frosted = false;
+    s_scratch[1].frosted = false;
+    GLASS_PERF_START();
+    for (int32_t b = LV_MAX(y0, 0) / GROUND_BAND; b < b1;) {
+        int32_t n;
+
+        if (sheet_ground_band_built(b)) {
+            b++;
+            continue;
+        }
+        if (rows > 0 && lv_tick_elaps(start) >= budget_ms) {
             break;
         }
+        n = b + 1 < b1 && !sheet_ground_band_built(b + 1) ? 2 : 1;
+        split_rows(sheet_ground_rows, b * GROUND_BAND, b * GROUND_BAND + n * GROUND_BAND / 2, (b + n) * GROUND_BAND);
+        s_sheet_ground_bands |= (n == 2 ? 3ull : 1ull) << b;
+        rows += n * GROUND_BAND;
+        b += n;
     }
-    GLASS_PERF_END("sheet_ground", SCREEN, s_sheet_ground_row - row_from);
-    return s_sheet_ground_row >= SCREEN;
+    if (rows > 0) {
+        GLASS_PERF_END("sheet_ground", SCREEN, rows);
+    }
+    for (int32_t b = LV_MAX(y0, 0) / GROUND_BAND; b < b1; b++) {
+        if (!sheet_ground_band_built(b)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool sheet_ground_build(uint32_t budget_ms)
+{
+    return sheet_ground_bands(0, SCREEN, budget_ms);
 }
 
 /* One pixel the slow way (corners): exact distance and normal, the ground outside the shape. */
@@ -1445,11 +1638,48 @@ static int32_t s_page_ground_row = -1; /* rows done; -1 none */
 static uint32_t s_page_ground_gen;
 static lv_timer_t *s_page_ground_timer;
 
+/* As flat_px: one colour per 2 x 2 pixels (the frost's own grain), each pixel dithered. Rows go
+ * in pairs: y0 is even. */
+static void page_ground_rows(int32_t y0, int32_t y1, int part)
+{
+    bake_scratch_t *sc = &s_scratch[part];
+    int16_t(*c)[3] = sc->flat;
+
+    for (int32_t y = y0; y < y1; y++) {
+        uint16_t *out = (uint16_t *)(s_sheet_ground->data + (size_t)y * s_sheet_ground->header.stride);
+
+        if (circle_half(y) < 0 && circle_half(y ^ 1) < 0) {
+            memset(out, 0, SCREEN * 2);
+            continue;
+        }
+        if (!(y & 1)) {
+            const uint16_t *brow = back_row(sc, y);
+            const uint16_t *frow = frost_row(y);
+
+            for (int32_t fx = 0; fx < FROST; fx++) {
+                uint16_t v = brow[fx << 1];
+                uint16_t f = frow[fx];
+                int k[3];
+
+                body(&s_ground_il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[f >> 11],
+                     s_e6[(f >> 5) & 63], s_e5[f & 31], k);
+                c[fx][0] = (int16_t)k[0];
+                c[fx][1] = (int16_t)k[1];
+                c[fx][2] = (int16_t)k[2];
+            }
+        }
+        for (int32_t x = 0; x < SCREEN; x++) {
+            const int16_t *k = c[x >> 1];
+
+            out[x] = pack(k[0], k[1], k[2], x, y);
+        }
+    }
+}
+
 static bool page_ground_build(uint32_t budget_ms)
 {
     uint32_t start = lv_tick_get();
     look_t l;
-    ilook_t il;
 
     if (!s_frost_ok || !s_back_ok || s_mode != UI_GLASS_PAGE || screen_buf(&s_sheet_ground) == NULL) {
         return false;
@@ -1463,50 +1693,27 @@ static bool page_ground_build(uint32_t budget_ms)
         return true;
     }
     l = look_of(UI_GLASS_CLEAR, lv_color_black(), UI_GLASS_PAGE);
-    il = ilook_of(&l, UI_GLASS_PAGE);
+    s_ground_il = ilook_of(&l, UI_GLASS_PAGE);
     s_scratch[0].frosted = false;
+    s_scratch[1].frosted = false;
     GLASS_PERF_START();
     int32_t row_from = s_page_ground_row;
 
     (void)row_from;
-    /* As flat_px: one colour per 2 x 2 pixels (the frost's own grain), each pixel dithered. Rows
-     * go in pairs, so a slice starts on an even row. */
     while (s_page_ground_row < SCREEN) {
-        int32_t y = s_page_ground_row++;
-        uint16_t *out = (uint16_t *)(s_sheet_ground->data + (size_t)y * s_sheet_ground->header.stride);
-        int16_t(*c)[3] = s_scratch[0].flat;
+        int32_t y0 = s_page_ground_row;
+        int32_t y1 = LV_MIN(y0 + GROUND_ROWS, SCREEN);
 
-        if (circle_half(y) < 0 && circle_half(y ^ 1) < 0) {
-            memset(out, 0, SCREEN * 2);
-            continue;
-        }
-        if (!(y & 1)) {
-            const uint16_t *brow = back_row(&s_scratch[0], y);
-            const uint16_t *frow = frost_row(y);
-
-            for (int32_t fx = 0; fx < FROST; fx++) {
-                uint16_t v = brow[fx << 1];
-                uint16_t f = frow[fx];
-                int k[3];
-
-                body(&il, s_e5[v >> 11], s_e6[(v >> 5) & 63], s_e5[v & 31], s_e5[f >> 11], s_e6[(f >> 5) & 63],
-                     s_e5[f & 31], k);
-                c[fx][0] = (int16_t)k[0];
-                c[fx][1] = (int16_t)k[1];
-                c[fx][2] = (int16_t)k[2];
-            }
-        }
-        for (int32_t x = 0; x < SCREEN; x++) {
-            const int16_t *k = c[x >> 1];
-
-            out[x] = pack(k[0], k[1], k[2], x, y);
-        }
-        if ((y & 1) && lv_tick_elaps(start) >= budget_ms) {
+        split_rows(page_ground_rows, y0, (y0 + (y1 - y0) / 2) & ~1, y1);
+        s_page_ground_row = y1;
+        if (lv_tick_elaps(start) >= budget_ms) {
             break;
         }
     }
-    for (int i = 0; i < FROST; i++) {
-        s_scratch[0].flat_fy[i] = -1; /* the bakes' cache of flat colours was used here */
+    for (int k = 0; k < 2; k++) {
+        for (int i = 0; i < FROST; i++) {
+            s_scratch[k].flat_fy[i] = -1; /* the bakes' cache of flat colours was used here */
+        }
     }
     GLASS_PERF_END("page_ground", SCREEN, s_page_ground_row - row_from);
     return s_page_ground_row >= SCREEN;
@@ -1662,38 +1869,12 @@ static void bake_rows(const bake_job_t *j, int32_t y0, int32_t y1, bake_scratch_
     }
 }
 
-#if defined(ESP_PLATFORM)
-/* The second half of a bake, on the other core (the UI thread does the first). */
-static TaskHandle_t s_bake_task;
-static SemaphoreHandle_t s_bake_go;
-static SemaphoreHandle_t s_bake_done;
 static const bake_job_t *s_bake_job;
-static int32_t s_bake_from;
 
-static void bake_worker(void *arg)
+static void bake_job_rows(int32_t y0, int32_t y1, int part)
 {
-    LV_UNUSED(arg);
-    for (;;) {
-        xSemaphoreTake(s_bake_go, portMAX_DELAY);
-        bake_rows(s_bake_job, s_bake_from, s_bake_job->h, &s_scratch[1]);
-        xSemaphoreGive(s_bake_done);
-    }
+    bake_rows(s_bake_job, y0, y1, &s_scratch[part]);
 }
-
-static bool bake_worker_ready(void)
-{
-    if (s_bake_task == NULL) {
-        s_bake_go = xSemaphoreCreateBinary();
-        s_bake_done = xSemaphoreCreateBinary();
-        if (s_bake_go == NULL || s_bake_done == NULL ||
-            xTaskCreate(bake_worker, "glass_bake", 6144, NULL, CONFIG_LV_DRAW_THREAD_PRIO + 2, &s_bake_task) != pdPASS) {
-            s_bake_task = NULL;
-            return false;
-        }
-    }
-    return true;
-}
-#endif
 
 /* Bakes the shape: its rows split between the two cores. */
 static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_glass_kind_t kind, lv_color_t tint)
@@ -1750,20 +1931,13 @@ static void bake_render(bake_t *b, const lv_area_t *area, int32_t radius, ui_gla
     if ((area->y1 + half) & 1) {
         half++;
     }
+    s_bake_job = jp;
 #if defined(ESP_PLATFORM)
-    if (jp->w * jp->h >= 6000 && jp->h >= 16 && bake_worker_ready()) {
-        s_bake_job = jp;
-        s_bake_from = half;
-        xSemaphoreGive(s_bake_go);
-        bake_rows(jp, 0, half, &s_scratch[0]);
-        xSemaphoreTake(s_bake_done, portMAX_DELAY);
-    } else {
-        bake_rows(jp, 0, jp->h, &s_scratch[0]);
+    if (jp->w * jp->h < 6000 || jp->h < 16) {
+        half = jp->h; /* too small to be worth the other core */
     }
-#else
-    bake_rows(jp, 0, half, &s_scratch[0]);
-    bake_rows(jp, half, jp->h, &s_scratch[1]);
 #endif
+    split_rows(bake_job_rows, 0, half, jp->h);
     s_scratch[0].frosted = false;
     s_scratch[1].frosted = false;
     b->x = (int16_t)area->x1;
@@ -1955,7 +2129,7 @@ void ui_glass_release(void)
     }
     s_corner_bytes = 0;
     s_deep_full_ok = false;
-    s_sheet_ground_row = -1;
+    s_sheet_ground_ok = false;
     lv_free(s_deep);
     s_deep = NULL;
     s_deep_ok = false;
@@ -2050,7 +2224,11 @@ static void draw_view_rounded(lv_layer_t *layer, const lv_draw_buf_t *src, const
 
 void ui_glass_draw_sheet_ground(lv_layer_t *layer, const lv_area_t *area, int32_t radius)
 {
-    if (s_frost_ok && sheet_ground_build(UINT32_MAX)) {
+    lv_area_t vis;
+
+    /* Only the rows it is drawn on now. */
+    if (s_frost_ok && lv_area_intersect(&vis, area, &layer->_clip_area) &&
+        sheet_ground_bands(vis.y1, vis.y2 + 1, UINT32_MAX)) {
         draw_view_rounded(layer, s_sheet_ground, area, radius);
     }
 }

@@ -262,8 +262,8 @@ static void face_slide_prepare_side(clock_ui_context_t *ctx, int32_t offset)
 }
 
 /* Liquid Glass: snapshots the face and builds the glass backdrop for mode, unless it already
- * shows this face as it is now. */
-void face_glass_capture(clock_ui_context_t *ctx, int mode_in)
+ * shows this face as it is now. Whether it built anything. */
+bool face_glass_capture(clock_ui_context_t *ctx, int mode_in)
 {
     static clock_face_id_t s_face = CLOCK_FACE_COUNT;
     static long s_minute = -1;
@@ -274,28 +274,29 @@ void face_glass_capture(clock_ui_context_t *ctx, int mode_in)
     bool same_face;
 
     if (!ui_skin_is_glass() || ctx->faces.face_slide_active) {
-        return;
+        return false;
     }
     face = face_slide_current(ctx);
     same_face = ui_glass_backdrop_ready() && face == s_face && minute == s_minute &&
                 ctx->settings->face_themes[face] == s_theme;
     if (same_face && ui_glass_backdrop_mode() == mode) {
-        return;
+        return false;
     }
     /* The frost (the slow part) is only rebuilt for a new face or minute; going from the face
      * to a page only dims what the glass refracts. */
     if (same_face && mode == UI_GLASS_PAGE && ui_glass_backdrop_to_page(screen_scratch(ctx))) {
         ctx->faces.face_slide_shots[0].face = CLOCK_FACE_COUNT;
-        return;
+        return true;
     }
     if (!face_slide_snapshot(ctx, face, 0)) {
-        return;
+        return false;
     }
     ui_glass_backdrop_identity((uint32_t)face | (uint32_t)ctx->settings->face_themes[face] << 8);
     ui_glass_backdrop_build(ctx->faces.face_slide_bufs[0], mode, !same_face);
     s_face = face;
     s_minute = minute;
     s_theme = ctx->settings->face_themes[face];
+    return true;
 }
 
 /* While the face sits idle, snapshots its neighbours ahead of a slide, one per call: again
@@ -319,6 +320,11 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
     }
     current = face_slide_current(ctx);
     if (face_shell_active_face(ctx) != current) {
+        return;
+    }
+    /* Liquid Glass: a turned minute's glass before the neighbours' snapshots. A sheet pulled
+     * up before it was made made it in its first frame (a stall of a few hundred ms). */
+    if (face_glass_capture(ctx, UI_GLASS_FACE)) {
         return;
     }
     for (int8_t dir = 1; dir >= -1; dir -= 2) {
