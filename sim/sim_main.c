@@ -14,7 +14,7 @@
  *   call <name>                    run a named debug call (ui_debug_register in the areas)
  *   set <key> <value>              change settings or runtime state; keys: style (0 Instrument,
  *                                  1 Orbit, 2 Atelier), face, language (0 en 1 pl 2 uk 3 ru 4 nl),
- *                                  night_active, alarm_ringing, alarm_math, ota_available,
+ *                                  night_face, night_active, alarm_ringing, alarm_math, ota_available,
  *                                  ota_progress, ota_configured, wifi_connected, wifi_scanning,
  *                                  wifi_ssid_empty, time_synced, time_sync_manual, brightness,
  *                                  night_enabled, snooze_minutes_left, next_alarm_minutes,
@@ -454,6 +454,8 @@ static bool apply_set(const char *key, const char *value)
         s_settings.face_themes[s_settings.current_face] = (uint8_t)v;
     } else if (strcmp(key, "language") == 0) {
         s_settings.language = (uint8_t)v;
+    } else if (strcmp(key, "night_face") == 0) {
+        s_settings.night_mode.face = (clock_face_id_t)v;
     } else if (strcmp(key, "night_active") == 0) {
         s_runtime.in_night_mode = v != 0;
     } else if (strcmp(key, "alarm_ringing") == 0) {

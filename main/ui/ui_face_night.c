@@ -68,8 +68,8 @@ static night_layout_t night_layout(clock_face_id_t face)
     case CLOCK_FACE_NOCTURNE:
         /* Between the date and the hill; the face has its own moon. */
         l.moon_y = -1;
-        l.row_y = 470;
-        l.count_y = 514;
+        l.row_y = 494;
+        l.count_y = 538;
         break;
     case CLOCK_FACE_FILAMENT:
         /* Under the tube sockets. */

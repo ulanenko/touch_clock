@@ -3,7 +3,7 @@
  * canvas). Each is one RGB565 canvas over a static layer:
  *
  *   Ember     red-shifted analog, no numerals, no seconds.
- *   Nocturne  today's moon over a faint star field and a low hill; the time in a light serif.
+ *   Nocturne  today's moon over a faint star field and a low hill; the time in a large serif.
  *   Filament  four dark nixie tubes with the cathode digits as faint outlines.
  *
  * The static layer (base) is drawn once per theme and day. A tick restores the base only
@@ -412,6 +412,11 @@ static const ui_l10n_str_t s_phases[8] = {
     UI_L10N_STR("Waning crescent", "Ubywający sierp", "Старий місяць", "Убывающий серп", "Afnemende sikkel"),
 };
 
+/* The time and the date under it, shared with Daybreak so the morning keeps them in place. */
+#define NOCTURNE_TIME_FONT (&ev_serif_medium_224)
+#define NOCTURNE_TIME_Y 396
+#define NOCTURNE_DATE_Y 456
+
 #define MOON_X 360.0f
 #define MOON_Y 150.0f
 #define MOON_R 38.0f
@@ -753,7 +758,7 @@ static void nocturne_base(clock_ui_context_t *ctx, const nocturne_palette_t *p, 
     snprintf(text, sizeof(text), "%s %d %s", ui_weekday_name(ctx, ti->tm_wday), ti->tm_mday,
              ui_month_name(ctx, ti->tm_mon, true));
     ev_upper(upper, sizeof(upper), text);
-    ev_text(&layer, &ev_sans_16, p->labels, 3, upper, EV_CENTER, 432);
+    ev_text(&layer, &ev_sans_16, p->labels, 3, upper, EV_CENTER, NOCTURNE_DATE_Y);
     ev_base_canvas_done(canvas, &layer);
 }
 
@@ -788,7 +793,7 @@ static void update_nocturne(clock_ui_context_t *ctx)
         return;
     }
     snprintf(clock, sizeof(clock), "%02d:%02d", ti.tm_hour, ti.tm_min);
-    ev_text(&layer, &ev_serif_light_176, p.time, 0, clock, EV_CENTER, 372);
+    ev_text(&layer, NOCTURNE_TIME_FONT, p.time, 0, clock, EV_CENTER, NOCTURNE_TIME_Y);
     face_hands_finish(&ev->view, NULL, &layer, dirty, 0);
     ev->shown_min = minute;
 }
@@ -1340,11 +1345,12 @@ void ui_daybreak_render(clock_ui_context_t *ctx, lv_draw_buf_t *buf, const ui_da
         ev_text(&layer, &ev_sans_12, db_u32(db_mix(db_sky_at(stops, 214.0f), ink, 0.5f)), 3, upper, EV_CENTER, 220);
     }
     snprintf(clock, sizeof(clock), "%02d:%02d", ti.tm_hour, ti.tm_min);
-    ev_text(&layer, &ev_serif_light_176, db_u32(db_mix(behind, ink, 0.92f)), 0, clock, EV_CENTER, 372);
+    ev_text(&layer, NOCTURNE_TIME_FONT, db_u32(db_mix(behind, ink, 0.92f)), 0, clock, EV_CENTER, NOCTURNE_TIME_Y);
     snprintf(text, sizeof(text), "%s %d %s", ui_weekday_name(ctx, ti.tm_wday), ti.tm_mday,
              ui_month_name(ctx, ti.tm_mon, true));
     ev_upper(upper, sizeof(upper), text);
-    ev_text(&layer, &ev_sans_16, db_u32(db_mix(db_sky_at(stops, 426.0f), ink, 0.62f)), 3, upper, EV_CENTER, 432);
+    ev_text(&layer, &ev_sans_16, db_u32(db_mix(db_sky_at(stops, (float)NOCTURNE_DATE_Y - 6.0f), ink, 0.62f)), 3, upper,
+            EV_CENTER, NOCTURNE_DATE_Y);
     lv_canvas_finish_layer(canvas, &layer);
     lv_obj_delete(canvas);
 }
