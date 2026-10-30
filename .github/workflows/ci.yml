@@ -10,53 +10,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
+      # Sanitizers: a bool read from a 0xFF byte passed on macOS's clang and failed here.
       - name: Run host tests
         run: |
-          cmake -S tests/host -B /tmp/touch_clock_host_tests
+          cmake -S tests/host -B /tmp/touch_clock_host_tests \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_C_FLAGS="-fsanitize=address,undefined -fno-sanitize-recover=all"
           cmake --build /tmp/touch_clock_host_tests
           ctest --test-dir /tmp/touch_clock_host_tests --output-on-failure
 
   firmware-build:
     runs-on: ubuntu-latest
+    container: espressif/idf:v5.5.3
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            cmake \
-            ninja-build \
-            ccache \
-            git \
-            wget \
-            flex \
-            bison \
-            gperf \
-            pkg-config \
-            libffi-dev \
-            libssl-dev \
-            dfu-util \
-            libusb-1.0-0
-
-      - name: Install ESP-IDF
-        env:
-          IDF_VERSION: v5.5.3
-        run: |
-          git clone --depth 1 --branch "${IDF_VERSION}" https://github.com/espressif/esp-idf.git "$HOME/esp-idf"
-          python -m pip install --upgrade pip
-          python -m pip install -r "$HOME/esp-idf/requirements.txt"
-          "$HOME/esp-idf/install.sh" esp32p4
-
       - name: Build firmware
+        shell: bash
         run: |
-          . "$HOME/esp-idf/export.sh"
+          . "$IDF_PATH/export.sh"
           idf.py build

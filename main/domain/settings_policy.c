@@ -10,6 +10,16 @@ static clock_face_id_t default_night_face(void)
     return face_catalog_default_face();
 }
 
+/* A bool loaded from flash (a u8 key, a blob) can hold any byte, and `b ? true : false` reads
+ * it as the compiler likes; the byte itself is what was saved. */
+static void bool_sanitize(bool *b)
+{
+    uint8_t raw;
+
+    memcpy(&raw, b, sizeof(raw));
+    *b = raw != 0;
+}
+
 void settings_policy_sanitize(app_settings_t *settings)
 {
     if (settings->base_brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
@@ -19,7 +29,7 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (settings->alarm_volume > 100) {
         settings->alarm_volume = 70;
     }
-    settings->ui_click_sound_enabled = settings->ui_click_sound_enabled ? true : false;
+    bool_sanitize(&settings->ui_click_sound_enabled);
     if (settings->ui_click_volume > 100) {
         settings->ui_click_volume = 70;
     }
@@ -31,9 +41,8 @@ void settings_policy_sanitize(app_settings_t *settings)
     }
     if (settings->ui_style >= CLOCK_UI_STYLE_COUNT) {
         settings->ui_style = CLOCK_UI_STYLE_DEFAULT;
-    settings->default_alarm_sound = ALARM_SOUND_MORNING_LIGHT;
     }
-    settings->ascending_alarm_enabled = settings->ascending_alarm_enabled ? true : false;
+    bool_sanitize(&settings->ascending_alarm_enabled);
 
     if (settings->snooze_minutes < 1 || settings->snooze_minutes > 60) {
         settings->snooze_minutes = 10;
@@ -61,8 +70,8 @@ void settings_policy_sanitize(app_settings_t *settings)
     if (settings->night_mode.brightness > DISPLAY_BRIGHTNESS_MAX_PERCENT) {
         settings->night_mode.brightness = 0;
     }
-    settings->night_mode.sunrise_brightness_enabled =
-        settings->night_mode.sunrise_brightness_enabled ? true : false;
+    bool_sanitize(&settings->night_mode.enabled);
+    bool_sanitize(&settings->night_mode.sunrise_brightness_enabled);
     if (settings->night_mode.sunrise_minutes != 10 && settings->night_mode.sunrise_minutes != 20 &&
         settings->night_mode.sunrise_minutes != 30) {
         settings->night_mode.sunrise_minutes = 20;
@@ -71,7 +80,7 @@ void settings_policy_sanitize(app_settings_t *settings)
         settings->night_mode.sunrise_peak != 80) {
         settings->night_mode.sunrise_peak = 60;
     }
-    settings->night_mode.sunrise_chime = settings->night_mode.sunrise_chime ? true : false;
+    bool_sanitize(&settings->night_mode.sunrise_chime);
     if (settings->night_mode.sunrise_face > 3) {
         settings->night_mode.sunrise_face = 1;
     }
@@ -114,7 +123,8 @@ void settings_policy_sanitize(app_settings_t *settings)
         if (settings->alarms[i].days_mask == 0) {
             settings->alarms[i].days_mask = 0x7F;
         }
-        settings->alarms[i].math_unlock_enabled = settings->alarms[i].math_unlock_enabled ? true : false;
+        bool_sanitize(&settings->alarms[i].enabled);
+        bool_sanitize(&settings->alarms[i].math_unlock_enabled);
         if (settings->alarms[i].sound >= ALARM_SOUND_COUNT) {
             settings->alarms[i].sound = ALARM_SOUND_MORNING_LIGHT;
         }

@@ -5,6 +5,14 @@
 #include "domain/timezone_rules.h"
 #include "test_support.h"
 
+static unsigned bool_byte(const bool *b)
+{
+    unsigned char raw;
+
+    memcpy(&raw, b, sizeof(raw));
+    return raw;
+}
+
 static int test_defaults(void)
 {
     app_settings_t settings;
@@ -90,6 +98,32 @@ static int test_sanitize_invalid_values(void)
     EXPECT_TRUE(settings.alarms[0].math_unlock_enabled);
     EXPECT_EQ_INT(-1, settings.skipped_alarm_index);
     EXPECT_EQ_INT(0, settings.skipped_alarm_epoch);
+
+    /* Every bool came from a 0xFF byte: each is now exactly true. */
+    EXPECT_EQ_INT(1, bool_byte(&settings.ui_click_sound_enabled));
+    EXPECT_EQ_INT(1, bool_byte(&settings.ascending_alarm_enabled));
+    EXPECT_EQ_INT(1, bool_byte(&settings.night_mode.enabled));
+    EXPECT_EQ_INT(1, bool_byte(&settings.night_mode.sunrise_brightness_enabled));
+    EXPECT_EQ_INT(1, bool_byte(&settings.night_mode.sunrise_chime));
+    for (size_t i = 0; i < MAX_ALARMS; ++i) {
+        EXPECT_EQ_INT(1, bool_byte(&settings.alarms[i].enabled));
+        EXPECT_EQ_INT(1, bool_byte(&settings.alarms[i].math_unlock_enabled));
+    }
+    return 0;
+}
+
+static int test_sanitize_ui_style_keeps_alarm_sound(void)
+{
+    app_settings_t settings;
+
+    settings_policy_set_defaults(&settings);
+    settings.ui_style = 0xFF;
+    settings.default_alarm_sound = ALARM_SOUND_MARIMBA;
+
+    settings_policy_sanitize(&settings);
+
+    EXPECT_EQ_INT(CLOCK_UI_STYLE_DEFAULT, settings.ui_style);
+    EXPECT_EQ_INT(ALARM_SOUND_MARIMBA, settings.default_alarm_sound);
     return 0;
 }
 
@@ -104,5 +138,10 @@ int main(void)
         return status;
     }
 
-    return test_sanitize_invalid_values();
+    status = test_sanitize_invalid_values();
+    if (status != 0) {
+        return status;
+    }
+
+    return test_sanitize_ui_style_keeps_alarm_sound();
 }
