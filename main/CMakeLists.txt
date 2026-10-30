@@ -68,3 +68,7 @@ foreach(original patched IN ZIP_LISTS lvgl_originals lvgl_patched)
     set_source_files_properties("${patched}" DIRECTORY "${lvgl_dir}" PROPERTIES COMPILE_OPTIONS "-iquote${original_dir}")
     target_sources(${lvgl_lib} PRIVATE "${patched}")
 endforeach()
+
+# LVGL's allocator (ui/ui_lv_mem.c, CONFIG_LV_USE_CUSTOM_MALLOC) is called only from LVGL,
+# linked after this component: pull it in.
+target_link_libraries(${COMPONENT_LIB} INTERFACE "-u lv_malloc_core")

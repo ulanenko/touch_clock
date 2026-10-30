@@ -386,6 +386,17 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   place on the screen (identical pixels in the simulator). Night page dragged: 102 -> 55 draw
   tasks. On the clock, Night scrolling 28.2 -> 25.8 ms (slow scroll 30.3 -> 27.8 ms, no frame
   over 33 ms, was 12), Other slow scroll 29.0 -> 27.0 ms.
+- **LVGL allocates from PSRAM** (`ui/ui_lv_mem.c`, `CONFIG_LV_USE_CUSTOM_MALLOC`). Through
+  `malloc`, its objects, styles and draw tasks (all under 16 KB) filled the internal RAM `malloc`
+  can use: 16 bytes of it were free 20 s after a boot, and the draw threads' stacks, DMA buffers
+  and the network had only the 32 KB reserved for internal-only allocations (about 23 KB free).
+  Internal RAM free 25 -> 92 KB, the reserve untouched; the tour's low point 18.6 -> 77 KB.
+  Costs: PSRAM about 54 KB; frames 0.3-0.7 ms longer, the frames that open a page (settings,
+  alarms) about 1.5 ms and the night-face picker 1.3 ms (the objects and styles read through
+  the cache). Keeping the blocks a frame makes and drops (its draw tasks) in internal RAM won
+  only about 0.3 ms back on scrolls and nothing on page opens, so it was not kept.
+- Seen meanwhile: the quick sheet pulled as the minute turns stalls one frame about 230 ms (the
+  face's backdrop and frost, the sheet's snapshot and its ground all made again at once).
 
 ## Open findings, by priority (*unverified* unless measured)
 
