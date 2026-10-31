@@ -987,6 +987,12 @@ static void reveal_done_cb(lv_anim_t *anim)
     reveal_apply(ctx);
 }
 
+/* Before a chrome rebuild: the reveal runs on the context, which outlives the controls. */
+void face_controls_destroy(clock_ui_context_t *ctx)
+{
+    lv_anim_delete(ctx, reveal_anim_cb);
+}
+
 /* Starts the entrance (mode 1) or the exit (mode 2) from its beginning. */
 static void reveal_start(clock_ui_context_t *ctx, uint8_t mode)
 {

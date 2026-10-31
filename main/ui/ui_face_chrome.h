@@ -110,6 +110,7 @@ bool face_sheet_click_blocked(const face_sheet_t *sheet);
 /* --- Controls over the face (ui_face_controls.c) --------------------------------------- */
 
 void face_controls_create(clock_ui_context_t *ctx);
+void face_controls_destroy(clock_ui_context_t *ctx);
 void face_controls_show(clock_ui_context_t *ctx);
 /* The same without the entrance, refreshed for the face now shown (after a face slide). */
 void face_controls_show_still(clock_ui_context_t *ctx);
