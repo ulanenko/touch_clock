@@ -35,7 +35,11 @@
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
+#if defined(__APPLE__)
 #include <malloc/malloc.h>
+#else
+#include <malloc.h>
+#endif
 #include <stdio.h>
 #include "ui/ui_microbench.h"
 #include <unistd.h>
@@ -1133,10 +1137,16 @@ static int run_scenario(FILE *f)
             sleep((unsigned)ms);
         } else if (strcmp(cmd, "mem") == 0) {
             /* Heap in use, to find what holds memory after a step. */
+#if defined(__APPLE__)
             malloc_statistics_t stats;
 
             malloc_zone_statistics(NULL, &stats);
             printf("mem %zu KB %s", stats.size_in_use / 1024, line + 4);
+#else
+            struct mallinfo2 info = mallinfo2();
+
+            printf("mem %zu KB %s", info.uordblks / 1024, line + 4);
+#endif
         } else if (strcmp(cmd, "microbench") == 0 && sscanf(line, "%*s %63s", a) == 1) {
             microbench(a);
         } else if (strcmp(cmd, "timecall") == 0 && sscanf(line, "%*s %63s", a) == 1) {

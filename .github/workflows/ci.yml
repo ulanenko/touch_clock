@@ -30,3 +30,26 @@ jobs:
         run: |
           . "$IDF_PATH/export.sh"
           idf.py build
+
+      # The simulator (sim/) on the components and sdkconfig the build above made, under
+      # sanitizers: a few scenarios through every area must run to the end with every shot,
+      # and nothing of ours may trip ASan or UBSan (LVGL's own reports are left to LVGL).
+      - name: Simulator smoke test
+        shell: bash
+        run: |
+          apt-get update -qq && apt-get install -y -qq zlib1g-dev
+          cmake -S sim -B /tmp/sim -DSIM_ASAN=ON \
+            -DLVGL_DIR="$PWD/managed_components/lvgl__lvgl" -DSDKCONFIG="$PWD/sdkconfig"
+          cmake --build /tmp/sim -j"$(nproc)"
+          for scenario in smoke settings_screens alarms_orbit; do
+            expected=$(grep -c '^shot ' "sim/scenarios/$scenario.txt")
+            mkdir -p "/tmp/shots/$scenario"
+            /tmp/sim/sim "sim/scenarios/$scenario.txt" "/tmp/shots/$scenario" > "/tmp/$scenario.log" 2>&1 \
+              || { tail -40 "/tmp/$scenario.log"; exit 1; }
+            shots=$(ls "/tmp/shots/$scenario" | wc -l)
+            ours=$(grep -E 'ERROR: AddressSanitizer|runtime error' "/tmp/$scenario.log" | grep -v managed_components || true)
+            echo "$scenario: $shots of $expected shots"
+            if [ "$shots" -ne "$expected" ] || [ -n "$ours" ]; then
+              echo "$ours"; tail -40 "/tmp/$scenario.log"; exit 1
+            fi
+          done
