@@ -64,7 +64,6 @@ void request_set_alarm_enabled(clock_ui_context_t *ctx, uint8_t alarm_index, boo
 void request_save_alarm(clock_ui_context_t *ctx, uint8_t alarm_index, const alarm_config_t *alarm);
 void request_delete_alarm(clock_ui_context_t *ctx, uint8_t alarm_index);
 
-void affordance_hide_timer_cb(lv_timer_t *timer);
 clock_face_id_t tile_to_face(clock_ui_context_t *ctx, lv_obj_t *tile);
 void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enable_t anim);
 void show_affordances_temporarily(clock_ui_context_t *ctx);
@@ -77,20 +76,13 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face);
 void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3]);
 void update_face(clock_ui_context_t *ctx, clock_face_id_t face);
 void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face);
-bool brightness_panel_is_open(const clock_ui_context_t *ctx);
 void update_brightness_ui(clock_ui_context_t *ctx);
-void brightness_overlay_hide_immediately(clock_ui_context_t *ctx);
-void brightness_panel_hide(clock_ui_context_t *ctx);
-bool settings_surface_is_open(const clock_ui_context_t *ctx);
-void settings_surface_close(clock_ui_context_t *ctx);
-void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx);
 #if CONFIG_TOUCH_CLOCK_PERF_TOUR
 void ui_perf_tour_start(clock_ui_context_t *ctx);
 void ui_ppa_blend_benchmark(void);
 /* Running totals of PPA operations and the microseconds spent in them. */
 void ui_ppa_blend_stats(uint32_t *ops, uint32_t *us);
 #endif
-void refresh_settings_controls(clock_ui_context_t *ctx);
 void build_root_ui(clock_ui_context_t *ctx);
 clock_ui_context_t *clock_ui_get_context(void);
 void ui_install_theme_overrides(lv_display_t *disp);
@@ -113,17 +105,12 @@ void ui_l10n_bind_label_with_font(clock_ui_context_t *ctx,
                                   lv_obj_t *label,
                                   l10n_text_id_t text_id,
                                   const lv_font_t *font);
-void ui_l10n_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id);
 void ui_l10n_apply(clock_ui_context_t *ctx);
 const char *ui_l10n_str(const clock_ui_context_t *ctx, const ui_l10n_str_t *str);
 /* Bind a kit label (kit_label) to a text, keeping the label's font and capitalisation. */
 void ui_l10n_bind_kit(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t text_id);
 void ui_l10n_bind_kit_str(clock_ui_context_t *ctx, lv_obj_t *label, const ui_l10n_str_t *str);
 void update_dots(clock_ui_context_t *ctx, clock_face_id_t active_face);
-void settings_button_event_cb(lv_event_t *event);
-bool face_theme_overlay_is_open(const clock_ui_context_t *ctx);
-void hide_face_theme_button(clock_ui_context_t *ctx);
-void face_theme_overlay_close(clock_ui_context_t *ctx);
 void create_digital_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_matrix_face(clock_ui_context_t *ctx, lv_obj_t *parent);
 void create_wharton_face(clock_ui_context_t *ctx, lv_obj_t *parent);
@@ -152,13 +139,8 @@ void ui_play_click_feedback(void);
 
 clock_face_id_t sanitize_enabled_face(clock_face_id_t face);
 struct tm get_local_time_now(void);
-void hand_endpoint(int cx, int cy, int length, float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1);
-void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
-                         float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1);
 uint8_t brightness_ui_to_hw(int ui_percent);
 uint8_t brightness_hw_to_ui(int hw_percent);
-void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute);
-int count_enabled_alarms(const clock_ui_context_t *ctx);
 uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm);
 void apply_repeat_preset_to_alarm(alarm_config_t *alarm, uint8_t preset);
 void set_root_ui_hidden(clock_ui_context_t *ctx, bool hidden);

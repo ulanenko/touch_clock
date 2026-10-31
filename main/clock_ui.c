@@ -449,27 +449,6 @@ struct tm get_local_time_now(void)
     return local_tm;
 }
 
-void hand_endpoint(int cx, int cy, int length, float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
-{
-    float rad = (angle_deg - 90.0f) * (M_PI / 180.0f);
-
-    p0->x = cx;
-    p0->y = cy;
-    p1->x = cx + (int)(length * cosf(rad));
-    p1->y = cy + (int)(length * sinf(rad));
-}
-
-void hand_line_endpoints(int cx, int cy, int tail_length, int head_length,
-                         float angle_deg, lv_point_precise_t *p0, lv_point_precise_t *p1)
-{
-    float rad = (angle_deg - 90.0f) * (M_PI / 180.0f);
-
-    p0->x = cx - (int)(tail_length * cosf(rad));
-    p0->y = cy - (int)(tail_length * sinf(rad));
-    p1->x = cx + (int)(head_length * cosf(rad));
-    p1->y = cy + (int)(head_length * sinf(rad));
-}
-
 uint8_t brightness_ui_to_hw(int ui_percent)
 {
     return brightness_policy_ui_to_hw((uint8_t)clamp_brightness_ui(ui_percent));
@@ -478,24 +457,6 @@ uint8_t brightness_ui_to_hw(int ui_percent)
 uint8_t brightness_hw_to_ui(int hw_percent)
 {
     return brightness_policy_hw_to_ui((uint8_t)clamp_brightness(hw_percent));
-}
-
-void format_alarm_time(char *buffer, size_t size, uint8_t hour, uint8_t minute)
-{
-    snprintf(buffer, size, "%02u:%02u", hour, minute);
-}
-
-int count_enabled_alarms(const clock_ui_context_t *ctx)
-{
-    int count = 0;
-
-    for (int i = 0; i < MAX_ALARMS; ++i) {
-        if (ctx->settings->alarms[i].enabled) {
-            ++count;
-        }
-    }
-
-    return count;
 }
 
 uint8_t alarm_repeat_preset_from_config(const alarm_config_t *alarm)

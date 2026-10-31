@@ -73,7 +73,6 @@ void alm_format_count(const clock_ui_context_t *ctx, int count, char *out, size_
 void alm_format_minutes(const clock_ui_context_t *ctx, int minutes, char *out, size_t size);
 bool alm_slot_is_empty(const alarm_config_t *alarm);
 int alm_find_new_slot(const clock_ui_context_t *ctx);
-int alm_alarm_count(const clock_ui_context_t *ctx);
 bool alm_ringing(const clock_ui_context_t *ctx);
 const alarm_config_t *alm_active_alarm(const clock_ui_context_t *ctx);
 time_t alm_now(void);

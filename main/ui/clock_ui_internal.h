@@ -52,11 +52,6 @@
 #define WH_COL_ON 0xD4A017
 #define WH_COL_OFF 0x1E1600
 
-enum {
-    SETTINGS_TAB_WIFI = 0,
-    SETTINGS_TAB_NIGHT = 1,
-};
-
 typedef struct {
     struct clock_ui_state_t *ui;
     uint8_t alarm_index;

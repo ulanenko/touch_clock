@@ -20,16 +20,6 @@ typedef struct {
     lv_obj_t *content;
 } ui_surface_t;
 
-void ui_surface_create_fullscreen(ui_surface_t *surface,
-                                  lv_obj_t *parent,
-                                  lv_color_t overlay_bg,
-                                  lv_opa_t overlay_opa,
-                                  lv_color_t panel_bg,
-                                  lv_coord_t header_height,
-                                  const char *title,
-                                  lv_event_cb_t overlay_cb,
-                                  lv_event_cb_t close_cb,
-                                  void *user_data);
 void ui_surface_create_edge_sensor(lv_obj_t *parent,
                                    lv_obj_t **sensor,
                                    ui_surface_edge_t edge,

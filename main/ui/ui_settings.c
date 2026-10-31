@@ -1440,30 +1440,3 @@ void ui_settings_close_all(clock_ui_context_t *ctx)
 {
     close_surface(ctx);
 }
-
-/* --- Older entry points (clock_ui_private.h) ------------------------------------------- */
-
-bool settings_surface_is_open(const clock_ui_context_t *ctx)
-{
-    return ui_settings_is_open(ctx);
-}
-
-void settings_surface_close(clock_ui_context_t *ctx)
-{
-    close_surface(ctx);
-}
-
-void open_settings_tab(clock_ui_context_t *ctx, uint32_t tab_idx)
-{
-    ui_settings_open_page(ctx, tab_idx == SETTINGS_TAB_NIGHT ? UI_SETTINGS_PAGE_NIGHT : UI_SETTINGS_PAGE_HOME);
-}
-
-void settings_button_event_cb(lv_event_t *event)
-{
-    ui_settings_open((clock_ui_context_t *)lv_event_get_user_data(event));
-}
-
-void refresh_settings_controls(clock_ui_context_t *ctx)
-{
-    ui_settings_refresh(ctx);
-}

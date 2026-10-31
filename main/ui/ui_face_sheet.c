@@ -365,11 +365,6 @@ bool face_sheet_is_visible(const face_sheet_t *s)
     return s != NULL && s->overlay != NULL && !lv_obj_has_flag(s->overlay, LV_OBJ_FLAG_HIDDEN);
 }
 
-bool face_sheet_is_open(const face_sheet_t *s)
-{
-    return face_sheet_is_visible(s) && s->target_open && !s->animating && !s->dragging;
-}
-
 bool face_sheet_is_moving(const face_sheet_t *s)
 {
     return face_sheet_is_visible(s) && s->snapshot_visible;

@@ -16,17 +16,6 @@
 
 /* --- Geometry ------------------------------------------------------------------------- */
 
-int32_t kit_circle_half_width(int32_t y, int32_t margin)
-{
-    int32_t r = KIT_CENTER - margin;
-    int32_t dy = y - KIT_CENTER;
-
-    if (r <= 0 || dy <= -r || dy >= r) {
-        return 0;
-    }
-    return (int32_t)sqrtf((float)(r * r - dy * dy));
-}
-
 /* --- Small helpers ---------------------------------------------------------------------- */
 
 lv_color_t kit_rgb(uint32_t hex)
@@ -1387,13 +1376,6 @@ lv_obj_t *kit_page_set_action(kit_page_t *page, kit_icon_t icon, lv_event_cb_t c
         kit_icon_set(img, icon);
     }
     return page->action;
-}
-
-void kit_page_set_title(kit_page_t *page, const char *title)
-{
-    if (page != NULL) {
-        kit_label_set_text_if_changed(page->title, title);
-    }
 }
 
 void kit_page_set_eyebrow(kit_page_t *page, const char *eyebrow)

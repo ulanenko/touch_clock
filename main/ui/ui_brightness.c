@@ -725,21 +725,6 @@ void face_quick_set_hidden(clock_ui_context_t *ctx, bool hidden)
 
 /* --- Old entry points (clock_ui_private.h) ----------------------------------------------- */
 
-bool brightness_panel_is_open(const clock_ui_context_t *ctx)
-{
-    return face_quick_visible(ctx);
-}
-
-void brightness_overlay_hide_immediately(clock_ui_context_t *ctx)
-{
-    face_quick_close(ctx, false);
-}
-
-void brightness_panel_hide(clock_ui_context_t *ctx)
-{
-    face_quick_close(ctx, false);
-}
-
 void show_affordances_temporarily(clock_ui_context_t *ctx)
 {
     face_controls_show(ctx);

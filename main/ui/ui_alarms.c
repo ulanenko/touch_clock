@@ -214,16 +214,6 @@ int alm_find_new_slot(const clock_ui_context_t *ctx)
     return -1;
 }
 
-int alm_alarm_count(const clock_ui_context_t *ctx)
-{
-    int n = 0;
-
-    for (int i = 0; i < MAX_ALARMS; i++) {
-        n += alm_slot_is_empty(&ctx->settings->alarms[i]) ? 0 : 1;
-    }
-    return n;
-}
-
 bool alm_ringing(const clock_ui_context_t *ctx)
 {
     return ctx->runtime->alarm_ringing || ctx->alarms.debug_ringing;

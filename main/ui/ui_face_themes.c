@@ -520,18 +520,3 @@ bool face_themes_visible(const clock_ui_context_t *ctx)
 }
 
 /* --- Old entry points (clock_ui_private.h) ----------------------------------------------- */
-
-bool face_theme_overlay_is_open(const clock_ui_context_t *ctx)
-{
-    return face_themes_visible(ctx);
-}
-
-void face_theme_overlay_close(clock_ui_context_t *ctx)
-{
-    face_themes_close(ctx, true);
-}
-
-void hide_face_theme_button(clock_ui_context_t *ctx)
-{
-    LV_UNUSED(ctx);
-}

@@ -39,9 +39,6 @@ void ui_glass_backdrop_identity(uint32_t identity);
 ui_glass_mode_t ui_glass_backdrop_mode(void);
 /* Counts frost builds: images baked from the frost are stale when it changed. */
 uint32_t ui_glass_backdrop_generation(void);
-/* FACE mode: the face is mostly light (Sternglas, Modern Silver), so the glass is milky and
- * its content dark. */
-bool ui_glass_backdrop_light(void);
 /* Frees the backdrop and the cached overlays (a style change). */
 void ui_glass_release(void);
 /* Drops the least recently drawn bakes until bytes more of PSRAM would still leave the cache's
@@ -61,11 +58,6 @@ void ui_glass_hollow_corners(const void *key, lv_draw_buf_t *snap, int32_t ext);
 /* Draws a page's ground: the dimmed face (black before the first backdrop). */
 void ui_glass_draw_ground(lv_layer_t *layer, const lv_area_t *area);
 
-/* A glass band along an arc (rim tabs, the ringing slide), refracting the frost, as an
- * ARGB8888 image. Angles in degrees, 0 = three o'clock, clockwise, a0 < a1. NULL without
- * memory or a backdrop; free with ui_glass_image_free. */
-lv_draw_buf_t *ui_glass_arc_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, float a0, float a1,
-                                  ui_glass_kind_t kind, lv_color_t tint, lv_area_t *area);
 void ui_glass_image_free(lv_draw_buf_t *image);
 /* The same band as smoked glass, the look of the face controls: nothing of the backdrop in it,
  * so it is made once and kept. */

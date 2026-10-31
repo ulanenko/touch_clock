@@ -702,11 +702,6 @@ uint32_t ui_glass_backdrop_generation(void)
     return s_generation;
 }
 
-bool ui_glass_backdrop_light(void)
-{
-    return s_frost_ok && s_light && s_mode == UI_GLASS_FACE;
-}
-
 /* --- The glass model ---------------------------------------------------------------------- */
 
 /*
@@ -2881,47 +2876,6 @@ lv_draw_buf_t *ui_glass_arc_shell(int32_t cx, int32_t cy, int32_t r_mid, int32_t
                               (float)width / 2.0f, r0, r1, &nx, &ny);
 
             row[x - box.x1] = shell_px(&l, &bz, LV_MAX(0.0f, -d), nx, ny, clampf(0.5f - d, 0.0f, 1.0f));
-        }
-    }
-    ui_sparse_image_register(buf);
-    *area = box;
-    return buf;
-}
-
-lv_draw_buf_t *ui_glass_arc_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, float a0, float a1,
-                                  ui_glass_kind_t kind, lv_color_t tint, lv_area_t *area)
-{
-    float r0 = a0 * 3.14159265f / 180.0f;
-    float r1 = a1 * 3.14159265f / 180.0f;
-    look_t l = look_of(kind, tint, s_mode);
-    bezel_t bz;
-    lv_draw_buf_t *buf;
-    lv_area_t box;
-
-    if (!s_frost_ok || !s_back_ok) {
-        return NULL;
-    }
-    bezel_build(&bz, (float)width * 0.42f, (float)width * 0.42f, 1.6f);
-    arc_bounds(cx, cy, r_mid, width, r0, r1, &box);
-    buf = lv_draw_buf_create((uint32_t)lv_area_get_width(&box), (uint32_t)lv_area_get_height(&box),
-                             LV_COLOR_FORMAT_ARGB8888, LV_STRIDE_AUTO);
-    if (buf == NULL) {
-        return NULL;
-    }
-    for (int32_t y = box.y1; y <= box.y2; y++) {
-        uint32_t *row = (uint32_t *)(buf->data + (size_t)(y - box.y1) * buf->header.stride);
-
-        for (int32_t x = box.x1; x <= box.x2; x++) {
-            float rgb[3];
-            float cov;
-
-            if (!arc_pixel(x, y, cx, cy, (float)r_mid, (float)width / 2.0f, r0, r1, &bz, &l, rgb, &cov)) {
-                row[x - box.x1] = 0;
-                continue;
-            }
-            row[x - box.x1] = (uint32_t)lroundf(cov * 255.0f) << 24 |
-                              (uint32_t)clampf(rgb[0], 0, 255) << 16 | (uint32_t)clampf(rgb[1], 0, 255) << 8 |
-                              (uint32_t)clampf(rgb[2], 0, 255);
         }
     }
     ui_sparse_image_register(buf);

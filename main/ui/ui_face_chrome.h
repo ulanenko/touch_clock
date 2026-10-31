@@ -36,8 +36,6 @@ bool face_click_is_tap(const clock_ui_context_t *ctx, lv_event_t *e);
 void face_fit_label(lv_obj_t *label, int32_t max_w, int32_t letter_space);
 /* Upper-cases text into buf when the style sets labels in capitals. */
 const char *face_caps(char *buf, size_t size, const char *text);
-/* Stops PRESSED/PRESSING/RELEASED from bubbling to the sheet behind a control. */
-void face_stop_bubble(lv_obj_t *obj);
 /* The screen centre, the centre of every rim decoration. Objects that move (a sheet panel)
  * pass the centre in their own coordinates instead, so snapshots draw them right. */
 #define FACE_CENTER ((lv_point_t) {KIT_CENTER, KIT_CENTER})
@@ -83,8 +81,6 @@ void face_sheet_create(face_sheet_t *sheet, clock_ui_context_t *ctx, const face_
 void face_sheet_destroy(face_sheet_t *sheet);
 /* The overlay is shown (open, opening, closing or being dragged). */
 bool face_sheet_is_visible(const face_sheet_t *sheet);
-/* Fully open and still. */
-bool face_sheet_is_open(const face_sheet_t *sheet);
 bool face_sheet_is_moving(const face_sheet_t *sheet);
 void face_sheet_open(face_sheet_t *sheet, bool animate);
 void face_sheet_close(face_sheet_t *sheet, bool animate);

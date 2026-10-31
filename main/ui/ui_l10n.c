@@ -64,15 +64,6 @@ void ui_l10n_bind_label(clock_ui_context_t *ctx, lv_obj_t *label, l10n_text_id_t
     ui_l10n_bind_label_with_font(ctx, label, text_id, NULL);
 }
 
-void ui_l10n_bind_button_label(clock_ui_context_t *ctx, lv_obj_t *button, l10n_text_id_t text_id)
-{
-    if (button == NULL) {
-        return;
-    }
-
-    ui_l10n_bind_label(ctx, lv_obj_get_child(button, 0), text_id);
-}
-
 void ui_l10n_apply(clock_ui_context_t *ctx)
 {
     if (ctx == NULL) {

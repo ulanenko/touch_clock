@@ -27,8 +27,6 @@
 #define KIT_SCREEN 720
 #define KIT_CENTER 360
 
-/* Half width of the visible circle at row y, minus margin (0 outside the circle). */
-int32_t kit_circle_half_width(int32_t y, int32_t margin);
 
 /* --- Dials ----------------------------------------------------------------------------
  * Static ring decorations (hairline rings, bezels, minute tracks) are baked once into cached
@@ -238,7 +236,6 @@ void kit_page_create(kit_page_t *page,
                      void *user_data);
 /* Adds a round header action key opposite the nav key (Scan, Add, ...). */
 lv_obj_t *kit_page_set_action(kit_page_t *page, kit_icon_t icon, lv_event_cb_t cb, void *user_data);
-void kit_page_set_title(kit_page_t *page, const char *title);
 /* Atelier draws its chapter ring (minute track) around every page; off for pages that draw
  * their own rim (the night page's 24 h ring). No effect in the other styles. */
 void kit_page_set_rim(kit_page_t *page, bool on);
