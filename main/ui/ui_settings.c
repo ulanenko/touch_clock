@@ -1076,6 +1076,10 @@ static void close_surface(clock_ui_context_t *ctx)
             st_show(st->pages[i].root, false);
         }
     }
+    /* The face pickers' thumbnails draw the hand-drawn faces into the view buffer they share,
+     * and the face isn't drawn while covered: without this, the last face a picker drew showed
+     * until the next tick. */
+    update_face(ctx, tile_to_face(ctx, lv_tileview_get_tile_active(ctx->tileview)));
     set_root_ui_hidden(ctx, false);
     ui_face_chrome_show_controls(ctx);
 }
