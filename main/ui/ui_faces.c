@@ -113,9 +113,9 @@ static uint8_t face_theme_value(const clock_ui_context_t *ctx, clock_face_id_t f
     return (ctx->settings->face_themes[face] < CLOCK_FACE_THEME_COUNT) ? ctx->settings->face_themes[face] : 0;
 }
 
-static digital_theme_palette_t digital_theme_palette(const clock_ui_context_t *ctx)
+static digital_theme_palette_t digital_palette_of(uint8_t theme)
 {
-    if (face_theme_value(ctx, CLOCK_FACE_DIGITAL) == 2U) {
+    if (theme == 2U) {
         return (digital_theme_palette_t){
             .bg = 0x090401,
             .dim = 0x4A2B12,
@@ -123,7 +123,7 @@ static digital_theme_palette_t digital_theme_palette(const clock_ui_context_t *c
         };
     }
 
-    if (face_theme_value(ctx, CLOCK_FACE_DIGITAL) == 1U) {
+    if (theme == 1U) {
         return (digital_theme_palette_t){
             .bg = 0x02060B,
             .dim = 0x123248,
@@ -138,9 +138,14 @@ static digital_theme_palette_t digital_theme_palette(const clock_ui_context_t *c
     };
 }
 
-static dot_theme_palette_t matrix_theme_palette(const clock_ui_context_t *ctx)
+static digital_theme_palette_t digital_theme_palette(const clock_ui_context_t *ctx)
 {
-    if (face_theme_value(ctx, CLOCK_FACE_MATRIX) == 2U) {
+    return digital_palette_of(face_theme_value(ctx, CLOCK_FACE_DIGITAL));
+}
+
+static dot_theme_palette_t matrix_palette_of(uint8_t theme)
+{
+    if (theme == 2U) {
         return (dot_theme_palette_t){
             .bg = 0x03070C,
             .off = 0x0C1A28,
@@ -148,7 +153,7 @@ static dot_theme_palette_t matrix_theme_palette(const clock_ui_context_t *ctx)
         };
     }
 
-    if (face_theme_value(ctx, CLOCK_FACE_MATRIX) == 1U) {
+    if (theme == 1U) {
         return (dot_theme_palette_t){
             .bg = 0x070502,
             .off = 0x1C1205,
@@ -163,9 +168,14 @@ static dot_theme_palette_t matrix_theme_palette(const clock_ui_context_t *ctx)
     };
 }
 
-static dot_theme_palette_t wharton_theme_palette(const clock_ui_context_t *ctx)
+static dot_theme_palette_t matrix_theme_palette(const clock_ui_context_t *ctx)
 {
-    if (face_theme_value(ctx, CLOCK_FACE_WHARTON) == 2U) {
+    return matrix_palette_of(face_theme_value(ctx, CLOCK_FACE_MATRIX));
+}
+
+static dot_theme_palette_t wharton_palette_of(uint8_t theme)
+{
+    if (theme == 2U) {
         return (dot_theme_palette_t){
             .bg = 0x04090A,
             .off = 0x0D2124,
@@ -173,7 +183,7 @@ static dot_theme_palette_t wharton_theme_palette(const clock_ui_context_t *ctx)
         };
     }
 
-    if (face_theme_value(ctx, CLOCK_FACE_WHARTON) == 1U) {
+    if (theme == 1U) {
         return (dot_theme_palette_t){
             .bg = 0x0A0507,
             .off = 0x1F0A10,
@@ -188,9 +198,14 @@ static dot_theme_palette_t wharton_theme_palette(const clock_ui_context_t *ctx)
     };
 }
 
-static sternglas_theme_palette_t sternglas_theme_palette(const clock_ui_context_t *ctx)
+static dot_theme_palette_t wharton_theme_palette(const clock_ui_context_t *ctx)
 {
-    if (face_theme_value(ctx, CLOCK_FACE_STERNGLAS) == 2U) {
+    return wharton_palette_of(face_theme_value(ctx, CLOCK_FACE_WHARTON));
+}
+
+static sternglas_theme_palette_t sternglas_palette_of(uint8_t theme)
+{
+    if (theme == 2U) {
         return (sternglas_theme_palette_t){
             .bg = 0x14181D,
             .shadow_bg = 0x1D232B,
@@ -207,7 +222,7 @@ static sternglas_theme_palette_t sternglas_theme_palette(const clock_ui_context_
         };
     }
 
-    if (face_theme_value(ctx, CLOCK_FACE_STERNGLAS) == 1U) {
+    if (theme == 1U) {
         return (sternglas_theme_palette_t){
             .bg = 0xF2EEE8,
             .shadow_bg = 0xF8F5F0,
@@ -240,9 +255,14 @@ static sternglas_theme_palette_t sternglas_theme_palette(const clock_ui_context_
     };
 }
 
-static avenir_theme_palette_t avenir_theme_palette(const clock_ui_context_t *ctx)
+static sternglas_theme_palette_t sternglas_theme_palette(const clock_ui_context_t *ctx)
 {
-    if (face_theme_value(ctx, CLOCK_FACE_AVENIR) == 2U) {
+    return sternglas_palette_of(face_theme_value(ctx, CLOCK_FACE_STERNGLAS));
+}
+
+static avenir_theme_palette_t avenir_palette_of(uint8_t theme)
+{
+    if (theme == 2U) {
         return (avenir_theme_palette_t){
             .tile_bg = 0x08120F,
             .face_bg = 0x26493F,
@@ -254,7 +274,7 @@ static avenir_theme_palette_t avenir_theme_palette(const clock_ui_context_t *ctx
         };
     }
 
-    if (face_theme_value(ctx, CLOCK_FACE_AVENIR) == 1U) {
+    if (theme == 1U) {
         return (avenir_theme_palette_t){
             .tile_bg = 0x0C1118,
             .face_bg = 0xF5A65C,
@@ -277,9 +297,14 @@ static avenir_theme_palette_t avenir_theme_palette(const clock_ui_context_t *ctx
     };
 }
 
-static modern_theme_palette_t modern_theme_palette(const clock_ui_context_t *ctx)
+static avenir_theme_palette_t avenir_theme_palette(const clock_ui_context_t *ctx)
 {
-    if (face_theme_value(ctx, CLOCK_FACE_MODERN_SILVER) == 2U) {
+    return avenir_palette_of(face_theme_value(ctx, CLOCK_FACE_AVENIR));
+}
+
+static modern_theme_palette_t modern_palette_of(uint8_t theme)
+{
+    if (theme == 2U) {
         return (modern_theme_palette_t){
             .tile_bg = 0x050607,
             .outer_ring_bg = 0x2A2F33,
@@ -294,7 +319,7 @@ static modern_theme_palette_t modern_theme_palette(const clock_ui_context_t *ctx
         };
     }
 
-    if (face_theme_value(ctx, CLOCK_FACE_MODERN_SILVER) == 1U) {
+    if (theme == 1U) {
         return (modern_theme_palette_t){
             .tile_bg = 0x000000,
             .outer_ring_bg = 0xE7EAED,
@@ -321,6 +346,11 @@ static modern_theme_palette_t modern_theme_palette(const clock_ui_context_t *ctx
         .primary = 0x111111,
         .secondary = 0x0095FF,
     };
+}
+
+static modern_theme_palette_t modern_theme_palette(const clock_ui_context_t *ctx)
+{
+    return modern_palette_of(face_theme_value(ctx, CLOCK_FACE_MODERN_SILVER));
 }
 
 /* Mixes toward the face background: amount 255 keeps the ink, 0 gives the background. */
@@ -402,6 +432,61 @@ ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face)
         break;
     }
     return ink;
+}
+
+void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3])
+{
+    if (colors == NULL || evening_face_preview_colors(face, theme, colors)) {
+        return;
+    }
+    switch (face) {
+    case CLOCK_FACE_DIGITAL: {
+        digital_theme_palette_t p = digital_palette_of(theme);
+
+        colors[0] = p.bg;
+        colors[1] = p.dim;
+        colors[2] = p.primary;
+        break;
+    }
+    case CLOCK_FACE_MATRIX:
+    case CLOCK_FACE_WHARTON: {
+        dot_theme_palette_t p = face == CLOCK_FACE_MATRIX ? matrix_palette_of(theme) : wharton_palette_of(theme);
+
+        colors[0] = p.bg;
+        colors[1] = p.off;
+        colors[2] = p.on;
+        break;
+    }
+    case CLOCK_FACE_STERNGLAS: {
+        sternglas_theme_palette_t p = sternglas_palette_of(theme);
+
+        colors[0] = p.bg;
+        colors[1] = p.primary;
+        colors[2] = p.secondary;
+        break;
+    }
+    case CLOCK_FACE_AVENIR: {
+        avenir_theme_palette_t p = avenir_palette_of(theme);
+
+        colors[0] = p.face_bg;
+        colors[1] = p.inner_ring;
+        colors[2] = p.primary;
+        break;
+    }
+    case CLOCK_FACE_MODERN_SILVER: {
+        modern_theme_palette_t p = modern_palette_of(theme);
+
+        colors[0] = p.dial_bg;
+        colors[1] = p.primary;
+        colors[2] = p.secondary;
+        break;
+    }
+    default:
+        colors[0] = 0x1A1A1A;
+        colors[1] = 0x3A3A3A;
+        colors[2] = 0xD8DDE3;
+        break;
+    }
 }
 
 static void show_digital_face_live(clock_ui_context_t *ctx)

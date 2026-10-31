@@ -166,5 +166,3 @@ void face_shell_slide_release(clock_ui_context_t *ctx);
 /* The face sheets moved or changed state: re-evaluate the live/snapshot digital face. */
 void face_shell_sync_face_visuals(clock_ui_context_t *ctx);
 clock_face_id_t face_shell_active_face(clock_ui_context_t *ctx);
-/* Theme preview colours (dial, marks, hands) of a face theme. */
-void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3]);

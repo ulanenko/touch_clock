@@ -73,6 +73,8 @@ const void *ui_face_preview_source(clock_ui_context_t *ctx, clock_face_id_t face
 
 
 ui_face_ink_t ui_face_ink(const clock_ui_context_t *ctx, clock_face_id_t face);
+/* A face theme's three swatches (ground, marks, hands), from the palette the face draws with. */
+void face_theme_preview_colors(clock_face_id_t face, uint8_t theme, uint32_t colors[3]);
 void update_face(clock_ui_context_t *ctx, clock_face_id_t face);
 void sync_face_animation_state(clock_ui_context_t *ctx, clock_face_id_t face);
 bool brightness_panel_is_open(const clock_ui_context_t *ctx);
