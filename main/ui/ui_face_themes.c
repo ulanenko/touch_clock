@@ -335,7 +335,7 @@ static void build_option(clock_ui_context_t *ctx, uint8_t t, const theme_layout_
     lv_obj_set_pos(ft->option_name[t], col_x - 8, y);
 
     for (int s = 0; s < 3; s++) {
-        lv_obj_t *sw = face_plain(panel);
+        lv_obj_t *sw = kit_plain(panel);
 
         lv_obj_set_size(sw, l->swatch, l->swatch);
         lv_obj_set_pos(sw, cx - sw_total / 2 + s * (l->swatch + l->swatch_gap), l->swatch_y);
@@ -352,7 +352,7 @@ static void build_option(clock_ui_context_t *ctx, uint8_t t, const theme_layout_
     }
 
     /* The touch target: thumb, names and swatches. Drags bubble to the sheet. */
-    card = face_plain(panel);
+    card = kit_plain(panel);
     lv_obj_set_pos(card, cx - 84, l->cy - THUMB / 2 - 12);
     lv_obj_set_size(card, 168, l->swatch_y + l->swatch + 12 - (l->cy - THUMB / 2 - 12));
     lv_obj_add_flag(card, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_EVENT_BUBBLE);
@@ -445,7 +445,7 @@ void face_themes_create(clock_ui_context_t *ctx)
     if (style != CLOCK_UI_STYLE_INSTRUMENT) {
         lv_obj_t *icon;
 
-        ft->check = face_plain(ft->panel);
+        ft->check = kit_plain(ft->panel);
         if (style == CLOCK_UI_STYLE_ORBIT) {
             lv_obj_set_size(ft->check, 40, 40);
             lv_obj_set_style_bg_color(ft->check, sk->tint_themes, 0);
@@ -464,7 +464,7 @@ void face_themes_create(clock_ui_context_t *ctx)
         lv_obj_center(icon);
     }
 
-    grab = face_plain(ft->panel);
+    grab = kit_plain(ft->panel);
     lv_obj_set_style_bg_opa(grab, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(grab, 3, 0);
     switch (style) {

@@ -31,7 +31,7 @@ static void atelier_rim_cb(lv_event_t *e)
     lv_layer_t *layer = lv_event_get_layer(e);
     bool details = ctx->alarms.editor_on_details;
 
-    alm_draw_rim(layer, details ? 54 : -1, details ? 126 : -1);
+    kit_draw_minute_rim(layer, details ? 54 : -1, details ? 126 : -1);
     if (details) {
         lv_draw_arc_dsc_t arc;
 
@@ -188,8 +188,8 @@ static void pager_scroll_cb(lv_event_t *e)
             lv_obj_set_style_bg_color(a->editor_dots[i], cur ? sk->text : sk->text_3, 0);
         }
     }
-    alm_show(a->editor_bottom_scrim, details);
-    if (ALM_IS_ATELIER()) {
+    kit_show(a->editor_bottom_scrim, details);
+    if (ui_skin_is_atelier()) {
         lv_obj_invalidate(a->editor_root); /* rim register */
     }
 }
@@ -213,7 +213,7 @@ static void create_repeat(clock_ui_context_t *ctx, lv_obj_t *parent, int32_t x, 
 static void create_days(clock_ui_context_t *ctx, lv_obj_t *parent, int32_t x, int32_t y, int32_t w)
 {
     const ui_skin_t *sk = ui_skin();
-    lv_obj_t *box = alm_box(parent);
+    lv_obj_t *box = kit_plain(parent);
 
     lv_obj_set_pos(box, x, y);
     lv_obj_set_size(box, w, LV_SIZE_CONTENT);
@@ -253,7 +253,7 @@ static lv_obj_t *create_rows(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     const ui_skin_t *sk = ui_skin();
     lv_obj_t *g = kit_group(parent);
-    bool icons = !ALM_IS_INSTRUMENT();
+    bool icons = !ui_skin_is_instrument();
     kit_row_t row;
     lv_obj_t *col;
 
@@ -261,7 +261,7 @@ static lv_obj_t *create_rows(clock_ui_context_t *ctx, lv_obj_t *parent)
                    &(kit_row_opts_t) {.icon = icons ? KIT_ICON_SOUND : KIT_ICON_NONE,
                                       .tint = sk->tint_alarms,
                                       .title = alm_str(ctx, &alm_s_sound_name),
-                                      .subtitle = ALM_IS_ORBIT() ? "" : NULL,
+                                      .subtitle = ui_skin_is_orbit() ? "" : NULL,
                                       .trail = KIT_TRAIL_CUSTOM});
     set_note_icon(row.icon);
     ctx->alarms.editor_sound_title = row.title; /* the draft's sound, set in sync */
@@ -272,7 +272,7 @@ static lv_obj_t *create_rows(clock_ui_context_t *ctx, lv_obj_t *parent)
         alm_one_line(row.subtitle);
     }
     col = lv_obj_get_parent(row.title);
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_t *eb = kit_label(col, KIT_TEXT_LABEL, alm_str(ctx, &alm_s_sound_tap));
 
         ui_l10n_bind_kit_str(ctx, eb, &alm_s_sound_tap);
@@ -290,7 +290,7 @@ static lv_obj_t *create_rows(clock_ui_context_t *ctx, lv_obj_t *parent)
                                       .title = alm_text(ctx, L10N_MATH_TO_TURN_OFF),
                                       .trail = KIT_TRAIL_SWITCH});
     ui_l10n_bind_kit(ctx, row.title, L10N_MATH_TO_TURN_OFF);
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_min_height(lv_obj_get_parent(row.title), 50, 0);
     }
     ctx->alarms.editor_math_sw = row.control;
@@ -303,7 +303,7 @@ static lv_obj_t *create_rows(clock_ui_context_t *ctx, lv_obj_t *parent)
                                       .title = alm_text(ctx, L10N_ENABLED),
                                       .trail = KIT_TRAIL_SWITCH});
     ui_l10n_bind_kit(ctx, row.title, L10N_ENABLED);
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_min_height(lv_obj_get_parent(row.title), 50, 0);
     }
     ctx->alarms.editor_enabled_row = row.row;
@@ -328,7 +328,7 @@ static lv_obj_t *centered_label(lv_obj_t *parent, kit_text_role_t role, int32_t 
 static void create_instrument(clock_ui_context_t *ctx)
 {
     clock_ui_alarm_state_t *a = &ctx->alarms;
-    lv_obj_t *s = alm_box(a->editor_root);
+    lv_obj_t *s = kit_plain(a->editor_root);
     lv_obj_t *g;
 
     a->editor_scroll = s;
@@ -368,7 +368,7 @@ static void create_instrument(clock_ui_context_t *ctx)
 
 static lv_obj_t *pager_page(lv_obj_t *pager, int index)
 {
-    lv_obj_t *page = alm_box(pager);
+    lv_obj_t *page = kit_plain(pager);
 
     lv_obj_set_size(page, KIT_SCREEN, KIT_SCREEN);
     lv_obj_set_pos(page, 0, index * KIT_SCREEN);
@@ -378,7 +378,7 @@ static lv_obj_t *pager_page(lv_obj_t *pager, int index)
 static void create_pager(clock_ui_context_t *ctx, lv_obj_t **page1)
 {
     clock_ui_alarm_state_t *a = &ctx->alarms;
-    lv_obj_t *pager = alm_box(a->editor_root);
+    lv_obj_t *pager = kit_plain(a->editor_root);
     lv_obj_t *p2;
 
     a->editor_scroll = pager;
@@ -423,7 +423,7 @@ static void create_orbit(clock_ui_context_t *ctx)
     lv_obj_set_style_pad_bottom(p2, 190, 0);
 
     /* Fixed on both pages: close at twelve, Delete and Save at six, page dots at three. */
-    a->editor_bottom_scrim = alm_box(a->editor_root);
+    a->editor_bottom_scrim = kit_plain(a->editor_root);
     lv_obj_set_size(a->editor_bottom_scrim, KIT_SCREEN, 190);
     lv_obj_set_pos(a->editor_bottom_scrim, 0, KIT_SCREEN - 190);
     lv_obj_set_style_bg_opa(a->editor_bottom_scrim, LV_OPA_COVER, 0);
@@ -436,7 +436,7 @@ static void create_orbit(clock_ui_context_t *ctx)
     lv_obj_set_style_bg_grad_dir(a->editor_bottom_scrim, LV_GRAD_DIR_VER, 0);
     lv_obj_add_flag(a->editor_bottom_scrim, LV_OBJ_FLAG_HIDDEN);
 
-    l = alm_box(a->editor_root);
+    l = kit_plain(a->editor_root);
     lv_obj_set_size(l, KIT_SCREEN, 112);
     lv_obj_set_style_bg_opa(l, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(l, sk->bg, 0);
@@ -466,7 +466,7 @@ static void create_orbit(clock_ui_context_t *ctx)
     ui_l10n_bind_kit(ctx, a->editor_save_label, L10N_SAVE);
     lv_obj_set_style_text_color(a->editor_save_label, sk->text, 0);
 
-    dots = alm_box(a->editor_root);
+    dots = kit_plain(a->editor_root);
     lv_obj_set_size(dots, 24, 64);
     lv_obj_set_pos(dots, 668, 300);
     lv_obj_set_flex_flow(dots, LV_FLEX_FLOW_COLUMN);
@@ -476,7 +476,7 @@ static void create_orbit(clock_ui_context_t *ctx)
     lv_obj_set_ext_click_area(dots, 24);
     lv_obj_add_event_cb(dots, details_cb, LV_EVENT_CLICKED, ctx);
     for (int i = 0; i < 2; i++) {
-        a->editor_dots[i] = alm_box(dots);
+        a->editor_dots[i] = kit_plain(dots);
         /* Two equal capsules: a long one over a dot read as "!". */
         lv_obj_set_size(a->editor_dots[i], 8, 20);
         lv_obj_set_style_radius(a->editor_dots[i], LV_RADIUS_CIRCLE, 0);
@@ -524,7 +524,7 @@ static void create_atelier(clock_ui_context_t *ctx)
     lv_obj_remove_flag(a->editor_time_small, LV_OBJ_FLAG_EVENT_BUBBLE);
     lv_obj_add_event_cb(a->editor_time_small, details_cb, LV_EVENT_CLICKED, ctx);
 
-    sec = alm_box(p2);
+    sec = kit_plain(p2);
     lv_obj_set_size(sec, 432, 40);
     lv_obj_set_pos(sec, 144, 170 - 34);
     lv_obj_set_flex_flow(sec, LV_FLEX_FLOW_COLUMN);
@@ -533,20 +533,20 @@ static void create_atelier(clock_ui_context_t *ctx)
 
     create_repeat(ctx, p2, 122, 198, 476);
     create_days(ctx, p2, 108 + 8, 282 + 8 - 4, 488);
-    rule = alm_box(p2);
+    rule = kit_plain(p2);
     lv_obj_set_size(rule, 432, 1);
     lv_obj_set_pos(rule, 144, 370);
     lv_obj_set_style_bg_opa(rule, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(rule, sk->line, 0);
 
-    col = alm_box(p2);
+    col = kit_plain(p2);
     lv_obj_set_pos(col, 144, A_ROWS_Y);
     lv_obj_set_size(col, 432, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(col, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     create_rows(ctx, col);
 
-    keys = alm_box(col);
+    keys = kit_plain(col);
     lv_obj_set_size(keys, lv_pct(100), LV_SIZE_CONTENT);
     lv_obj_set_style_pad_top(keys, 26, 0);
     lv_obj_set_style_pad_bottom(keys, 8, 0);
@@ -568,7 +568,7 @@ void alm_editor_create(clock_ui_context_t *ctx)
 {
     const ui_skin_t *sk = ui_skin();
     clock_ui_alarm_state_t *a = &ctx->alarms;
-    lv_obj_t *root = alm_box(ui_chrome_root(ctx));
+    lv_obj_t *root = kit_plain(ui_chrome_root(ctx));
 
     a->editor_root = root;
     lv_obj_set_size(root, KIT_SCREEN, KIT_SCREEN);
@@ -576,9 +576,9 @@ void alm_editor_create(clock_ui_context_t *ctx)
     lv_obj_set_style_bg_color(root, sk->bg, 0);
     lv_obj_add_flag(root, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
 
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         create_instrument(ctx);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         create_orbit(ctx);
     } else {
         create_atelier(ctx);
@@ -646,7 +646,7 @@ static void sync_countdown(clock_ui_context_t *ctx, time_t now)
         return;
     }
     ui_format_countdown(ctx, now, draft_next(&ctx->alarms.editor_draft, now), text, sizeof(text));
-    alm_set_text(ctx->alarms.editor_countdown, text);
+    kit_label_set_text_if_changed(ctx->alarms.editor_countdown, text);
 }
 
 void alm_editor_time_changed(clock_ui_context_t *ctx)
@@ -656,7 +656,7 @@ void alm_editor_time_changed(clock_ui_context_t *ctx)
     sync_countdown(ctx, alm_now());
     if (ctx->alarms.editor_time_small != NULL) {
         alm_format_hm(text, sizeof(text), ctx->alarms.editor_draft.hour, ctx->alarms.editor_draft.minute);
-        alm_set_text(ctx->alarms.editor_time_small, text);
+        kit_label_set_text_if_changed(ctx->alarms.editor_time_small, text);
     }
 }
 
@@ -665,18 +665,18 @@ static void sync_layout(clock_ui_context_t *ctx)
     clock_ui_alarm_state_t *a = &ctx->alarms;
     bool existing = !a->editor_is_new;
 
-    alm_show(a->editor_delete_btn, existing);
-    alm_show(a->editor_enabled_row, existing);
-    if (ALM_IS_INSTRUMENT()) {
+    kit_show(a->editor_delete_btn, existing);
+    kit_show(a->editor_enabled_row, existing);
+    if (ui_skin_is_instrument()) {
         int32_t y = existing ? I_SAVE_Y_NEW + 72 + 12 : I_SAVE_Y_NEW;
 
         if (lv_obj_get_y(a->editor_save_btn) != y) {
             lv_obj_set_y(a->editor_save_btn, y);
         }
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         int32_t x = existing ? 380 : 320;
 
-        alm_show(a->editor_delete_label, existing);
+        kit_show(a->editor_delete_label, existing);
         if (lv_obj_get_x(a->editor_save_btn) != x) {
             lv_obj_set_x(a->editor_save_btn, x);
         }
@@ -697,7 +697,7 @@ void alm_editor_sync(clock_ui_context_t *ctx)
     if (a->editor_root == NULL) {
         return;
     }
-    alm_set_text(a->editor_eyebrow,
+    kit_label_set_text_if_changed(a->editor_eyebrow,
                  a->editor_is_new ? alm_str(ctx, &alm_s_new_alarm) : alm_text(ctx, L10N_EDIT_ALARM));
 
     if (a->editor_language != ctx->settings->language + 1) {
@@ -722,9 +722,9 @@ void alm_editor_sync(clock_ui_context_t *ctx)
         }
     }
 
-    alm_set_text(a->editor_sound_title, alm_str(ctx, alm_sound_name(d->sound)));
+    kit_label_set_text_if_changed(a->editor_sound_title, alm_str(ctx, alm_sound_name(d->sound)));
     if (a->editor_sound_sub != NULL) {
-        alm_set_text(a->editor_sound_sub, alm_str(ctx, &alm_s_tap_to_change));
+        kit_label_set_text_if_changed(a->editor_sound_sub, alm_str(ctx, &alm_s_tap_to_change));
     }
     kit_button_set_text(a->editor_test_btn, alm_str(ctx, testing ? &alm_s_stop : &alm_s_test));
     kit_icon_set(lv_obj_get_child(a->editor_test_btn, 0), testing ? KIT_ICON_STOP : KIT_ICON_PLAY);
@@ -734,9 +734,9 @@ void alm_editor_sync(clock_ui_context_t *ctx)
     kit_switch_set(a->editor_enabled_sw, d->enabled);
     ctx->suppress_events = false;
 
-    if (ALM_IS_INSTRUMENT() || ALM_IS_ATELIER()) {
+    if (ui_skin_is_instrument() || ui_skin_is_atelier()) {
         kit_button_set_text(a->editor_save_btn, alm_text(ctx, L10N_SAVE));
-        if (ALM_IS_ATELIER()) {
+        if (ui_skin_is_atelier()) {
             kit_button_set_text(a->editor_delete_btn, alm_text(ctx, L10N_DELETE));
         }
     }

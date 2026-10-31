@@ -17,21 +17,6 @@
 
 #define ST(ctx) (&(ctx)->settings_ui)
 
-static inline bool st_instrument(void)
-{
-    return ui_skin_style() == CLOCK_UI_STYLE_INSTRUMENT;
-}
-
-static inline bool st_orbit(void)
-{
-    return ui_skin_style() == CLOCK_UI_STYLE_ORBIT;
-}
-
-static inline bool st_atelier(void)
-{
-    return ui_skin_style() == CLOCK_UI_STYLE_ATELIER;
-}
-
 /* A text that follows the language: a localization id or an area string. */
 typedef struct {
     l10n_text_id_t id;
@@ -61,8 +46,6 @@ void st_signal_set(lv_obj_t *meter, int level, bool on_accent);
 int st_signal_level(int rssi);
 /* An A8 settings asset tinted with color. */
 lv_obj_t *st_image(lv_obj_t *parent, const lv_image_dsc_t *src, lv_color_t color);
-/* Hides or shows an object (only touches it when the state changes). */
-void st_show(lv_obj_t *obj, bool show);
 void st_set_enabled(lv_obj_t *obj, bool enabled);
 void st_set_clickable(lv_obj_t *obj, bool clickable);
 /* Removes the gesture bubble so drags on the control do not navigate back. */

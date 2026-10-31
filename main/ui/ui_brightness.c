@@ -369,7 +369,7 @@ static void build_key(clock_ui_context_t *ctx, quick_key_t key, kit_icon_t icon,
         /* Square keycaps; the toggles carry an LED. */
         lv_obj_set_style_radius(btn, sk->radius_s, 0);
         if (key == QUICK_KEY_NIGHT || key == QUICK_KEY_SOUND) {
-            lv_obj_t *led = face_plain(btn);
+            lv_obj_t *led = kit_plain(btn);
 
             lv_obj_set_size(led, 8, 8);
             lv_obj_set_pos(led, l->key - 10 - 8 - 1, 10 - 1);
@@ -480,7 +480,7 @@ static void build_brightness(clock_ui_context_t *ctx, const quick_layout_t *l)
         label = kit_label(q->panel, KIT_TEXT_LABEL, "");
         lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 470 - oy);
         ui_l10n_bind_kit(ctx, label, L10N_BRIGHTNESS);
-        row = face_plain(q->panel);
+        row = kit_plain(q->panel);
         lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
@@ -501,7 +501,7 @@ static void build_brightness(clock_ui_context_t *ctx, const quick_layout_t *l)
         label = kit_label(q->panel, KIT_TEXT_LABEL, "");
         lv_obj_align(label, LV_ALIGN_TOP_MID, 0, 459 - oy);
         ui_l10n_bind_kit(ctx, label, L10N_BRIGHTNESS);
-        row = face_plain(q->panel);
+        row = kit_plain(q->panel);
         lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
@@ -561,7 +561,7 @@ void face_quick_create(clock_ui_context_t *ctx)
     }
     face_sheet_create(&q->sheet, ctx, &o);
 
-    grab = face_plain(q->panel);
+    grab = kit_plain(q->panel);
     lv_obj_set_style_bg_opa(grab, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(grab, 3, 0);
     switch (style) {
@@ -697,7 +697,7 @@ static void edge_event_cb(lv_event_t *e)
 
 void face_quick_create_edge_sensor(clock_ui_context_t *ctx)
 {
-    lv_obj_t *sensor = face_plain(ui_chrome_root(ctx));
+    lv_obj_t *sensor = kit_plain(ui_chrome_root(ctx));
 
     lv_obj_set_size(sensor, SCREEN_SIZE, BOTTOM_EDGE_ZONE);
     lv_obj_align(sensor, LV_ALIGN_BOTTOM_MID, 0, 0);

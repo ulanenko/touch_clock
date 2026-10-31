@@ -12,23 +12,6 @@ void kit_slider_cache_flush(void);
 #define KIT_FLAG_KIND_B LV_OBJ_FLAG_USER_3  /* button kind, bit 1 */
 #define KIT_FLAG_ROUND LV_OBJ_FLAG_USER_4   /* kit_round_button */
 
-static inline bool kit_is_instrument(void)
-{
-    return ui_skin()->style == CLOCK_UI_STYLE_INSTRUMENT;
-}
-
-static inline bool kit_is_orbit(void)
-{
-    return ui_skin()->style == CLOCK_UI_STYLE_ORBIT;
-}
-
-static inline bool kit_is_atelier(void)
-{
-    return ui_skin()->style == CLOCK_UI_STYLE_ATELIER;
-}
-
-/* A plain object without theme styles: not clickable, not scrollable, transparent. */
-lv_obj_t *kit_plain(lv_obj_t *parent);
 /* Dims the object to 70 % while pressed (no recolor, no layer). */
 void kit_add_pressed_dim(lv_obj_t *obj);
 /* Extends the touch area so the target is at least the skin's tap_min. */

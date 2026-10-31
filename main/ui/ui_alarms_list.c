@@ -26,7 +26,7 @@ static const ui_l10n_str_t s_count_on = UI_L10N_STR("%d on", "%d wł.", "%d ув
 
 static int32_t row_height(void)
 {
-    return ALM_IS_INSTRUMENT() ? 92 : ALM_IS_ORBIT() ? 88 : 100;
+    return ui_skin_is_instrument() ? 92 : ui_skin_is_orbit() ? 88 : 100;
 }
 
 /* --- Swipe to delete ------------------------------------------------------------------- */
@@ -61,7 +61,7 @@ static void slide_row(clock_ui_context_t *ctx, int8_t index, bool open, bool ani
     r = &ctx->alarms.rows[index];
     from = lv_obj_get_style_translate_x(r->row, 0);
     lv_anim_delete(r->row, translate_cb);
-    alm_show(r->del, open);
+    kit_show(r->del, open);
     if (!animate || from == to) {
         lv_obj_set_style_translate_x(r->row, to, 0);
         return;
@@ -206,14 +206,14 @@ static void style_row(lv_obj_t *row, bool first, int32_t height)
     lv_obj_set_size(row, lv_pct(100), height);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_pad_column(row, 20, 0);
         lv_obj_set_style_border_side(row, LV_BORDER_SIDE_TOP, 0);
         lv_obj_set_style_border_width(row, 1, 0);
         lv_obj_set_style_border_color(row, sk->line, 0);
         lv_obj_set_style_bg_color(row, sk->surface, LV_STATE_PRESSED);
         lv_obj_set_style_bg_opa(row, LV_OPA_COVER, LV_STATE_PRESSED);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_pad_column(row, 12, 0);
         lv_obj_set_style_pad_left(row, 28, 0);
         lv_obj_set_style_pad_right(row, 24, 0);
@@ -242,11 +242,11 @@ static void list_row_create(clock_ui_context_t *ctx, lv_obj_t *group, int index)
 
     r->actx.ui = ctx;
     r->actx.alarm_index = (uint8_t)index;
-    r->wrap = alm_box(group);
+    r->wrap = kit_plain(group);
     lv_obj_set_size(r->wrap, lv_pct(100), h);
     allow_overflow(r->wrap);
 
-    r->row = alm_box(r->wrap);
+    r->row = kit_plain(r->wrap);
     lv_obj_add_flag(r->row, LV_OBJ_FLAG_CLICKABLE);
     style_row(r->row, index == 0, h);
     ui_attach_click_feedback(r->row, LV_EVENT_CLICKED);
@@ -257,22 +257,22 @@ static void list_row_create(clock_ui_context_t *ctx, lv_obj_t *group, int index)
     lv_obj_add_event_cb(r->row, row_event_cb, LV_EVENT_CLICKED, &r->actx);
 
     r->time = alm_label(r->row, sk->font_time_m, sk->text, "00:00");
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_width(r->time, 150);
-    } else if (ALM_IS_ATELIER()) {
+    } else if (ui_skin_is_atelier()) {
         lv_obj_set_width(r->time, 138);
     }
 
-    col = alm_box(r->row);
+    col = kit_plain(r->row);
     lv_obj_set_flex_grow(col, 1);
     lv_obj_set_height(col, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(col, LV_OBJ_FLAG_EVENT_BUBBLE);
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         /* Time and summary share a baseline. */
         lv_obj_set_style_translate_y(col, 9, 0);
         r->title = alm_label(col, sk->font_body, sk->text_2, "");
-    } else if (ALM_IS_INSTRUMENT()) {
+    } else if (ui_skin_is_instrument()) {
         lv_obj_set_style_pad_row(col, 4, 0);
         r->title = kit_label(col, KIT_TEXT_LABEL, "");
         lv_obj_set_style_text_color(r->title, sk->text_2, 0);
@@ -284,20 +284,20 @@ static void list_row_create(clock_ui_context_t *ctx, lv_obj_t *group, int index)
     lv_obj_set_width(r->title, lv_pct(100));
     alm_one_line(r->title);
 
-    if (!ALM_IS_ORBIT()) {
-        r->days_box = alm_box(col);
+    if (!ui_skin_is_orbit()) {
+        r->days_box = kit_plain(col);
         lv_obj_set_size(r->days_box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(r->days_box, LV_FLEX_FLOW_ROW);
-        lv_obj_set_style_pad_column(r->days_box, ALM_IS_INSTRUMENT() ? 7 : 6, 0);
+        lv_obj_set_style_pad_column(r->days_box, ui_skin_is_instrument() ? 7 : 6, 0);
         lv_obj_add_flag(r->days_box, LV_OBJ_FLAG_EVENT_BUBBLE);
         for (int i = 0; i < 7; i++) {
             r->days[i] = alm_label(r->days_box, sk->font_label, sk->text_3, "");
-            if (ALM_IS_ATELIER()) {
+            if (ui_skin_is_atelier()) {
                 lv_obj_set_style_min_width(r->days[i], 16, 0);
                 lv_obj_set_style_text_align(r->days[i], LV_TEXT_ALIGN_CENTER, 0);
             }
         }
-        if (ALM_IS_INSTRUMENT()) {
+        if (ui_skin_is_instrument()) {
             r->sub = alm_label(col, sk->font_caption, sk->text_3, "");
         } else {
             r->sub = kit_label(col, KIT_TEXT_LABEL, "");
@@ -312,7 +312,7 @@ static void list_row_create(clock_ui_context_t *ctx, lv_obj_t *group, int index)
     lv_obj_add_event_cb(r->sw, row_switch_cb, LV_EVENT_VALUE_CHANGED, &r->actx);
 
     r->del = kit_round_button(r->wrap, KIT_BUTTON_DESTRUCTIVE, KIT_ICON_TRASH, DELETE_KEY);
-    lv_obj_align(r->del, LV_ALIGN_RIGHT_MID, ALM_IS_ATELIER() ? -6 : 0, 0);
+    lv_obj_align(r->del, LV_ALIGN_RIGHT_MID, ui_skin_is_atelier() ? -6 : 0, 0);
     lv_obj_add_flag(r->del, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(r->del, row_delete_cb, LV_EVENT_CLICKED, &r->actx);
 }
@@ -351,7 +351,7 @@ static void scroll_cb(lv_event_t *e)
 static lv_obj_t *settings_entry_row(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     const ui_skin_t *sk = ui_skin();
-    lv_obj_t *row = alm_box(parent);
+    lv_obj_t *row = kit_plain(parent);
     lv_obj_t *col;
     lv_obj_t *icon;
 
@@ -359,7 +359,7 @@ static lv_obj_t *settings_entry_row(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_add_event_cb(row, settings_entry_cb, LV_EVENT_CLICKED, ctx);
     ctx->alarms.list_settings_row = row;
 
-    if (ALM_IS_ATELIER()) {
+    if (ui_skin_is_atelier()) {
         lv_obj_t *line;
 
         /* Centred caseback lockup: title with a chevron, summary below. */
@@ -368,7 +368,7 @@ static lv_obj_t *settings_entry_row(clock_ui_context_t *ctx, lv_obj_t *parent)
         lv_obj_set_flex_flow(row, LV_FLEX_FLOW_COLUMN);
         lv_obj_set_flex_align(row, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         kit_make_pressable(row);
-        line = alm_box(row);
+        line = kit_plain(row);
         lv_obj_set_size(line, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
         lv_obj_set_flex_flow(line, LV_FLEX_FLOW_ROW);
         lv_obj_set_flex_align(line, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -382,13 +382,13 @@ static lv_obj_t *settings_entry_row(clock_ui_context_t *ctx, lv_obj_t *parent)
     }
 
     ui_attach_click_feedback(row, LV_EVENT_CLICKED);
-    style_row(row, false, ALM_IS_INSTRUMENT() ? 84 : 104);
-    if (ALM_IS_INSTRUMENT()) {
+    style_row(row, false, ui_skin_is_instrument() ? 84 : 104);
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_pad_column(row, 16, 0);
         lv_obj_set_style_pad_hor(row, 12, 0);
         icon = kit_icon(row, KIT_ICON_SETTINGS, sk->text_2);
     } else {
-        lv_obj_t *badge = alm_box(row);
+        lv_obj_t *badge = kit_plain(row);
 
         lv_obj_set_style_pad_left(row, 18, 0);
         lv_obj_set_style_pad_column(row, 18, 0);
@@ -400,20 +400,20 @@ static lv_obj_t *settings_entry_row(clock_ui_context_t *ctx, lv_obj_t *parent)
         lv_obj_center(icon);
     }
     (void)icon;
-    col = alm_box(row);
+    col = kit_plain(row);
     lv_obj_set_flex_grow(col, 1);
     lv_obj_set_height(col, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_add_flag(col, LV_OBJ_FLAG_EVENT_BUBBLE);
-    lv_obj_set_style_pad_row(col, ALM_IS_INSTRUMENT() ? 2 : 0, 0);
+    lv_obj_set_style_pad_row(col, ui_skin_is_instrument() ? 2 : 0, 0);
     ctx->alarms.list_settings_title = alm_label(col, sk->font_heading, sk->text, "");
     ctx->alarms.list_settings_sub =
-        alm_label(col, ALM_IS_INSTRUMENT() ? sk->font_caption : sk->font_body, ALM_IS_INSTRUMENT() ? sk->text_3 : sk->text_2, "");
+        alm_label(col, ui_skin_is_instrument() ? sk->font_caption : sk->font_body, ui_skin_is_instrument() ? sk->text_3 : sk->text_2, "");
     lv_obj_set_width(ctx->alarms.list_settings_title, lv_pct(100));
     lv_obj_set_width(ctx->alarms.list_settings_sub, lv_pct(100));
     alm_one_line(ctx->alarms.list_settings_title);
     alm_one_line(ctx->alarms.list_settings_sub);
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         kit_icon(row, KIT_ICON_CHEVRON_RIGHT, sk->text_3);
     } else {
         kit_icon_small(row, KIT_ICON_CHEVRON_RIGHT, sk->text_3);
@@ -427,10 +427,10 @@ void alm_list_create(clock_ui_context_t *ctx)
     kit_page_t *p = &ctx->alarms.list_page;
     lv_obj_t *content;
 
-    kit_page_create(p, ui_chrome_root(ctx), ALM_IS_ORBIT() ? NULL : "", alm_text(ctx, L10N_ALARMS),
-                    ALM_IS_ORBIT() ? KIT_NAV_CLOSE : KIT_NAV_BACK, nav_cb, ctx);
+    kit_page_create(p, ui_chrome_root(ctx), ui_skin_is_orbit() ? NULL : "", alm_text(ctx, L10N_ALARMS),
+                    ui_skin_is_orbit() ? KIT_NAV_CLOSE : KIT_NAV_BACK, nav_cb, ctx);
     ui_l10n_bind_kit(ctx, p->title, L10N_ALARMS);
-    if (ALM_IS_ORBIT() && p->nav != NULL) {
+    if (ui_skin_is_orbit() && p->nav != NULL) {
         kit_set_tint(p->nav, sk->tint_alarms);
     }
     content = p->content;
@@ -439,8 +439,8 @@ void alm_list_create(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(p->scroll, scroll_cb, LV_EVENT_SCROLL_END, ctx);
 
     /* Next up. */
-    if (ALM_IS_INSTRUMENT()) {
-        lv_obj_t *well = alm_box(content);
+    if (ui_skin_is_instrument()) {
+        lv_obj_t *well = kit_plain(content);
 
         lv_obj_set_size(well, 496, 44);
         lv_obj_set_style_radius(well, 22, 0);
@@ -453,13 +453,13 @@ void alm_list_create(clock_ui_context_t *ctx)
         lv_obj_set_style_pad_column(well, 10, 0);
         lv_obj_set_style_pad_hor(well, 16, 0);
         lv_obj_set_style_margin_bottom(well, 20, 0);
-        ctx->alarms.list_next_led = alm_box(well);
+        ctx->alarms.list_next_led = kit_plain(well);
         lv_obj_set_size(ctx->alarms.list_next_led, 8, 8);
         lv_obj_set_style_radius(ctx->alarms.list_next_led, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_opa(ctx->alarms.list_next_led, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(ctx->alarms.list_next_led, sk->accent, 0);
         ctx->alarms.list_next = alm_label(well, sk->font_caption, sk->text_2, "");
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         ctx->alarms.list_next = alm_label(p->scroll, &or_medium_22, sk->text, "");
         lv_obj_set_width(ctx->alarms.list_next, 560);
         lv_obj_set_style_text_align(ctx->alarms.list_next, LV_TEXT_ALIGN_CENTER, 0);
@@ -467,7 +467,7 @@ void alm_list_create(clock_ui_context_t *ctx)
         lv_obj_align(ctx->alarms.list_next, LV_ALIGN_TOP_MID, 0, 154);
         kit_spacer(content, 24);
     } else {
-        lv_obj_t *line = alm_box(content);
+        lv_obj_t *line = kit_plain(content);
         lv_obj_t *eb;
 
         lv_obj_set_size(line, lv_pct(110), 28);
@@ -486,7 +486,7 @@ void alm_list_create(clock_ui_context_t *ctx)
     ctx->alarms.list_group = kit_group(content);
     allow_overflow(ctx->alarms.list_group);
     allow_overflow(content);
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         lv_obj_set_style_pad_bottom(ctx->alarms.list_group, 8, 0);
     }
     for (int i = 0; i < MAX_ALARMS; i++) {
@@ -494,13 +494,13 @@ void alm_list_create(clock_ui_context_t *ctx)
     }
 
     /* Alarm settings entry. */
-    if (ALM_IS_ATELIER()) {
+    if (ui_skin_is_atelier()) {
         lv_obj_t *div = kit_divider(content);
 
         lv_obj_set_style_margin_top(div, 8, 0);
         lv_obj_set_style_margin_bottom(div, 6, 0);
         settings_entry_row(ctx, content);
-    } else if (ALM_IS_INSTRUMENT()) {
+    } else if (ui_skin_is_instrument()) {
         lv_obj_t *g = kit_group(content);
 
         lv_obj_set_width(g, 488);
@@ -510,17 +510,17 @@ void alm_list_create(clock_ui_context_t *ctx)
     }
 
     /* Add. */
-    if (ALM_IS_ATELIER()) {
+    if (ui_skin_is_atelier()) {
         ctx->alarms.list_add = kit_page_set_action(p, KIT_ICON_PLUS, add_cb, ctx);
     } else {
-        int32_t d = ALM_IS_INSTRUMENT() ? 72 : 88;
+        int32_t d = ui_skin_is_instrument() ? 72 : 88;
 
         ctx->alarms.list_add = kit_round_button(p->root, KIT_BUTTON_PRIMARY, KIT_ICON_PLUS, d);
         kit_set_tint(ctx->alarms.list_add, sk->tint_alarms);
-        lv_obj_set_pos(ctx->alarms.list_add, (KIT_SCREEN - d) / 2, ALM_IS_INSTRUMENT() ? 616 : 604);
+        lv_obj_set_pos(ctx->alarms.list_add, (KIT_SCREEN - d) / 2, ui_skin_is_instrument() ? 616 : 604);
         lv_obj_add_event_cb(ctx->alarms.list_add, add_cb, LV_EVENT_CLICKED, ctx);
         /* Room to scroll the last row above the key. */
-        kit_spacer(content, ALM_IS_INSTRUMENT() ? 40 : 30);
+        kit_spacer(content, ui_skin_is_instrument() ? 40 : 30);
     }
 
     alm_add_edge_close(ctx, p->root);
@@ -535,12 +535,12 @@ static void next_up_text(clock_ui_context_t *ctx, time_t now, char *out, size_t 
     char when[48];
     char in[48];
     time_t next;
-    uint32_t c_head = lv_color_to_u32(ALM_IS_ORBIT() ? sk->tint_alarms : sk->text_3) & 0xFFFFFF;
+    uint32_t c_head = lv_color_to_u32(ui_skin_is_orbit() ? sk->tint_alarms : sk->text_3) & 0xFFFFFF;
     uint32_t c_main = lv_color_to_u32(sk->text) & 0xFFFFFF;
     const char *head = alm_text(ctx, L10N_NEXT_UP);
     char head_up[48];
 
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         kit_text_upper(head_up, sizeof(head_up), head);
         head = head_up;
     }
@@ -559,7 +559,7 @@ static void next_up_text(clock_ui_context_t *ctx, time_t now, char *out, size_t 
     }
     ui_format_day_time(ctx, now, next, when, sizeof(when));
     ui_format_countdown(ctx, now, next, in, sizeof(in));
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_point_t sz;
 
         snprintf(out, size, "#%06" PRIX32 " %s#  #%06" PRIX32 " %s# \xC2\xB7 %s", c_head, head, c_main, when, in);
@@ -568,7 +568,7 @@ static void next_up_text(clock_ui_context_t *ctx, time_t now, char *out, size_t 
             /* Long countdowns and languages: the LED leads, the legend goes. */
             snprintf(out, size, "#%06" PRIX32 " %s# \xC2\xB7 %s", c_main, when, in);
         }
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         snprintf(out, size, "#%06" PRIX32 " %s:# %s#%06" PRIX32 " , %s#", c_head, head, when,
                  lv_color_to_u32(sk->text_2) & 0xFFFFFF, in);
     } else {
@@ -581,14 +581,14 @@ static void sync_next_up(clock_ui_context_t *ctx, time_t now)
     char text[160];
 
     next_up_text(ctx, now, text, sizeof(text));
-    alm_set_text(ctx->alarms.list_next, text);
-    if (ALM_IS_ATELIER()) {
+    kit_label_set_text_if_changed(ctx->alarms.list_next, text);
+    if (ui_skin_is_atelier()) {
         /* The gilt "Next up" only leads a scheduled alarm. */
-        alm_show(ctx->alarms.list_next_led,
+        kit_show(ctx->alarms.list_next_led,
                  ui_next_alarm(ctx, now, NULL, NULL) && !ctx->runtime->alarm_ringing &&
                      !(ctx->runtime->snooze_active && ctx->runtime->snooze_deadline > now));
-    } else if (ALM_IS_INSTRUMENT()) {
-        alm_show(ctx->alarms.list_next_led, ui_next_alarm(ctx, now, NULL, NULL) || ctx->runtime->alarm_ringing);
+    } else if (ui_skin_is_instrument()) {
+        kit_show(ctx->alarms.list_next_led, ui_next_alarm(ctx, now, NULL, NULL) || ctx->runtime->alarm_ringing);
     }
     ctx->alarms.cached_minute = (long)(now / 60);
 }
@@ -603,10 +603,10 @@ static void sync_row(clock_ui_context_t *ctx, int i, time_t now)
     char text[64];
 
     alm_format_hm(text, sizeof(text), alarm->hour, alarm->minute);
-    alm_set_text(r->time, text);
-    alm_set_color(r->time, on ? sk->text : (ALM_IS_ATELIER() ? sk->text_2 : sk->text_3), 0);
+    kit_label_set_text_if_changed(r->time, text);
+    alm_set_color(r->time, on ? sk->text : (ui_skin_is_atelier() ? sk->text_2 : sk->text_3), 0);
 
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         char sum[48];
 
         alm_repeat_summary(ctx, alarm, sum, sizeof(sum));
@@ -618,31 +618,31 @@ static void sync_row(clock_ui_context_t *ctx, int i, time_t now)
         } else {
             snprintf(text, sizeof(text), "%s", sum);
         }
-        alm_set_text(r->title, text);
+        kit_label_set_text_if_changed(r->title, text);
         alm_set_color(r->title, on ? sk->text_2 : sk->text_3, 0);
     } else {
-        if (ALM_IS_ATELIER() && once) {
+        if (ui_skin_is_atelier() && once) {
             char date[32];
 
             alm_format_short_date(ctx, alm_next_occurrence(now, alarm->hour, alarm->minute), date, sizeof(date));
             snprintf(text, sizeof(text), "%s \xC2\xB7 %s", alm_repeat_title(ctx, alarm), date);
-            alm_set_text(r->title, text);
+            kit_label_set_text_if_changed(r->title, text);
         } else {
-            alm_set_text(r->title, alm_repeat_title(ctx, alarm));
+            kit_label_set_text_if_changed(r->title, alm_repeat_title(ctx, alarm));
         }
-        if (ALM_IS_ATELIER()) {
+        if (ui_skin_is_atelier()) {
             alm_set_color(r->title, on ? sk->text : sk->text_2, 0);
         } else {
             alm_set_color(r->title, on ? sk->text_2 : sk->text_3, 0);
         }
-        alm_show(r->days_box, !once);
+        kit_show(r->days_box, !once);
         for (int d = 0; d < 7 && !once; d++) {
             int day = alm_display_day(d);
             bool set = (alarm->days_mask & (1U << day)) != 0;
             lv_color_t c;
 
-            alm_set_text(r->days[d], alm_day_key(ctx, day));
-            if (ALM_IS_INSTRUMENT()) {
+            kit_label_set_text_if_changed(r->days[d], alm_day_key(ctx, day));
+            if (ui_skin_is_instrument()) {
                 c = set && on ? sk->text_2 : set ? sk->text_3 : sk->line_strong;
             } else {
                 c = set && on ? sk->accent : set ? sk->text_2 : sk->text_3;
@@ -650,14 +650,14 @@ static void sync_row(clock_ui_context_t *ctx, int i, time_t now)
             alm_set_color(r->days[d], c, 0);
         }
         if (once) {
-            if (ALM_IS_INSTRUMENT()) {
+            if (ui_skin_is_instrument()) {
                 alm_format_short_date(ctx, alm_next_occurrence(now, alarm->hour, alarm->minute), text, sizeof(text));
-                alm_set_text(r->sub, text);
+                kit_label_set_text_if_changed(r->sub, text);
             } else {
-                alm_set_text(r->sub, on ? "" : alm_text(ctx, L10N_OFF));
+                kit_label_set_text_if_changed(r->sub, on ? "" : alm_text(ctx, L10N_OFF));
             }
         }
-        alm_show(r->sub, once && (ALM_IS_INSTRUMENT() || !on));
+        kit_show(r->sub, once && (ui_skin_is_instrument() || !on));
     }
     ctx->suppress_events = true;
     kit_switch_set(r->sw, on);
@@ -680,19 +680,19 @@ void alm_list_sync(clock_ui_context_t *ctx, time_t now)
         if (empty) {
             alm_list_close_swipe(ctx, (int8_t)i, false);
         }
-        alm_show(a->rows[i].wrap, !empty);
+        kit_show(a->rows[i].wrap, !empty);
         if (!empty) {
             count++;
             on += ctx->settings->alarms[i].enabled ? 1 : 0;
             sync_row(ctx, i, now);
         }
     }
-    alm_show(a->list_group, count > 0);
-    alm_show(a->list_add, alm_find_new_slot(ctx) >= 0);
+    kit_show(a->list_group, count > 0);
+    kit_show(a->list_add, alm_find_new_slot(ctx) >= 0);
 
-    if (!ALM_IS_ORBIT()) {
+    if (!ui_skin_is_orbit()) {
         alm_format_count(ctx, count, text, sizeof(text));
-        if (ALM_IS_ATELIER() && count > 0) {
+        if (ui_skin_is_atelier() && count > 0) {
             size_t len = strlen(text);
 
             snprintf(text + len, sizeof(text) - len, " \xC2\xB7 ");
@@ -703,19 +703,19 @@ void alm_list_sync(clock_ui_context_t *ctx, time_t now)
     }
     sync_next_up(ctx, now);
 
-    alm_set_text(a->list_settings_title, alm_str(ctx, &alm_s_alarm_settings));
+    kit_label_set_text_if_changed(a->list_settings_title, alm_str(ctx, &alm_s_alarm_settings));
     {
         char mins[24];
 
         alm_format_minutes(ctx, ctx->settings->snooze_minutes, mins, sizeof(mins));
-        if (ALM_IS_ATELIER()) {
+        if (ui_skin_is_atelier()) {
             snprintf(text, sizeof(text), "%s \xC2\xB7 %s %s",
                      alm_str(ctx, alm_sound_name(ctx->settings->default_alarm_sound)), alm_text(ctx, L10N_SNOOZE), mins);
         } else {
             snprintf(text, sizeof(text), "%s %s \xC2\xB7 %s", alm_text(ctx, L10N_SNOOZE), mins,
                      alm_str(ctx, alm_sound_name(ctx->settings->default_alarm_sound)));
         }
-        alm_set_text(a->list_settings_sub, text);
+        kit_label_set_text_if_changed(a->list_settings_sub, text);
     }
 
     if (a->focus_alarm_index >= 0 && a->focus_alarm_index < MAX_ALARMS && a->open && !a->editor_open &&
@@ -790,7 +790,7 @@ static void volume_cb(lv_event_t *e)
     }
     /* The readout follows the finger; the setting is stored when the value changes. */
     snprintf(text, sizeof(text), "%d%%", (int)v);
-    alm_set_text(ctx->alarms.volume_value, text);
+    kit_label_set_text_if_changed(ctx->alarms.volume_value, text);
     if (v != ctx->settings->alarm_volume) {
         request_set_alarm_volume(ctx, (uint8_t)v);
     }
@@ -859,7 +859,7 @@ void alm_settings_create(clock_ui_context_t *ctx)
     kit_page_create(p, ui_chrome_root(ctx), NULL, alm_str(ctx, &alm_s_settings_title),
                     KIT_NAV_BACK, settings_nav_cb, ctx);
     ui_l10n_bind_kit_str(ctx, p->title, &alm_s_settings_title);
-    if (ALM_IS_ORBIT() && p->nav != NULL) {
+    if (ui_skin_is_orbit() && p->nav != NULL) {
         kit_set_tint(p->nav, sk->tint_alarms);
     }
     lv_obj_set_flex_align(p->content, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
@@ -867,30 +867,30 @@ void alm_settings_create(clock_ui_context_t *ctx)
     /* Snooze: a stepper, minutes as a figure. */
     label = kit_section_label(p->content, alm_text(ctx, L10N_SNOOZE_DURATION));
     ui_l10n_bind_kit(ctx, label, L10N_SNOOZE_DURATION);
-    g = ALM_IS_ORBIT() ? kit_group_joined(p->content) : kit_group(p->content);
-    r = alm_box(g);
+    g = ui_skin_is_orbit() ? kit_group_joined(p->content) : kit_group(p->content);
+    r = kit_plain(g);
     lv_obj_set_size(r, lv_pct(100), 112);
     lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_hor(r, ALM_IS_ORBIT() ? 20 : ALM_IS_INSTRUMENT() ? 8 : 4, 0);
-    if (ALM_IS_INSTRUMENT()) {
+    lv_obj_set_style_pad_hor(r, ui_skin_is_orbit() ? 20 : ui_skin_is_instrument() ? 8 : 4, 0);
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_border_side(r, LV_BORDER_SIDE_TOP, 0);
         lv_obj_set_style_border_width(r, 1, 0);
         lv_obj_set_style_border_color(r, sk->line, 0);
     }
     ctx->alarms.snooze_minus = kit_round_button(r, KIT_BUTTON_SECONDARY, KIT_ICON_MINUS, 72);
     lv_obj_add_event_cb(ctx->alarms.snooze_minus, snooze_minus_cb, LV_EVENT_CLICKED, ctx);
-    box = alm_box(r);
+    box = kit_plain(r);
     lv_obj_set_size(box, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(box, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
     lv_obj_set_style_pad_column(box, 10, 0);
     ctx->alarms.snooze_value = alm_label(box, sk->font_time_m, sk->text, "9");
     ctx->alarms.snooze_unit = kit_label(box, KIT_TEXT_LABEL, "min");
-    lv_obj_set_style_margin_bottom(ctx->alarms.snooze_unit, ALM_IS_ATELIER() ? 14 : 10, 0);
+    lv_obj_set_style_margin_bottom(ctx->alarms.snooze_unit, ui_skin_is_atelier() ? 14 : 10, 0);
     ctx->alarms.snooze_plus = kit_round_button(r, KIT_BUTTON_SECONDARY, KIT_ICON_PLUS, 72);
     lv_obj_add_event_cb(ctx->alarms.snooze_plus, snooze_plus_cb, LV_EVENT_CLICKED, ctx);
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         kit_set_tint(ctx->alarms.snooze_minus, sk->tint_alarms);
         kit_set_tint(ctx->alarms.snooze_plus, sk->tint_alarms);
     }
@@ -930,8 +930,8 @@ void alm_settings_create(clock_ui_context_t *ctx)
     lv_obj_set_width(ctx->alarms.volume_slider, 10);
     lv_obj_set_flex_grow(ctx->alarms.volume_slider, 1);
     lv_obj_add_event_cb(ctx->alarms.volume_slider, volume_cb, LV_EVENT_VALUE_CHANGED, ctx);
-    ctx->alarms.volume_value = alm_label(row.trail, ALM_IS_ATELIER() ? sk->font_value : sk->font_body,
-                                         ALM_IS_INSTRUMENT() ? sk->text : sk->value, "70%");
+    ctx->alarms.volume_value = alm_label(row.trail, ui_skin_is_atelier() ? sk->font_value : sk->font_body,
+                                         ui_skin_is_instrument() ? sk->text : sk->value, "70%");
     lv_obj_set_style_min_width(ctx->alarms.volume_value, 64, 0);
     lv_obj_set_style_text_align(ctx->alarms.volume_value, LV_TEXT_ALIGN_RIGHT, 0);
 
@@ -961,18 +961,18 @@ void alm_settings_sync(clock_ui_context_t *ctx)
         return;
     }
     snprintf(text, sizeof(text), "%u", st->snooze_minutes);
-    alm_set_text(a->snooze_value, text);
-    alm_set_text(a->snooze_unit, alm_text(ctx, L10N_MINUTE_ABBR));
+    kit_label_set_text_if_changed(a->snooze_value, text);
+    kit_label_set_text_if_changed(a->snooze_unit, alm_text(ctx, L10N_MINUTE_ABBR));
 
     ctx->suppress_events = true;
     kit_slider_set(a->volume_slider, st->alarm_volume);
     kit_switch_set(a->ascending_sw, st->ascending_alarm_enabled);
     ctx->suppress_events = false;
     snprintf(text, sizeof(text), "%u%%", st->alarm_volume);
-    alm_set_text(a->volume_value, text);
+    kit_label_set_text_if_changed(a->volume_value, text);
 
-    alm_set_text(a->settings_sound_sub, alm_str(ctx, &alm_s_tap_to_change));
-    alm_set_text(a->settings_sound_title, alm_str(ctx, alm_sound_name(st->default_alarm_sound)));
+    kit_label_set_text_if_changed(a->settings_sound_sub, alm_str(ctx, &alm_s_tap_to_change));
+    kit_label_set_text_if_changed(a->settings_sound_title, alm_str(ctx, alm_sound_name(st->default_alarm_sound)));
     kit_button_set_text(a->settings_test_btn, alm_str(ctx, testing ? &alm_s_stop : &alm_s_test));
     kit_icon_set(lv_obj_get_child(a->settings_test_btn, 0), testing ? KIT_ICON_STOP : KIT_ICON_PLAY);
 }

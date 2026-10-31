@@ -173,7 +173,7 @@ static void build_hero(clock_ui_context_t *ctx, kit_page_t *p)
     lv_obj_t *col;
     lv_obj_t *line;
 
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         /* Readout panel: signal meter, network and its link details. */
         st->wifi_hero = kit_card(p->content);
         lv_obj_set_flex_flow(st->wifi_hero, LV_FLEX_FLOW_ROW);
@@ -194,7 +194,7 @@ static void build_hero(clock_ui_context_t *ctx, kit_page_t *p)
         lv_obj_set_style_text_color(st->wifi_hero_sub, sk->text_2, 0);
         lv_obj_set_width(st->wifi_hero_sub, lv_pct(100));
         lv_label_set_long_mode(st->wifi_hero_sub, LV_LABEL_LONG_MODE_DOTS);
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         kit_row_t row;
         kit_row_opts_t o = {0};
         lv_obj_t *group = kit_group(p->content);
@@ -241,13 +241,13 @@ static void build_clock(clock_ui_context_t *ctx, kit_page_t *p)
     kit_row_opts_t o = {0};
 
     st_bind(ctx, kit_section_label(p->content, ""),
-            st_instrument() ? ST_ID(L10N_CLOCK) : st_orbit() ? ST_STR(&s_time) : ST_STR(&s_time_clock));
+            ui_skin_is_instrument() ? ST_ID(L10N_CLOCK) : ui_skin_is_orbit() ? ST_STR(&s_time) : ST_STR(&s_time_clock));
     group = kit_group(p->content);
 
     /* Time zone. */
     o.on_click = timezone_row_cb;
     o.user_data = ctx;
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         o.trail = KIT_TRAIL_CUSTOM;
         st_row(ctx, &row, group, &o, ST_ID(L10N_TIME_ZONE), ST_NONE);
         col = st_vbox(row.trail, 0);
@@ -256,7 +256,7 @@ static void build_clock(clock_ui_context_t *ctx, kit_page_t *p)
         lv_obj_set_style_text_color(st->wifi_tz_value, sk->text, 0);
         st->wifi_tz_sub = kit_label(col, KIT_TEXT_CAPTION, "");
         kit_icon(row.trail, KIT_ICON_CHEVRON_RIGHT, sk->text_3);
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_GLOBE;
         o.tint = sk->tint_wifi;
         o.trail = KIT_TRAIL_CHEVRON;
@@ -277,7 +277,7 @@ static void build_clock(clock_ui_context_t *ctx, kit_page_t *p)
     o = (kit_row_opts_t) {0};
     o.trail = KIT_TRAIL_SWITCH;
     o.tint = sk->tint_wifi;
-    if (!st_instrument()) {
+    if (!ui_skin_is_instrument()) {
         o.icon = KIT_ICON_CLOCK;
     } else {
         o.subtitle = " ";
@@ -293,7 +293,7 @@ static void build_clock(clock_ui_context_t *ctx, kit_page_t *p)
 
     /* Sync time. */
     o = (kit_row_opts_t) {0};
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.trail = KIT_TRAIL_VALUE;
         o.value = " ";
         o.on_click = sync_now_cb;
@@ -304,17 +304,17 @@ static void build_clock(clock_ui_context_t *ctx, kit_page_t *p)
     } else {
         o.trail = KIT_TRAIL_CUSTOM;
         o.subtitle = " ";
-        if (st_atelier()) {
+        if (ui_skin_is_atelier()) {
             o.icon = KIT_ICON_SYNC;
         }
         st_row(ctx, &row, group, &o, ST_ID(L10N_SYNC_TIME), ST_NONE);
         st->wifi_sync_sub = row.subtitle;
-        if (st_instrument()) {
+        if (ui_skin_is_instrument()) {
             lv_obj_set_style_text_font(row.subtitle, sk->font_caption, 0);
             lv_obj_set_style_text_color(row.subtitle, sk->text_3, 0);
         }
-        button = kit_button(row.trail, KIT_BUTTON_QUIET, st_instrument() ? KIT_ICON_SYNC : KIT_ICON_NONE, "");
-        st_bind(ctx, button_label(button), ST_STR(st_instrument() ? &s_sync : &s_sync_now));
+        button = kit_button(row.trail, KIT_BUTTON_QUIET, ui_skin_is_instrument() ? KIT_ICON_SYNC : KIT_ICON_NONE, "");
+        st_bind(ctx, button_label(button), ST_STR(ui_skin_is_instrument() ? &s_sync : &s_sync_now));
         lv_obj_add_event_cb(button, sync_now_cb, LV_EVENT_CLICKED, ctx);
     }
 
@@ -323,7 +323,7 @@ static void build_clock(clock_ui_context_t *ctx, kit_page_t *p)
     o.trail = KIT_TRAIL_CHEVRON;
     o.on_click = manual_row_cb;
     o.user_data = ctx;
-    if (!st_instrument()) {
+    if (!ui_skin_is_instrument()) {
         o.icon = KIT_ICON_CLOCK;
         o.tint = sk->tint_wifi;
     }
@@ -338,14 +338,14 @@ static void build_networks(clock_ui_context_t *ctx, kit_page_t *p)
     lv_obj_t *label;
 
     label = kit_section_label(p->content, "");
-    st_bind(ctx, label, st_instrument() ? ST_ID(L10N_NETWORKS) : ST_STR(&s_other_networks));
+    st_bind(ctx, label, ui_skin_is_instrument() ? ST_ID(L10N_NETWORKS) : ST_STR(&s_other_networks));
     st->wifi_other_label = lv_obj_get_parent(label);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         st->wifi_net_count = kit_label(lv_obj_get_parent(label), KIT_TEXT_LABEL, "");
     }
     st->wifi_net_group = kit_group(p->content);
 
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_t *wrap = st_hbox(p->content, 0);
 
         lv_obj_set_width(wrap, lv_pct(100));
@@ -356,7 +356,7 @@ static void build_networks(clock_ui_context_t *ctx, kit_page_t *p)
         lv_obj_set_style_min_width(st->wifi_scan_btn, 176, 0);
         st->wifi_scan_label = button_label(st->wifi_scan_btn);
         lv_obj_set_style_text_color(st->wifi_scan_label, sk->text, 0);
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_t *act = kit_group(p->content);
 
         st->wifi_scan_btn = act;
@@ -393,12 +393,12 @@ void st_wifi_build(clock_ui_context_t *ctx)
     kit_page_t *p;
     lv_obj_t *wrap;
 
-    p = st_page_begin(ctx, UI_ST_WIFI, st_atelier() ? ST_ID(L10N_SETTINGS) : ST_NONE, ST_ID(L10N_WIFI), KIT_NAV_BACK);
-    if (st_instrument()) {
+    p = st_page_begin(ctx, UI_ST_WIFI, ui_skin_is_atelier() ? ST_ID(L10N_SETTINGS) : ST_NONE, ST_ID(L10N_WIFI), KIT_NAV_BACK);
+    if (ui_skin_is_instrument()) {
         kit_page_set_eyebrow(p, " ");
     }
     build_hero(ctx, p);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         build_clock(ctx, p);
         build_networks(ctx, p);
     } else {
@@ -409,7 +409,7 @@ void st_wifi_build(clock_ui_context_t *ctx)
     wrap = st_hbox(p->content, 0);
     lv_obj_set_width(wrap, lv_pct(100));
     lv_obj_set_flex_align(wrap, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    lv_obj_set_style_pad_top(wrap, st_instrument() ? 0 : 24, 0);
+    lv_obj_set_style_pad_top(wrap, ui_skin_is_instrument() ? 0 : 24, 0);
     st->wifi_forget_btn = kit_button(wrap, KIT_BUTTON_DESTRUCTIVE, KIT_ICON_NONE, "");
     st_bind(ctx, button_label(st->wifi_forget_btn), ST_STR(&s_forget));
     lv_obj_add_event_cb(st->wifi_forget_btn, forget_cb, LV_EVENT_CLICKED, ctx);
@@ -435,7 +435,7 @@ static void rebuild_networks(clock_ui_context_t *ctx)
         kit_row_opts_t o = {0};
         lv_obj_t *meter;
 
-        if (is_current && !st_instrument()) {
+        if (is_current && !ui_skin_is_instrument()) {
             continue; /* shown as the hero */
         }
         listed++;
@@ -454,7 +454,7 @@ static void rebuild_networks(clock_ui_context_t *ctx)
             lv_obj_set_style_text_font(row.subtitle, sk->font_caption, 0);
             lv_obj_set_style_text_color(row.subtitle, sk->accent, 0);
         }
-        if (st_atelier()) {
+        if (ui_skin_is_atelier()) {
             meter = st_signal(row.row, 28);
             lv_obj_move_to_index(meter, 0);
             st_signal_set(meter, st_signal_level(r->rssi), false);
@@ -465,9 +465,9 @@ static void rebuild_networks(clock_ui_context_t *ctx)
             if (is_current) {
                 kit_icon_small(row.trail, KIT_ICON_CHECK, sk->accent);
             } else if (r->authmode != 0) {
-                kit_icon_small(row.trail, KIT_ICON_LOCK, st_orbit() ? sk->text_2 : sk->text_3);
+                kit_icon_small(row.trail, KIT_ICON_LOCK, ui_skin_is_orbit() ? sk->text_2 : sk->text_3);
             }
-            meter = st_signal(row.trail, st_orbit() ? 18 : 20);
+            meter = st_signal(row.trail, ui_skin_is_orbit() ? 18 : 20);
             st_signal_set(meter, st_signal_level(r->rssi), false);
         }
         shown++;
@@ -516,13 +516,13 @@ void st_wifi_sync(clock_ui_context_t *ctx, bool force)
     /* Hero. */
     kit_label_set_text_if_changed(st->wifi_hero_title, saved ? ctx->settings->wifi.ssid : ui_l10n_str(ctx, &s_not_connected));
     if (connected) {
-        if (st_instrument()) {
+        if (ui_skin_is_instrument()) {
             if (rt->wifi_ip[0] != '\0') {
                 snprintf(text, sizeof(text), "\xE2\x88\x92%d dBm · %s", -rt->wifi_rssi, rt->wifi_ip);
             } else {
                 snprintf(text, sizeof(text), "\xE2\x88\x92%d dBm", -rt->wifi_rssi);
             }
-        } else if (st_orbit()) {
+        } else if (ui_skin_is_orbit()) {
             snprintf(text, sizeof(text), "%s", ui_l10n_str(ctx, &s_connected));
         } else {
             snprintf(text, sizeof(text), "%s · %s", ui_l10n_str(ctx, &s_connected),
@@ -535,11 +535,11 @@ void st_wifi_sync(clock_ui_context_t *ctx, bool force)
     }
     kit_label_set_text_if_changed(st->wifi_hero_sub, text);
     st_signal_set(st->wifi_hero_signal, level, false);
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         st_text_color(st->wifi_hero_sub, connected ? sk->accent : sk->text_2);
         st_bg_color(st->wifi_hero_mark, connected ? sk->tint_wifi : sk->raised);
     } else {
-        st_show(st->wifi_hero_mark, connected);
+        kit_show(st->wifi_hero_mark, connected);
     }
 
     /* Networks: rebuilt only when a scan finished or the connection changed. */
@@ -547,7 +547,7 @@ void st_wifi_sync(clock_ui_context_t *ctx, bool force)
         st->wifi_list_connected != connected || strcmp(st->wifi_list_ssid, ctx->settings->wifi.ssid) != 0) {
         rebuild_networks(ctx);
     }
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         snprintf(text, sizeof(text), "%s", ui_l10n_str(ctx, rt->wifi_scanning ? &s_scanning : &s_scan_for));
     } else {
         snprintf(text, sizeof(text), "%s", ui_l10n_str(ctx, rt->wifi_scanning ? &s_scanning : &s_scan_short));
@@ -557,11 +557,11 @@ void st_wifi_sync(clock_ui_context_t *ctx, bool force)
 
     /* Clock. */
     st_format_tz(ctx->settings->wifi.timezone_id, name, sizeof(name), offset, sizeof(offset));
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         kit_label_set_text_if_changed(st->wifi_tz_value, name);
         kit_label_set_text_if_changed(st->wifi_tz_sub, offset);
-        st_show(st->wifi_tz_sub, offset[0] != '\0');
-    } else if (st_orbit()) {
+        kit_show(st->wifi_tz_sub, offset[0] != '\0');
+    } else if (ui_skin_is_orbit()) {
         if (offset[0] != '\0') {
             snprintf(text, sizeof(text), "%s (%s)", name, offset);
         } else {
@@ -581,10 +581,10 @@ void st_wifi_sync(clock_ui_context_t *ctx, bool force)
     if (st->wifi_auto_sub != NULL) {
         kit_label_set_text_if_changed(st->wifi_auto_sub, manual ? ui_l10n_text(ctx, L10N_MANUAL_TIME) : "pool.ntp.org");
     }
-    st_format_synced(ctx, text, sizeof(text), st_orbit() ? &s_synced : &s_last_synced);
+    st_format_synced(ctx, text, sizeof(text), ui_skin_is_orbit() ? &s_synced : &s_last_synced);
     kit_label_set_text_if_changed(st->wifi_sync_sub, text);
-    st_show(st->wifi_manual_row, manual);
-    st_show(lv_obj_get_parent(st->wifi_forget_btn), saved);
+    kit_show(st->wifi_manual_row, manual);
+    kit_show(lv_obj_get_parent(st->wifi_forget_btn), saved);
 }
 
 /* --- Join network ---------------------------------------------------------------------- */
@@ -640,7 +640,7 @@ static void join_build(clock_ui_context_t *ctx)
     lv_obj_add_flag(root, LV_OBJ_FLAG_HIDDEN);
     st->join_root = root;
 
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         box = st_hbox(root, 8);
         lv_obj_align(box, LV_ALIGN_TOP_MID, 0, 40);
         kit_icon_small(box, KIT_ICON_LOCK, sk->label);
@@ -648,7 +648,7 @@ static void join_build(clock_ui_context_t *ctx)
         field_y = 150;
         kb_y = 240;
         kb_h = 4 * 64 + 18;
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         field_y = 124;
         kb_y = 224;
         kb_h = 4 * 64 + 24;
@@ -661,12 +661,12 @@ static void join_build(clock_ui_context_t *ctx)
     }
 
     st->join_title = kit_label(root, KIT_TEXT_TITLE, "");
-    lv_obj_set_width(st->join_title, st_orbit() ? 380 : 440);
+    lv_obj_set_width(st->join_title, ui_skin_is_orbit() ? 380 : 440);
     lv_label_set_long_mode(st->join_title, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_set_style_text_align(st->join_title, LV_TEXT_ALIGN_CENTER, 0);
-    lv_obj_align(st->join_title, LV_ALIGN_TOP_MID, 0, st_instrument() ? 68 : st_orbit() ? 56 : 80);
+    lv_obj_align(st->join_title, LV_ALIGN_TOP_MID, 0, ui_skin_is_instrument() ? 68 : ui_skin_is_orbit() ? 56 : 80);
 
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         st->join_meta = kit_label(root, KIT_TEXT_CAPTION, "");
         lv_obj_set_style_text_color(st->join_meta, sk->text_2, 0);
         lv_obj_align(st->join_meta, LV_ALIGN_TOP_MID, 0, 112);
@@ -681,14 +681,14 @@ static void join_build(clock_ui_context_t *ctx)
     lv_obj_remove_flag(st->join_field, LV_OBJ_FLAG_CLICK_FOCUSABLE);
     st_keep_gestures(st->join_field);
 
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_width(st->join_field, 364);
         lv_obj_set_pos(st->join_field, 136, field_y);
         st->join_eye = kit_round_button(root, KIT_BUTTON_SECONDARY, KIT_ICON_EYE, 72);
         lv_obj_set_style_radius(st->join_eye, sk->radius_s, 0);
         lv_obj_set_pos(st->join_eye, 512, field_y);
     } else {
-        int32_t w = st_orbit() ? 520 : 420;
+        int32_t w = ui_skin_is_orbit() ? 520 : 420;
         int32_t h;
 
         lv_obj_set_width(st->join_field, w);
@@ -696,7 +696,7 @@ static void join_build(clock_ui_context_t *ctx)
         h = lv_obj_get_height(st->join_field);
         lv_obj_set_pos(st->join_field, (KIT_SCREEN - w) / 2, field_y);
         lv_obj_set_style_pad_right(st->join_field, 80, 0);
-        if (st_atelier()) {
+        if (ui_skin_is_atelier()) {
             lv_obj_t *lock = kit_icon_small(root, KIT_ICON_LOCK, sk->text_3);
 
             lv_obj_set_style_pad_left(st->join_field, 60, 0);
@@ -704,9 +704,9 @@ static void join_build(clock_ui_context_t *ctx)
         }
         st->join_eye = kit_round_button(root, KIT_BUTTON_QUIET, KIT_ICON_EYE, 56);
         lv_obj_set_style_bg_opa(st->join_eye, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(st->join_eye, st_orbit() ? sk->well : sk->raised, 0);
+        lv_obj_set_style_bg_color(st->join_eye, ui_skin_is_orbit() ? sk->well : sk->raised, 0);
         lv_obj_set_style_border_width(st->join_eye, 0, 0);
-        lv_obj_set_style_image_recolor(lv_obj_get_child(st->join_eye, 0), st_orbit() ? sk->text : sk->value, 0);
+        lv_obj_set_style_image_recolor(lv_obj_get_child(st->join_eye, 0), ui_skin_is_orbit() ? sk->text : sk->value, 0);
         lv_obj_set_pos(st->join_eye, (KIT_SCREEN + w) / 2 - 56 - (h - 56) / 2, field_y + (h - 56) / 2);
     }
     lv_obj_add_event_cb(st->join_eye, join_eye_cb, LV_EVENT_CLICKED, ctx);
@@ -719,7 +719,7 @@ static void join_build(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(st->join_keyboard, join_connect_cb, LV_EVENT_READY, ctx);
     st_keep_gestures(st->join_keyboard);
 
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         static const int32_t xs[2] = {232, 392};
 
         for (int i = 0; i < 2; i++) {
@@ -739,10 +739,10 @@ static void join_build(clock_ui_context_t *ctx)
             }
         }
     } else {
-        int32_t w = st_instrument() ? 216 : 180;
+        int32_t w = ui_skin_is_instrument() ? 216 : 180;
 
         box = st_hbox(root, 16);
-        lv_obj_align(box, LV_ALIGN_TOP_MID, 0, kb_y + kb_h + (st_instrument() ? 16 : 22));
+        lv_obj_align(box, LV_ALIGN_TOP_MID, 0, kb_y + kb_h + (ui_skin_is_instrument() ? 16 : 22));
         b = kit_button(box, KIT_BUTTON_SECONDARY, KIT_ICON_NONE, "");
         st_bind(ctx, button_label(b), ST_ID(L10N_CANCEL));
         lv_obj_set_size(b, w, 72);
@@ -776,7 +776,7 @@ void st_join_open(clock_ui_context_t *ctx, const char *ssid, int rssi, int authm
     kit_icon_set(lv_obj_get_child(st->join_eye, 0), KIT_ICON_EYE);
     lv_keyboard_set_mode(st->join_keyboard, LV_KEYBOARD_MODE_TEXT_LOWER);
     st->join_open = true;
-    st_show(st->join_root, true);
+    kit_show(st->join_root, true);
     lv_obj_move_foreground(st->join_root);
 }
 
@@ -789,7 +789,7 @@ void st_join_close(clock_ui_context_t *ctx)
     if (st->join_field != NULL) {
         lv_textarea_set_text(st->join_field, "");
     }
-    st_show(st->join_root, false);
+    kit_show(st->join_root, false);
 }
 
 /* --- Time zone ------------------------------------------------------------------------- */
@@ -812,7 +812,7 @@ void st_timezone_build(clock_ui_context_t *ctx)
     kit_page_t *p;
     lv_obj_t *group;
 
-    p = st_page_begin(ctx, UI_ST_TIMEZONE, st_orbit() ? ST_NONE : ST_ID(L10N_WIFI), ST_ID(L10N_TIME_ZONE),
+    p = st_page_begin(ctx, UI_ST_TIMEZONE, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_WIFI), ST_ID(L10N_TIME_ZONE),
                       KIT_NAV_BACK);
     group = kit_group(p->content);
     for (uint8_t i = 0; i < count; i++) {
@@ -833,7 +833,7 @@ void st_timezone_build(clock_ui_context_t *ctx)
         if (offset[0] != '\0') {
             lv_obj_t *value = kit_label(row.trail, KIT_TEXT_BODY, offset);
 
-            lv_obj_set_style_text_color(value, st_orbit() ? sk->text_2 : sk->value, 0);
+            lv_obj_set_style_text_color(value, ui_skin_is_orbit() ? sk->text_2 : sk->value, 0);
         }
         st->tz_check[i] = kit_icon_small(row.trail, KIT_ICON_CHECK, sk->accent);
         st->tz_row[i] = row.row;
@@ -928,9 +928,9 @@ void st_manual_build(clock_ui_context_t *ctx)
     kit_page_t *p;
     lv_obj_t *row;
     lv_obj_t *b;
-    int32_t w2 = st_orbit() ? 96 : 90;
+    int32_t w2 = ui_skin_is_orbit() ? 96 : 90;
 
-    p = st_page_begin(ctx, UI_ST_MANUAL_TIME, st_orbit() ? ST_NONE : ST_ID(L10N_WIFI), ST_STR(&s_date_time),
+    p = st_page_begin(ctx, UI_ST_MANUAL_TIME, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_WIFI), ST_STR(&s_date_time),
                       KIT_NAV_BACK);
     st_bind(ctx, kit_section_label(p->content, ""), ST_STR(&s_date));
     row = st_hbox(p->content, 4);

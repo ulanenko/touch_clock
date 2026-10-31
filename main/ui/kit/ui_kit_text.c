@@ -169,7 +169,7 @@ lv_color_t kit_role_color(kit_text_role_t role)
     case KIT_TEXT_CAPTION:
         return sk->text_3;
     case KIT_TEXT_BUTTON:
-        return kit_is_atelier() ? sk->value : sk->text;
+        return ui_skin_is_atelier() ? sk->value : sk->text;
     default:
         return sk->text;
     }

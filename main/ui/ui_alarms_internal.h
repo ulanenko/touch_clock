@@ -24,9 +24,6 @@
 #include "ui/ui_areas.h"
 #include "ui/ui_format.h"
 
-#define ALM_IS_INSTRUMENT() (ui_skin_style() == CLOCK_UI_STYLE_INSTRUMENT)
-#define ALM_IS_ORBIT() (ui_skin_style() == CLOCK_UI_STYLE_ORBIT)
-#define ALM_IS_ATELIER() (ui_skin_style() == CLOCK_UI_STYLE_ATELIER)
 
 /* --- Strings (ui_alarms.c) ---------------------------------------------------------- */
 
@@ -89,7 +86,6 @@ void alm_auto_close_reset(clock_ui_context_t *ctx);
 void alm_auto_close_pause(clock_ui_context_t *ctx);
 /* Edge swipes close the page (as before the redesign). */
 void alm_add_edge_close(clock_ui_context_t *ctx, lv_obj_t *page_root);
-void alm_show(lv_obj_t *obj, bool show);
 /* Re-reads settings and runtime into every page that is built. */
 void alm_sync_all(clock_ui_context_t *ctx);
 void alm_test_toggle(clock_ui_context_t *ctx);
@@ -143,13 +139,9 @@ void alm_banner_feedback(clock_ui_context_t *ctx, const char *text, bool reverti
 /* --- Small drawing helpers (ui_alarms.c) -------------------------------------------- */
 
 /* A plain container: no theme, not clickable, not scrollable. */
-lv_obj_t *alm_box(lv_obj_t *parent);
 lv_obj_t *alm_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text);
-void alm_set_text(lv_obj_t *label, const char *text);
 /* Single line with dots: fixed to the font's line height. */
 void alm_one_line(lv_obj_t *label);
-/* Atelier chapter ring: hairline and minute track, without the ticks between the two angles. */
-void alm_draw_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg);
 void alm_set_color(lv_obj_t *obj, lv_color_t color, lv_part_t part);
 /* Point on a circle around (cx, cy); angle in degrees, 0 = 12 o'clock, clockwise. */
 void alm_polar(int32_t cx, int32_t cy, int32_t r, int32_t angle_x10, int32_t *x, int32_t *y);

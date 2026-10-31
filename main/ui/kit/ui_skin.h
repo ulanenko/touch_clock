@@ -98,6 +98,22 @@ const ui_skin_t *ui_skin(void);
 clock_ui_style_t ui_skin_style(void);
 /* Liquid Glass: Orbit's layouts (ui_skin_style() is ORBIT) with glass surfaces. */
 bool ui_skin_is_glass(void);
+
+/* The layout family in use (Liquid Glass is Orbit's). */
+static inline bool ui_skin_is_instrument(void)
+{
+    return ui_skin_style() == CLOCK_UI_STYLE_INSTRUMENT;
+}
+
+static inline bool ui_skin_is_orbit(void)
+{
+    return ui_skin_style() == CLOCK_UI_STYLE_ORBIT;
+}
+
+static inline bool ui_skin_is_atelier(void)
+{
+    return ui_skin_style() == CLOCK_UI_STYLE_ATELIER;
+}
 void ui_skin_set_style(clock_ui_style_t style);
 
 /* Localised display name of a style, for the style picker. */

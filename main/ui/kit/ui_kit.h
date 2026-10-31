@@ -122,6 +122,10 @@ typedef enum {
     KIT_TEXT_DISPLAY, /* digits: ringing time */
 } kit_text_role_t;
 
+/* A plain object without theme styles: not clickable, not scrollable, transparent. */
+lv_obj_t *kit_plain(lv_obj_t *parent);
+/* Hides or shows an object (only touches it when the state changes). */
+void kit_show(lv_obj_t *obj, bool show);
 /* A label in the role's font and colour. Text is copied (and capitalised for LABEL). */
 lv_obj_t *kit_label(lv_obj_t *parent, kit_text_role_t role, const char *text);
 /* Sets the text of a kit label again, applying its role's capitalisation. */

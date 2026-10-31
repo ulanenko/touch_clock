@@ -62,7 +62,7 @@ static void build_home(kit_page_t *p)
 
     r = hrow(p->content, 0);
     lv_obj_set_style_pad_top(r, 0, 0);
-    lv_obj_set_style_pad_bottom(r, kit_is_orbit() ? 8 : 24, 0);
+    lv_obj_set_style_pad_bottom(r, ui_skin_is_orbit() ? 8 : 24, 0);
     kit_chip(r, KIT_ICON_NONE, "Wi-Fi  Home-5G · synced 14:13", true);
 
     group = kit_group(p->content);
@@ -199,7 +199,7 @@ static void build_controls(kit_page_t *p)
     kit_section_label(p->content, "Segmented");
     kit_set_tint(kit_segmented(p->content, repeat, 4, 2), sk->tint_alarms);
     kit_spacer(p->content, 16);
-    r = hrow(p->content, kit_is_atelier() ? 0 : 8);
+    r = hrow(p->content, ui_skin_is_atelier() ? 0 : 8);
     lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     for (int i = 0; i < 7; i++) {

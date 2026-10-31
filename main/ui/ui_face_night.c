@@ -89,14 +89,14 @@ void face_night_create(clock_ui_context_t *ctx)
     clock_ui_style_t style = ui_skin_style();
     lv_color_t ink = sk->night; /* until the first sync colours them for the face */
 
-    fc->night = face_plain(ui_chrome_root(ctx));
+    fc->night = kit_plain(ui_chrome_root(ctx));
     lv_obj_set_size(fc->night, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_add_flag(fc->night, LV_OBJ_FLAG_HIDDEN);
 
     fc->night_moon = style == CLOCK_UI_STYLE_INSTRUMENT ? kit_icon_small(fc->night, KIT_ICON_MOON, ink)
                                                         : kit_icon(fc->night, KIT_ICON_MOON, ink);
 
-    fc->night_alarm_row = face_plain(fc->night);
+    fc->night_alarm_row = kit_plain(fc->night);
     lv_obj_set_size(fc->night_alarm_row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(fc->night_alarm_row, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(fc->night_alarm_row, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);

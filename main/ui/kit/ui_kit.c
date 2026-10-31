@@ -32,6 +32,18 @@ lv_obj_t *kit_plain(lv_obj_t *parent)
     return obj;
 }
 
+void kit_show(lv_obj_t *obj, bool show)
+{
+    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) == !show) {
+        return;
+    }
+    if (show) {
+        lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
 void kit_add_pressed_dim(lv_obj_t *obj)
 {
     static lv_style_t pressed;
@@ -314,7 +326,7 @@ void kit_icon_set(lv_obj_t *image, kit_icon_t icon)
     }
     cur = lv_image_get_src(image);
     /* Keep the size the image was created with. */
-    if (cur != NULL && cur->header.w > 28 && kit_is_orbit() && icon > KIT_ICON_NONE && icon < KIT_ICON_COUNT) {
+    if (cur != NULL && cur->header.w > 28 && ui_skin_is_orbit() && icon > KIT_ICON_NONE && icon < KIT_ICON_COUNT) {
         src = s_icons_orbit_large[icon];
     } else {
         src = (cur != NULL && cur->header.w < 28) ? kit_icon_small_src(icon) : kit_icon_src(icon);
@@ -368,13 +380,13 @@ static lv_color_t button_fg(kit_button_kind_t kind)
     case KIT_BUTTON_DESTRUCTIVE:
         return sk->danger_text;
     case KIT_BUTTON_QUIET:
-        if (kit_is_orbit()) {
+        if (ui_skin_is_orbit()) {
             return sk->accent;
         }
-        return kit_is_atelier() ? sk->value : sk->text;
+        return ui_skin_is_atelier() ? sk->value : sk->text;
     case KIT_BUTTON_SECONDARY:
     default:
-        return kit_is_atelier() ? sk->value : sk->text;
+        return ui_skin_is_atelier() ? sk->value : sk->text;
     }
 }
 
@@ -382,7 +394,7 @@ static void style_button_surface(lv_obj_t *btn, kit_button_kind_t kind, bool rou
 {
     const ui_skin_t *sk = ui_skin();
 
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_radius(btn, round ? LV_RADIUS_CIRCLE : sk->radius_s, 0);
         if (kind == KIT_BUTTON_QUIET && round) {
             lv_obj_set_style_bg_color(btn, sk->well, 0);
@@ -400,7 +412,7 @@ static void style_button_surface(lv_obj_t *btn, kit_button_kind_t kind, bool rou
             lv_obj_set_style_border_color(btn, sk->line, 0);
             kit_add_key_deco(btn, &kit_deco_key);
         }
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_radius(btn, LV_RADIUS_CIRCLE, 0);
         switch (kind) {
         case KIT_BUTTON_PRIMARY:
@@ -471,13 +483,13 @@ lv_obj_t *kit_button(lv_obj_t *parent, kit_button_kind_t kind, kit_icon_t icon, 
     int32_t pad = 24;
     lv_obj_t *label;
 
-    if (kit_is_orbit()) {
+    if (ui_skin_is_orbit()) {
         pad = 30;
         if (kind == KIT_BUTTON_QUIET || kind == KIT_BUTTON_DESTRUCTIVE) {
             h = 56; /* wash pills */
             pad = 22;
         }
-    } else if (kit_is_atelier()) {
+    } else if (ui_skin_is_atelier()) {
         pad = 28;
         if (kind == KIT_BUTTON_QUIET) {
             h = 52; /* the small framed button (Sync now, Test) */
@@ -490,26 +502,26 @@ lv_obj_t *kit_button(lv_obj_t *parent, kit_button_kind_t kind, kit_icon_t icon, 
     style_button_surface(btn, kind, false);
     lv_obj_set_size(btn, LV_SIZE_CONTENT, h);
     lv_obj_set_style_pad_hor(btn, pad, 0);
-    lv_obj_set_style_pad_column(btn, kit_is_orbit() ? 10 : 12, 0);
+    lv_obj_set_style_pad_column(btn, ui_skin_is_orbit() ? 10 : 12, 0);
     lv_obj_set_flex_flow(btn, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(btn, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     kit_ensure_tap(btn, 200, h);
     if (icon != KIT_ICON_NONE) {
         kit_icon_small(btn, icon, fg);
-        if (kind == KIT_BUTTON_QUIET && kit_is_instrument()) {
+        if (kind == KIT_BUTTON_QUIET && ui_skin_is_instrument()) {
             lv_obj_set_style_pad_left(btn, 14, 0);
         }
     }
-    if (kind == KIT_BUTTON_QUIET && !kit_is_orbit()) {
+    if (kind == KIT_BUTTON_QUIET && !ui_skin_is_orbit()) {
         label = kit_label_raw(btn, KIT_TEXT_LABEL, text);
-        if (kit_is_atelier()) {
+        if (ui_skin_is_atelier()) {
             lv_obj_set_style_text_letter_space(label, 2, 0);
         }
     } else {
         label = kit_label_raw(btn, KIT_TEXT_BUTTON, text);
     }
     lv_obj_set_style_text_color(label, fg, 0);
-    if (kit_is_atelier() && kind == KIT_BUTTON_PRIMARY) {
+    if (ui_skin_is_atelier() && kind == KIT_BUTTON_PRIMARY) {
         lv_obj_set_style_text_color(label, sk->accent_text, 0);
     }
     return btn;
@@ -547,12 +559,12 @@ lv_obj_t *kit_round_button(lv_obj_t *parent, kit_button_kind_t kind, kit_icon_t 
     style_button_surface(btn, kind, true);
     lv_obj_set_size(btn, size, size);
     kit_ensure_tap(btn, size, size);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         fg = kind == KIT_BUTTON_PRIMARY ? sk->accent_text
              : kind == KIT_BUTTON_QUIET ? sk->text_2
              : kind == KIT_BUTTON_DESTRUCTIVE ? sk->danger_text
                                             : sk->text;
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         fg = kind == KIT_BUTTON_PRIMARY ? sk->accent_text
              : kind == KIT_BUTTON_QUIET ? sk->accent
              : kind == KIT_BUTTON_DESTRUCTIVE ? sk->danger
@@ -563,7 +575,7 @@ lv_obj_t *kit_round_button(lv_obj_t *parent, kit_button_kind_t kind, kit_icon_t 
                                             : sk->value;
     }
     if (icon != KIT_ICON_NONE) {
-        if (kit_is_orbit() && size >= 80) {
+        if (ui_skin_is_orbit() && size >= 80) {
             img = icon_image(btn, s_icons_orbit_large[icon], fg);
         } else {
             img = kit_icon(btn, icon, fg);
@@ -581,7 +593,7 @@ void kit_button_set_tint(lv_obj_t *button, lv_color_t tint)
     bool set_fg = true;
     uint32_t n;
 
-    if (button == NULL || !kit_is_orbit()) {
+    if (button == NULL || !ui_skin_is_orbit()) {
         return;
     }
     kind = get_kind(button);
@@ -630,7 +642,7 @@ static void chip_apply(lv_obj_t *chip, bool active)
     lv_obj_t *label = lv_obj_get_child(chip, 1);
     bool is_icon = mark != NULL && lv_obj_check_type(mark, &lv_image_class);
 
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         if (is_icon) {
             lv_obj_set_style_image_recolor(mark, active ? sk->accent : sk->text_2, 0);
         } else if (mark != NULL) {
@@ -638,7 +650,7 @@ static void chip_apply(lv_obj_t *chip, bool active)
             lv_obj_set_style_border_width(mark, active ? 0 : 1, 0);
         }
         lv_obj_set_style_text_color(label, active ? sk->text : sk->text_2, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(chip, active ? sk->accent : kit_rgb(0x181C20), 0);
         lv_obj_set_style_border_color(chip, active ? sk->accent : kit_rgb(0x303030), 0);
         if (is_icon) {
@@ -665,18 +677,18 @@ lv_obj_t *kit_chip(lv_obj_t *parent, kit_icon_t icon, const char *text, bool act
     lv_obj_t *mark;
     lv_obj_t *label;
 
-    lv_obj_set_size(chip, LV_SIZE_CONTENT, kit_is_orbit() ? 56 : 44);
+    lv_obj_set_size(chip, LV_SIZE_CONTENT, ui_skin_is_orbit() ? 56 : 44);
     lv_obj_set_style_radius(chip, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(chip, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(chip, 1, 0);
     lv_obj_set_flex_flow(chip, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(chip, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(chip, sk->well, 0);
         lv_obj_set_style_border_color(chip, sk->line, 0);
         lv_obj_set_style_pad_hor(chip, 18, 0);
         lv_obj_set_style_pad_column(chip, 12, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_pad_left(chip, 18, 0);
         lv_obj_set_style_pad_right(chip, 22, 0);
         lv_obj_set_style_pad_column(chip, 10, 0);
@@ -689,18 +701,18 @@ lv_obj_t *kit_chip(lv_obj_t *parent, kit_icon_t icon, const char *text, bool act
 
     if (icon != KIT_ICON_NONE) {
         mark = kit_icon_small(chip, icon, sk->text_2);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         mark = kit_plain(chip); /* no mark in Orbit: an empty slot keeps the child order */
         lv_obj_set_size(mark, 0, 0);
         lv_obj_set_style_margin_right(mark, -10, 0);
     } else {
-        int32_t d = kit_is_instrument() ? 8 : 10;
+        int32_t d = ui_skin_is_instrument() ? 8 : 10;
 
         mark = kit_plain(chip);
         lv_obj_set_size(mark, d, d);
         lv_obj_set_style_radius(mark, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_opa(mark, LV_OPA_COVER, 0);
-        if (kit_is_instrument()) {
+        if (ui_skin_is_instrument()) {
             lv_obj_set_style_border_color(mark, sk->line_strong, 0);
         } else {
             lv_obj_set_style_bg_color(mark, sk->danger, 0);
@@ -708,9 +720,9 @@ lv_obj_t *kit_chip(lv_obj_t *parent, kit_icon_t icon, const char *text, bool act
             lv_obj_set_style_border_color(mark, sk->danger_soft, 0);
         }
     }
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         label = kit_label_raw(chip, KIT_TEXT_CAPTION, text);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         label = kit_label_raw(chip, KIT_TEXT_VALUE, text);
     } else {
         label = kit_label_raw(chip, KIT_TEXT_LABEL, text);
@@ -744,12 +756,12 @@ lv_obj_t *kit_group(lv_obj_t *parent)
     lv_obj_t *group = kit_plain(parent);
 
     column(group);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         /* Rows draw their top rule, the group closes with the bottom rule. */
         lv_obj_set_style_border_side(group, LV_BORDER_SIDE_BOTTOM, 0);
         lv_obj_set_style_border_width(group, 1, 0);
         lv_obj_set_style_border_color(group, sk->line, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_pad_row(group, 8, 0);
         lv_obj_set_style_pad_bottom(group, 16, 0);
     }
@@ -762,7 +774,7 @@ lv_obj_t *kit_group_joined(lv_obj_t *parent)
     lv_obj_t *wrap;
     lv_obj_t *group;
 
-    if (!kit_is_orbit()) {
+    if (!ui_skin_is_orbit()) {
         return kit_group(parent);
     }
     /* The wrap keeps the 16 px gap below the platter that Orbit groups have. */
@@ -787,12 +799,12 @@ lv_obj_t *kit_card(lv_obj_t *parent)
     lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
     lv_obj_set_style_pad_all(card, 24, 0);
     lv_obj_set_style_pad_row(card, sk->gap_xs, 0);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(card, sk->well, 0);
         lv_obj_set_style_border_width(card, 1, 0);
         lv_obj_set_style_border_color(card, sk->line, 0);
         lv_obj_set_style_radius(card, sk->radius_m, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(card, sk->surface, 0);
         lv_obj_set_style_radius(card, sk->radius_m, 0);
         lv_obj_set_style_pad_left(card, 18, 0);
@@ -825,7 +837,7 @@ lv_obj_t *kit_divider(lv_obj_t *parent)
     lv_obj_t *div = kit_plain(parent);
 
     lv_obj_set_width(div, lv_pct(100));
-    if (kit_is_atelier()) {
+    if (ui_skin_is_atelier()) {
         lv_obj_t *rule;
 
         lv_obj_set_height(div, 2);
@@ -865,13 +877,13 @@ lv_obj_t *kit_section_label(lv_obj_t *parent, const char *text)
 
     lv_obj_set_width(sec, lv_pct(100));
     lv_obj_set_flex_flow(sec, LV_FLEX_FLOW_ROW);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         /* Legend on the left, sitting on the rule of the first row. */
         lv_obj_set_height(sec, 52);
         lv_obj_set_style_pad_bottom(sec, 10, 0);
         lv_obj_set_flex_align(sec, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_END, LV_FLEX_ALIGN_END);
         label = kit_label_raw(sec, KIT_TEXT_LABEL, text);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_height(sec, 32);
         lv_obj_set_flex_align(sec, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         label = kit_label_raw(sec, KIT_TEXT_LABEL, text);
@@ -921,8 +933,8 @@ static lv_obj_t *row_leading(lv_obj_t *row, const kit_row_opts_t *opts)
     lv_obj_t *holder = kit_plain(row);
     lv_obj_t *icon;
 
-    lv_obj_set_style_radius(holder, kit_is_instrument() ? sk->radius_s : LV_RADIUS_CIRCLE, 0);
-    if (kit_is_instrument()) {
+    lv_obj_set_style_radius(holder, ui_skin_is_instrument() ? sk->radius_s : LV_RADIUS_CIRCLE, 0);
+    if (ui_skin_is_instrument()) {
         /* A recessed tile. */
         lv_obj_set_size(holder, 56, 56);
         lv_obj_set_style_bg_opa(holder, LV_OPA_COVER, 0);
@@ -930,7 +942,7 @@ static lv_obj_t *row_leading(lv_obj_t *row, const kit_row_opts_t *opts)
         lv_obj_set_style_border_width(holder, 1, 0);
         lv_obj_set_style_border_color(holder, sk->line, 0);
         icon = kit_icon(holder, opts->icon, sk->text_2);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         /* A badge in the area tint. */
         lv_color_t tint = opts->tint;
 
@@ -962,7 +974,7 @@ static lv_obj_t *row_leading(lv_obj_t *row, const kit_row_opts_t *opts)
 void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
 {
     const ui_skin_t *sk = ui_skin();
-    bool joined = kit_is_orbit() && lv_obj_has_flag(group, LV_OBJ_FLAG_USER_1);
+    bool joined = ui_skin_is_orbit() && lv_obj_has_flag(group, LV_OBJ_FLAG_USER_1);
     bool first = lv_obj_get_child_count(group) == 0;
     bool two = opts->subtitle != NULL;
     lv_obj_t *r;
@@ -978,7 +990,7 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
     lv_obj_set_flex_align(r, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_pad_ver(r, 10, 0);
 
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         if (opts->icon != KIT_ICON_NONE) {
             min_h += 16;
         }
@@ -988,7 +1000,7 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
         lv_obj_set_style_border_color(r, sk->line, 0);
         lv_obj_set_style_bg_color(r, sk->surface, LV_STATE_PRESSED);
         lv_obj_set_style_bg_opa(r, LV_OPA_COVER, LV_STATE_PRESSED);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_pad_column(r, 18, 0);
         lv_obj_set_style_pad_left(r, opts->icon != KIT_ICON_NONE ? 18 : 28, 0);
         lv_obj_set_style_pad_right(r, 24, 0);
@@ -1030,11 +1042,11 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
      * does not centre items against a parent's min_height. */
     col = kit_plain(r);
     lv_obj_set_height(col, LV_SIZE_CONTENT);
-    lv_obj_set_style_min_height(col, min_h - 2 * lv_obj_get_style_pad_top(r, 0) - (kit_is_orbit() ? 0 : 1), 0);
+    lv_obj_set_style_min_height(col, min_h - 2 * lv_obj_get_style_pad_top(r, 0) - (ui_skin_is_orbit() ? 0 : 1), 0);
     lv_obj_set_flex_grow(col, 1);
     lv_obj_set_flex_flow(col, LV_FLEX_FLOW_COLUMN);
     lv_obj_set_flex_align(col, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
-    lv_obj_set_style_pad_row(col, kit_is_instrument() ? 2 : kit_is_orbit() ? -1 : -5, 0);
+    lv_obj_set_style_pad_row(col, ui_skin_is_instrument() ? 2 : ui_skin_is_orbit() ? -1 : -5, 0);
     row->title = kit_label_raw(col, KIT_TEXT_HEADING, opts->title);
     lv_obj_set_width(row->title, lv_pct(100));
     kit_label_one_line(row->title);
@@ -1046,18 +1058,18 @@ void kit_row_create(kit_row_t *row, lv_obj_t *group, const kit_row_opts_t *opts)
     switch (opts->trail) {
     case KIT_TRAIL_VALUE:
         row->value = kit_label_raw(r, KIT_TEXT_BODY, opts->value);
-        lv_obj_set_style_text_color(row->value, kit_is_orbit() ? sk->text_2 : sk->value, 0);
+        lv_obj_set_style_text_color(row->value, ui_skin_is_orbit() ? sk->text_2 : sk->value, 0);
         if (!opts->value_chevron) {
             break;
         }
         /* fall through */
     case KIT_TRAIL_CHEVRON:
-        if (kit_is_instrument()) {
+        if (ui_skin_is_instrument()) {
             kit_icon(r, KIT_ICON_CHEVRON_RIGHT, sk->text_3);
         } else {
-            kit_icon_small(r, KIT_ICON_CHEVRON_RIGHT, kit_is_orbit() ? sk->text_3 : sk->accent_deep);
+            kit_icon_small(r, KIT_ICON_CHEVRON_RIGHT, ui_skin_is_orbit() ? sk->text_3 : sk->accent_deep);
         }
-        if (opts->trail == KIT_TRAIL_VALUE && kit_is_instrument()) {
+        if (opts->trail == KIT_TRAIL_VALUE && ui_skin_is_instrument()) {
             lv_obj_set_style_margin_left(lv_obj_get_child(r, -1), -4, 0);
         }
         break;
@@ -1166,7 +1178,7 @@ void kit_prewarm(void)
 {
     kit_dial_t dial;
 
-    if (kit_is_atelier()) {
+    if (ui_skin_is_atelier()) {
         minute_rim_spec(&dial, -1, -1);
         kit_dial_prewarm(&dial);
     }
@@ -1186,13 +1198,13 @@ static void atelier_rim_cb(lv_event_t *e)
  *   frame). */
 static void scrim_band(int32_t *solid, int32_t *height, int32_t *threshold)
 {
-    if (kit_is_orbit()) {
+    if (ui_skin_is_orbit()) {
         /* Solid just past the floating back key (y 24-88): rows scrolled up must not show
          * beside it. Shown once scrolled, so titles at rest are not dimmed. */
         *solid = 92;
         *height = 128;
         *threshold = 12;
-    } else if (kit_is_instrument()) {
+    } else if (ui_skin_is_instrument()) {
         *solid = 126;
         *height = 160;
         *threshold = 12;
@@ -1227,7 +1239,7 @@ static int32_t content_top(const kit_page_t *page)
 {
     const ui_skin_t *sk = ui_skin();
 
-    return sk->content_top + ((kit_is_orbit() && page->eyebrow != NULL) ? 28 : 0);
+    return sk->content_top + ((ui_skin_is_orbit() && page->eyebrow != NULL) ? 28 : 0);
 }
 
 static void place_content(kit_page_t *page)
@@ -1238,12 +1250,12 @@ static void place_content(kit_page_t *page)
 static lv_obj_t *header_key(lv_obj_t *root, kit_icon_t icon, bool action)
 {
     const ui_skin_t *sk = ui_skin();
-    kit_button_kind_t kind = kit_is_orbit() && !action ? KIT_BUTTON_QUIET : KIT_BUTTON_SECONDARY;
+    kit_button_kind_t kind = ui_skin_is_orbit() && !action ? KIT_BUTTON_QUIET : KIT_BUTTON_SECONDARY;
     lv_obj_t *key = kit_round_button(root, kind, icon, sk->round_button);
 
     if (!action) {
         lv_obj_set_pos(key, sk->nav_x, sk->page_top);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_pos(key, 520, 92); /* on the rim to the right of the title */
     } else {
         lv_obj_set_pos(key, KIT_SCREEN - sk->nav_x - sk->round_button, sk->page_top);
@@ -1276,7 +1288,7 @@ void kit_page_create(kit_page_t *page,
     lv_obj_set_style_bg_opa(root, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(root, sk->bg, 0);
     lv_obj_add_flag(root, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN); /* blocks the face below */
-    if (kit_is_atelier()) {
+    if (ui_skin_is_atelier()) {
         lv_obj_add_event_cb(root, atelier_rim_cb, LV_EVENT_DRAW_POST, NULL);
     }
 
@@ -1302,7 +1314,7 @@ void kit_page_create(kit_page_t *page,
     lv_obj_set_flex_flow(content, LV_FLEX_FLOW_COLUMN);
 
     page->title = kit_label_raw(scroll, KIT_TEXT_TITLE, title);
-    lv_obj_set_width(page->title, kit_is_orbit() ? 400 : KIT_SCREEN - 2 * (sk->nav_x + sk->round_button + 12));
+    lv_obj_set_width(page->title, ui_skin_is_orbit() ? 400 : KIT_SCREEN - 2 * (sk->nav_x + sk->round_button + 12));
     kit_label_one_line(page->title);
     lv_obj_set_style_text_align(page->title, LV_TEXT_ALIGN_CENTER, 0);
     lv_obj_align(page->title, LV_ALIGN_TOP_MID, 0, sk->title_y);
@@ -1312,7 +1324,7 @@ void kit_page_create(kit_page_t *page,
     }
     place_content(page);
 
-    if (kit_is_atelier()) {
+    if (ui_skin_is_atelier()) {
         lv_obj_t *rule = engraved_rule(scroll, 240);
         lv_obj_t *loz = lv_image_create(scroll);
 
@@ -1346,7 +1358,7 @@ void kit_page_create(kit_page_t *page,
 
 void kit_page_set_rim(kit_page_t *page, bool on)
 {
-    if (page == NULL || page->root == NULL || !kit_is_atelier()) {
+    if (page == NULL || page->root == NULL || !ui_skin_is_atelier()) {
         return;
     }
     if (on == kit_has_event_cb(page->root, atelier_rim_cb)) {
@@ -1390,7 +1402,7 @@ void kit_page_set_eyebrow(kit_page_t *page, const char *eyebrow)
             return;
         }
         page->eyebrow = kit_label_raw(page->scroll, KIT_TEXT_LABEL, eyebrow);
-        lv_obj_set_width(page->eyebrow, kit_is_orbit() ? 440 : 400);
+        lv_obj_set_width(page->eyebrow, ui_skin_is_orbit() ? 440 : 400);
         kit_label_one_line(page->eyebrow);
         lv_obj_set_style_text_align(page->eyebrow, LV_TEXT_ALIGN_CENTER, 0);
         lv_obj_align(page->eyebrow, LV_ALIGN_TOP_MID, 0, sk->eyebrow_y);
@@ -1414,7 +1426,7 @@ lv_obj_t *kit_dialog(lv_obj_t *parent, int32_t width)
     lv_obj_set_pos(dim, 0, 0);
     lv_obj_add_flag(dim, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_style_bg_opa(dim, 184, 0);
-    lv_obj_set_style_bg_color(dim, kit_is_atelier() ? kit_rgb(0x080810) : lv_color_black(), 0);
+    lv_obj_set_style_bg_color(dim, ui_skin_is_atelier() ? kit_rgb(0x080810) : lv_color_black(), 0);
 
     card = kit_plain(dim);
     lv_obj_set_width(card, width > 0 ? width : sk->content_w);
@@ -1429,7 +1441,7 @@ lv_obj_t *kit_dialog(lv_obj_t *parent, int32_t width)
     /* The screen's one soft shadow. */
     lv_obj_set_style_shadow_color(card, lv_color_black(), 0);
     lv_obj_set_style_shadow_opa(card, 140, 0);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(card, sk->surface, 0);
         lv_obj_set_style_border_width(card, 1, 0);
         lv_obj_set_style_border_color(card, sk->line_strong, 0);
@@ -1437,7 +1449,7 @@ lv_obj_t *kit_dialog(lv_obj_t *parent, int32_t width)
         lv_obj_set_style_pad_hor(card, 40, 0);
         lv_obj_set_style_shadow_width(card, 48, 0);
         lv_obj_set_style_shadow_offset_y(card, 24, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(card, sk->surface, 0);
         lv_obj_set_style_radius(card, sk->radius_m, 0);
         lv_obj_set_style_shadow_width(card, 56, 0);

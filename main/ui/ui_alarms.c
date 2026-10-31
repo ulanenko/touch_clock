@@ -242,15 +242,6 @@ time_t alm_now(void)
 
 /* --- Drawing helpers ------------------------------------------------------------------ */
 
-lv_obj_t *alm_box(lv_obj_t *parent)
-{
-    lv_obj_t *obj = lv_obj_create(parent);
-
-    lv_obj_remove_style_all(obj);
-    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICK_FOCUSABLE);
-    return obj;
-}
-
 lv_obj_t *alm_label(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -268,32 +259,10 @@ void alm_one_line(lv_obj_t *label)
     lv_label_set_long_mode(label, LV_LABEL_LONG_MODE_DOTS);
 }
 
-void alm_draw_rim(lv_layer_t *layer, int32_t skip_from_deg, int32_t skip_to_deg)
-{
-    kit_draw_minute_rim(layer, skip_from_deg, skip_to_deg);
-}
-
-void alm_set_text(lv_obj_t *label, const char *text)
-{
-    kit_label_set_text_if_changed(label, text);
-}
-
 void alm_set_color(lv_obj_t *obj, lv_color_t color, lv_part_t part)
 {
     if (obj != NULL && !lv_color_eq(lv_obj_get_style_text_color(obj, part), color)) {
         lv_obj_set_style_text_color(obj, color, part);
-    }
-}
-
-void alm_show(lv_obj_t *obj, bool show)
-{
-    if (obj == NULL || lv_obj_has_flag(obj, LV_OBJ_FLAG_HIDDEN) == !show) {
-        return;
-    }
-    if (show) {
-        lv_obj_remove_flag(obj, LV_OBJ_FLAG_HIDDEN);
-    } else {
-        lv_obj_add_flag(obj, LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -438,7 +407,7 @@ void alm_add_edge_close(clock_ui_context_t *ctx, lv_obj_t *page_root)
 
 static void page_show(lv_obj_t *root, bool show)
 {
-    alm_show(root, show);
+    kit_show(root, show);
     if (show && root != NULL) {
         lv_obj_move_foreground(root);
     }
@@ -450,7 +419,7 @@ void alm_list_open(clock_ui_context_t *ctx)
     ui_settings_close_all(ctx);
     if (ctx->alarms.editor_open) {
         ctx->alarms.editor_open = false;
-        alm_show(ctx->alarms.editor_root, false);
+        kit_show(ctx->alarms.editor_root, false);
     }
     if (ctx->alarms.settings_open) {
         alm_settings_close(ctx);
@@ -478,7 +447,7 @@ void alm_list_close(clock_ui_context_t *ctx)
     alm_auto_close_pause(ctx);
     ctx->alarms.open = false;
     ctx->alarms.close_swipe_consumed = false;
-    alm_show(ctx->alarms.list_page.root, false);
+    kit_show(ctx->alarms.list_page.root, false);
     if (!ctx->alarms.editor_open) {
         ui_face_chrome_show_controls(ctx);
     }
@@ -496,7 +465,7 @@ void alm_settings_open(clock_ui_context_t *ctx)
     lv_obj_scroll_to_y(ctx->alarms.settings_page.scroll, 0, LV_ANIM_OFF);
     alm_sync_all(ctx);
     page_show(ctx->alarms.settings_page.root, true);
-    alm_show(ctx->alarms.list_page.root, false);
+    kit_show(ctx->alarms.list_page.root, false);
 }
 
 void alm_settings_close(clock_ui_context_t *ctx)
@@ -504,7 +473,7 @@ void alm_settings_close(clock_ui_context_t *ctx)
     alm_test_stop(ctx);
     ctx->alarms.settings_open = false;
     ctx->alarms.close_swipe_consumed = false;
-    alm_show(ctx->alarms.settings_page.root, false);
+    kit_show(ctx->alarms.settings_page.root, false);
     if (ctx->alarms.open) {
         page_show(ctx->alarms.list_page.root, true);
         alm_auto_close_reset(ctx);
@@ -549,7 +518,7 @@ void alm_editor_open(clock_ui_context_t *ctx, uint8_t index, bool is_new)
     alm_editor_prepare(ctx);
     alm_sync_all(ctx);
     page_show(ctx->alarms.editor_root, true);
-    alm_show(ctx->alarms.list_page.root, false);
+    kit_show(ctx->alarms.list_page.root, false);
 }
 
 void alm_editor_close(clock_ui_context_t *ctx)
@@ -557,7 +526,7 @@ void alm_editor_close(clock_ui_context_t *ctx)
     alm_test_stop(ctx);
     ctx->alarms.editor_open = false;
     ctx->alarms.close_swipe_consumed = false;
-    alm_show(ctx->alarms.editor_root, false);
+    kit_show(ctx->alarms.editor_root, false);
     if (ctx->alarms.open) {
         alm_sync_all(ctx);
         page_show(ctx->alarms.list_page.root, true);

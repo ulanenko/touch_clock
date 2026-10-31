@@ -49,15 +49,6 @@ time_t face_now(void)
     return time(NULL);
 }
 
-lv_obj_t *face_plain(lv_obj_t *parent)
-{
-    lv_obj_t *obj = lv_obj_create(parent);
-
-    lv_obj_remove_style_all(obj);
-    lv_obj_remove_flag(obj, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE | LV_OBJ_FLAG_CLICK_FOCUSABLE);
-    return obj;
-}
-
 lv_obj_t *face_text(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text)
 {
     lv_obj_t *label = lv_label_create(parent);
@@ -175,8 +166,8 @@ void face_draw_dot(lv_layer_t *layer, int32_t x, int32_t y, int32_t r, lv_color_
 lv_obj_t *face_engraved_rule(lv_obj_t *parent, int32_t y, int32_t w)
 {
     const ui_skin_t *sk = ui_skin();
-    lv_obj_t *rule = face_plain(parent);
-    lv_obj_t *lit = face_plain(rule);
+    lv_obj_t *rule = kit_plain(parent);
+    lv_obj_t *lit = kit_plain(rule);
     lv_obj_t *lozenge;
 
     /* Two 1 px lines: a dark cut and its lit edge below. */
@@ -562,7 +553,7 @@ static lv_obj_t *tab_label(clock_ui_context_t *ctx, lv_obj_t *parent, const ui_l
 
 static lv_obj_t *row_flex(lv_obj_t *parent, int32_t gap)
 {
-    lv_obj_t *row = face_plain(parent);
+    lv_obj_t *row = kit_plain(parent);
 
     lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
@@ -575,7 +566,7 @@ static lv_obj_t *row_flex(lv_obj_t *parent, int32_t gap)
 /* The themes tab: a tap opens the sheet, a pull drags it (routed to the face swipe). */
 static lv_obj_t *themes_tab(clock_ui_context_t *ctx, int32_t x, int32_t y, int32_t w, int32_t h)
 {
-    lv_obj_t *tab = face_plain(ctx->face_chrome.layer);
+    lv_obj_t *tab = kit_plain(ctx->face_chrome.layer);
 
     lv_obj_set_pos(tab, x, y);
     lv_obj_set_size(tab, w, h);
@@ -607,7 +598,7 @@ static void build_instrument(clock_ui_context_t *ctx)
     tab_label(ctx, fc->actions_tab, &s_actions, (l10n_text_id_t)0, sk->text_2);
 
     /* Readout plate in the empty zone under 12: next alarm and the update. */
-    fc->status = face_plain(fc->layer);
+    fc->status = kit_plain(fc->layer);
     lv_obj_set_size(fc->status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_min_width(fc->status, 176, 0);
     lv_obj_set_style_min_height(fc->status, 44, 0);
@@ -635,7 +626,7 @@ static void build_instrument(clock_ui_context_t *ctx)
 
     fc->status_update_row = row_flex(fc->status, 8);
     lv_obj_set_height(fc->status_update_row, 28);
-    led = face_plain(fc->status_update_row);
+    led = kit_plain(fc->status_update_row);
     lv_obj_set_size(led, 8, 8);
     lv_obj_set_style_radius(led, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(led, sk->accent, 0);
@@ -656,7 +647,7 @@ static void build_instrument(clock_ui_context_t *ctx)
     lv_obj_add_event_cb(fc->alarms_key, alarms_click_cb, LV_EVENT_CLICKED, ctx);
     face_track_press(ctx, fc->alarms_key);
 
-    fc->dots_plate = face_plain(fc->layer);
+    fc->dots_plate = kit_plain(fc->layer);
     lv_obj_set_size(fc->dots_plate, LV_SIZE_CONTENT, 24);
     lv_obj_set_style_radius(fc->dots_plate, 12, 0);
     lv_obj_set_style_bg_color(fc->dots_plate, sk->bg, 0);
@@ -669,7 +660,7 @@ static void build_instrument(clock_ui_context_t *ctx)
     lv_obj_set_flex_align(fc->dots_plate, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_align(fc->dots_plate, LV_ALIGN_TOP_MID, 0, 642);
     for (int i = 0; i < fc->dot_count; i++) {
-        fc->dots[i] = face_plain(fc->dots_plate);
+        fc->dots[i] = kit_plain(fc->dots_plate);
         lv_obj_set_size(fc->dots[i], 6, 6);
         lv_obj_set_style_radius(fc->dots[i], 3, 0);
         lv_obj_set_style_bg_color(fc->dots[i], sk->text_3, 0);
@@ -715,7 +706,7 @@ static void build_orbit(clock_ui_context_t *ctx)
     kit_icon_small(row, KIT_ICON_CHEVRON_DOWN, sk->text_2);
     tab_label(ctx, row, NULL, L10N_THEMES, sk->text);
 
-    fc->actions_tab = face_plain(fc->layer);
+    fc->actions_tab = kit_plain(fc->layer);
     lv_obj_set_size(fc->actions_tab, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     chev = kit_icon_small(fc->actions_tab, KIT_ICON_CHEVRON_UP, sk->text_2);
     LV_UNUSED(chev);
@@ -724,7 +715,7 @@ static void build_orbit(clock_ui_context_t *ctx)
     /* Alarms and Settings on the rim at 10:30 and 1:30. */
     fc->alarms_key = orbit_float_key(ctx, KIT_ICON_ALARM, glass_ink(sk->tint_alarms), 112, 112, alarms_click_cb);
     fc->settings_key = orbit_float_key(ctx, KIT_ICON_GEAR, sk->text, 536, 112, settings_click_cb);
-    fc->badge = face_plain(fc->layer);
+    fc->badge = kit_plain(fc->layer);
     lv_obj_set_size(fc->badge, 20, 20);
     lv_obj_set_pos(fc->badge, 536 + 72 - 19, 111);
     lv_obj_set_style_radius(fc->badge, LV_RADIUS_CIRCLE, 0);
@@ -734,7 +725,7 @@ static void build_orbit(clock_ui_context_t *ctx)
     lv_obj_set_style_border_color(fc->badge, orbit_float_bg(), 0);
 
     /* One status card under the 12: next alarm and the update. */
-    fc->status = face_plain(fc->layer);
+    fc->status = kit_plain(fc->layer);
     lv_obj_set_size(fc->status, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_style_min_width(fc->status, 200, 0);
     lv_obj_set_style_min_height(fc->status, 58, 0);
@@ -790,7 +781,7 @@ static void build_atelier(clock_ui_context_t *ctx)
     lv_obj_set_pos(fc->settings_key, 589 - 32, 131 - 32);
     lv_obj_add_event_cb(fc->settings_key, settings_click_cb, LV_EVENT_CLICKED, ctx);
     face_track_press(ctx, fc->settings_key);
-    fc->badge = face_plain(fc->layer);
+    fc->badge = kit_plain(fc->layer);
     lv_obj_set_size(fc->badge, 18, 18);
     lv_obj_set_pos(fc->badge, 557, 100);
     lv_obj_set_style_radius(fc->badge, LV_RADIUS_CIRCLE, 0);
@@ -806,7 +797,7 @@ static void build_atelier(clock_ui_context_t *ctx)
     make_clickable(fc->update_chip, update_click_cb, ctx);
 
     /* The next alarm as a framed pill above the 6. */
-    fc->alarm_chip = face_plain(fc->layer);
+    fc->alarm_chip = kit_plain(fc->layer);
     lv_obj_set_size(fc->alarm_chip, LV_SIZE_CONTENT, 56);
     lv_obj_set_style_radius(fc->alarm_chip, 28, 0);
     lv_obj_set_style_bg_color(fc->alarm_chip, sk->surface, 0);
@@ -837,7 +828,7 @@ void face_controls_create(clock_ui_context_t *ctx)
     fc->night_minute = -1;
     fc->active_face = sanitize_enabled_face(ctx->settings->current_face);
 
-    fc->layer = face_plain(ui_chrome_root(ctx));
+    fc->layer = kit_plain(ui_chrome_root(ctx));
     lv_obj_set_size(fc->layer, SCREEN_SIZE, SCREEN_SIZE);
     lv_obj_set_style_bg_color(fc->layer, lv_color_black(), 0);
     /* Instrument and Orbit draw the face at 85 % under the controls; the Atelier bezel

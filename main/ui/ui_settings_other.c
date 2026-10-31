@@ -173,16 +173,16 @@ static lv_obj_t *volume_line(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     const ui_skin_t *sk = ui_skin();
     clock_ui_settings_state_t *st = ST(ctx);
-    lv_obj_t *line = st_hbox(parent, st_instrument() ? 14 : 16);
+    lv_obj_t *line = st_hbox(parent, ui_skin_is_instrument() ? 14 : 16);
 
     lv_obj_set_width(line, lv_pct(100));
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_height(line, 80);
         lv_obj_set_style_border_side(line, LV_BORDER_SIDE_TOP, 0);
         lv_obj_set_style_border_width(line, 1, 0);
         lv_obj_set_style_border_color(line, sk->line, 0);
         st->other_vol_icons[0] = kit_icon_small(line, KIT_ICON_SOUND, sk->text_3);
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_height(line, 72);
         lv_obj_set_style_pad_hor(line, 30, 0);
         lv_obj_set_style_pad_bottom(line, 16, 0);
@@ -191,16 +191,16 @@ static lv_obj_t *volume_line(clock_ui_context_t *ctx, lv_obj_t *parent)
         lv_obj_set_height(line, 56);
         st->other_vol_icons[0] = kit_icon_small(line, KIT_ICON_SOUND_OFF, sk->text_2);
     }
-    st->other_vol_slider = kit_slider(line, 0, 100, st_orbit() ? sk->accent : sk->tint_sound);
+    st->other_vol_slider = kit_slider(line, 0, 100, ui_skin_is_orbit() ? sk->accent : sk->tint_sound);
     lv_obj_set_flex_grow(st->other_vol_slider, 1);
     st_keep_gestures(st->other_vol_slider);
     lv_obj_add_event_cb(st->other_vol_slider, volume_cb, LV_EVENT_VALUE_CHANGED, ctx);
-    if (!st_instrument()) {
-        st->other_vol_icons[1] = kit_icon_small(line, KIT_ICON_SOUND, st_orbit() ? sk->text_2 : sk->value);
+    if (!ui_skin_is_instrument()) {
+        st->other_vol_icons[1] = kit_icon_small(line, KIT_ICON_SOUND, ui_skin_is_orbit() ? sk->text_2 : sk->value);
     }
-    if (!st_orbit()) {
-        st->other_vol_value = kit_label(line, st_atelier() ? KIT_TEXT_VALUE : KIT_TEXT_BODY, "");
-        lv_obj_set_style_text_color(st->other_vol_value, st_atelier() ? sk->value : sk->text, 0);
+    if (!ui_skin_is_orbit()) {
+        st->other_vol_value = kit_label(line, ui_skin_is_atelier() ? KIT_TEXT_VALUE : KIT_TEXT_BODY, "");
+        lv_obj_set_style_text_color(st->other_vol_value, ui_skin_is_atelier() ? sk->value : sk->text, 0);
         lv_obj_set_style_min_width(st->other_vol_value, 60, 0);
         lv_obj_set_style_text_align(st->other_vol_value, LV_TEXT_ALIGN_RIGHT, 0);
     }
@@ -216,7 +216,7 @@ static void build_update(clock_ui_context_t *ctx, kit_page_t *p)
     lv_obj_t *line;
     lv_obj_t *label;
 
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         kit_row_t row;
         kit_row_opts_t o = {0};
         lv_obj_t *group;
@@ -242,15 +242,15 @@ static void build_update(clock_ui_context_t *ctx, kit_page_t *p)
         lv_obj_set_flex_align(card, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(card, 16, 0);
         lv_obj_set_style_pad_row(card, 12, 0);
-        lv_obj_set_style_pad_ver(card, st_instrument() ? 20 : 18, 0);
+        lv_obj_set_style_pad_ver(card, ui_skin_is_instrument() ? 20 : 18, 0);
         lv_obj_set_style_pad_right(card, 18, 0);
-        if (st_atelier()) {
+        if (ui_skin_is_atelier()) {
             lv_obj_set_style_margin_top(card, 12, 0);
         }
         col = st_vbox(card, 2);
         lv_obj_set_flex_grow(col, 1);
         label = st_label(ctx, col, KIT_TEXT_LABEL, ST_ID(L10N_SOFTWARE_UPDATE));
-        if (st_atelier()) {
+        if (ui_skin_is_atelier()) {
             lv_obj_set_style_text_color(label, sk->accent, 0);
             line = st_hbox(col, 10);
             lv_obj_set_style_margin_top(line, 8, 0);
@@ -266,7 +266,7 @@ static void build_update(clock_ui_context_t *ctx, kit_page_t *p)
         }
         lv_obj_set_width(st->upd_sub, lv_pct(100));
         lv_label_set_long_mode(st->upd_sub, LV_LABEL_LONG_MODE_WRAP);
-        st->upd_btn = kit_button(card, KIT_BUTTON_PRIMARY, st_instrument() ? KIT_ICON_DOWNLOAD : KIT_ICON_NONE, "");
+        st->upd_btn = kit_button(card, KIT_BUTTON_PRIMARY, ui_skin_is_instrument() ? KIT_ICON_DOWNLOAD : KIT_ICON_NONE, "");
         lv_obj_set_height(st->upd_btn, 72);
     }
     lv_obj_add_event_cb(st->upd_btn, update_cb, LV_EVENT_CLICKED, ctx);
@@ -275,11 +275,11 @@ static void build_update(clock_ui_context_t *ctx, kit_page_t *p)
     st->upd_bar = lv_obj_create(card);
     lv_obj_remove_style_all(st->upd_bar);
     lv_obj_remove_flag(st->upd_bar, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(st->upd_bar, st_orbit() ? sk->content_w - 48 : lv_pct(100), 4);
+    lv_obj_set_size(st->upd_bar, ui_skin_is_orbit() ? sk->content_w - 48 : lv_pct(100), 4);
     lv_obj_set_style_radius(st->upd_bar, 2, 0);
     lv_obj_set_style_bg_opa(st->upd_bar, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(st->upd_bar, sk->line_strong, 0);
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         lv_obj_set_style_margin_left(st->upd_bar, 24, 0);
         lv_obj_set_style_margin_top(st->upd_bar, 16, 0);
     }
@@ -289,7 +289,7 @@ static void build_update(clock_ui_context_t *ctx, kit_page_t *p)
     lv_obj_set_size(st->upd_bar_fill, 0, 4);
     lv_obj_set_style_radius(st->upd_bar_fill, 2, 0);
     lv_obj_set_style_bg_opa(st->upd_bar_fill, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(st->upd_bar_fill, st_orbit() ? sk->tint_wifi : sk->accent, 0);
+    lv_obj_set_style_bg_color(st->upd_bar_fill, ui_skin_is_orbit() ? sk->tint_wifi : sk->accent, 0);
     lv_obj_add_flag(st->upd_bar, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -325,7 +325,7 @@ static void build_about(clock_ui_context_t *ctx, kit_page_t *p)
     label = kit_section_label(p->content, "");
     st_bind(ctx, label, ST_ID(L10N_ABOUT_DEVICE));
     st->about_anchor = lv_obj_get_parent(label);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         kit_icon_small(lv_obj_get_parent(label), KIT_ICON_INFO, sk->text_3);
         /* A rating plate: hairline box, mono legend left, value right. */
         box = st_vbox(p->content, 0);
@@ -348,7 +348,7 @@ static void build_about(clock_ui_context_t *ctx, kit_page_t *p)
             label = kit_label(line, KIT_TEXT_CAPTION, values[i]);
             lv_obj_set_style_text_color(label, sk->text, 0);
         }
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         box = kit_group_joined(p->content);
         for (int i = 0; i < 5; i++) {
             kit_row_t row;
@@ -397,9 +397,9 @@ void st_other_build(clock_ui_context_t *ctx)
     kit_row_t row;
     kit_row_opts_t o = {0};
 
-    p = st_page_begin(ctx, UI_ST_OTHER, st_atelier() ? ST_ID(L10N_SETTINGS) : ST_NONE, ST_ID(L10N_OTHER),
+    p = st_page_begin(ctx, UI_ST_OTHER, ui_skin_is_atelier() ? ST_ID(L10N_SETTINGS) : ST_NONE, ST_ID(L10N_OTHER),
                       KIT_NAV_BACK);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         kit_page_set_eyebrow(p, " ");
     }
     group = kit_group(p->content);
@@ -409,27 +409,27 @@ void st_other_build(clock_ui_context_t *ctx)
     o.value_chevron = true;
     o.on_click = language_row_cb;
     o.user_data = ctx;
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_GLOBE;
         o.tint = sk->tint_other;
     }
     st_row(ctx, &row, group, &o, ST_ID(L10N_LANGUAGE), ST_NONE);
     st->other_lang_value = row.value;
     o.on_click = style_row_cb;
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_STYLE;
     }
     st_row(ctx, &row, group, &o, ST_STR(&s_interface_style), ST_NONE);
     st->other_style_value = row.value;
 
     /* Touch sound and its volume. */
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         group = kit_group_joined(p->content);
     }
     o = (kit_row_opts_t) {0};
     o.trail = KIT_TRAIL_SWITCH;
     o.tint = sk->tint_other;
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_SOUND;
     }
     st_row(ctx, &row, group, &o, ST_ID(L10N_TOUCH_SOUND), ST_NONE);
@@ -437,9 +437,9 @@ void st_other_build(clock_ui_context_t *ctx)
     st_keep_gestures(row.control);
     lv_obj_add_event_cb(row.control, sound_cb, LV_EVENT_VALUE_CHANGED, ctx);
     volume_line(ctx, group);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         kit_spacer(p->content, 16);
-    } else if (st_atelier()) {
+    } else if (ui_skin_is_atelier()) {
         lv_obj_set_style_border_width(lv_obj_get_parent(st->other_vol_slider), 0, 0);
     }
 
@@ -451,7 +451,7 @@ void st_other_build(clock_ui_context_t *ctx)
     o.trail = KIT_TRAIL_NONE;
     o.on_click = restart_row_cb;
     o.user_data = ctx;
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_RESTART;
         o.tint = sk->tint_other;
     }
@@ -491,21 +491,21 @@ void st_other_sync(clock_ui_context_t *ctx, bool force)
     }
     if (lv_obj_has_state(st->other_vol_slider, LV_STATE_DISABLED) == sound) {
         st_set_enabled(st->other_vol_slider, sound);
-        kit_set_tint(st->other_vol_slider, sound ? (st_orbit() ? lv_color_white() : sk->tint_sound) : sk->text_3);
+        kit_set_tint(st->other_vol_slider, sound ? (ui_skin_is_orbit() ? lv_color_white() : sk->tint_sound) : sk->text_3);
     }
     snprintf(text, sizeof(text), "%u%%", ctx->settings->ui_click_volume);
     kit_label_set_text_if_changed(st->other_vol_value, text);
 
     /* Software update. */
-    if (st_atelier()) {
+    if (ui_skin_is_atelier()) {
         if (available && !rt->ota_busy) {
             kit_label_set_text_if_changed(st->upd_old, TOUCH_CLOCK_FIRMWARE_VERSION);
             kit_label_set_text_if_changed(st->upd_head, rt->ota_available_version);
         } else {
             kit_label_set_text_if_changed(st->upd_head, TOUCH_CLOCK_FIRMWARE_VERSION);
         }
-        st_show(st->upd_old, available && !rt->ota_busy);
-        st_show(st->upd_arrow, available && !rt->ota_busy);
+        kit_show(st->upd_old, available && !rt->ota_busy);
+        kit_show(st->upd_arrow, available && !rt->ota_busy);
     } else if (st->upd_head != NULL) {
         if (rt->ota_busy) {
             snprintf(text, sizeof(text), "%s", ui_l10n_text(ctx, L10N_UPDATING));
@@ -525,10 +525,10 @@ void st_other_sync(clock_ui_context_t *ctx, bool force)
     } else if (rt->ota_reboot_pending) {
         snprintf(text, sizeof(text), "%s", ui_l10n_str(ctx, &s_restarting));
     } else if (available) {
-        if (st_orbit()) {
+        if (ui_skin_is_orbit()) {
             snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_available_have), rt->ota_available_version,
                      TOUCH_CLOCK_FIRMWARE_VERSION);
-        } else if (st_instrument()) {
+        } else if (ui_skin_is_instrument()) {
             snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_installed), TOUCH_CLOCK_FIRMWARE_VERSION);
         } else {
             text[0] = '\0';
@@ -539,16 +539,16 @@ void st_other_sync(clock_ui_context_t *ctx, bool force)
         snprintf(text, sizeof(text), "%s", ui_l10n_str(ctx, &s_needs_wifi));
     } else if (rt->ota_status[0] != '\0') {
         l10n_runtime_status(ctx->settings->language, rt->ota_status, text, sizeof(text));
-    } else if (st_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_installed), TOUCH_CLOCK_FIRMWARE_VERSION);
     } else {
         text[0] = '\0';
     }
     kit_label_set_text_if_changed(st->upd_sub, text);
-    st_show(st->upd_sub, text[0] != '\0');
+    kit_show(st->upd_sub, text[0] != '\0');
 
     if (available) {
-        if (st_orbit()) {
+        if (ui_skin_is_orbit()) {
             snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_install_v), rt->ota_available_version);
             button = text;
         } else {
@@ -558,12 +558,12 @@ void st_other_sync(clock_ui_context_t *ctx, bool force)
         button = ui_l10n_text(ctx, L10N_CHECK);
     }
     kit_button_set_text(st->upd_btn, button);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         kit_icon_set(lv_obj_get_child(st->upd_btn, 0), available ? KIT_ICON_DOWNLOAD : KIT_ICON_SYNC);
     }
     /* The action only shows when it can run; the line above says why otherwise. */
-    st_show(st->upd_btn, can_act);
-    st_show(st->upd_bar, rt->ota_busy);
+    kit_show(st->upd_btn, can_act);
+    kit_show(st->upd_bar, rt->ota_busy);
     if (rt->ota_busy) {
         int32_t w = lv_obj_get_width(st->upd_bar) * LV_MIN(rt->ota_progress, 100) / 100;
 
@@ -594,7 +594,7 @@ void st_language_build(clock_ui_context_t *ctx)
     kit_page_t *p;
     lv_obj_t *group;
 
-    p = st_page_begin(ctx, UI_ST_LANGUAGE, st_orbit() ? ST_NONE : ST_ID(L10N_OTHER), ST_ID(L10N_LANGUAGE),
+    p = st_page_begin(ctx, UI_ST_LANGUAGE, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_OTHER), ST_ID(L10N_LANGUAGE),
                       KIT_NAV_BACK);
     group = kit_group(p->content);
     for (int i = 0; i < CLOCK_LANGUAGE_COUNT; i++) {
@@ -620,7 +620,7 @@ void st_language_sync(clock_ui_context_t *ctx)
         return;
     }
     for (int i = 0; i < CLOCK_LANGUAGE_COUNT; i++) {
-        st_show(st->lang_check[i], i == ctx->settings->language);
+        kit_show(st->lang_check[i], i == ctx->settings->language);
     }
 }
 
@@ -654,7 +654,7 @@ void st_style_build(clock_ui_context_t *ctx)
     kit_page_t *p;
     lv_obj_t *group;
 
-    p = st_page_begin(ctx, UI_ST_STYLE, st_orbit() ? ST_NONE : ST_ID(L10N_OTHER), ST_STR(&s_interface_style),
+    p = st_page_begin(ctx, UI_ST_STYLE, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_OTHER), ST_STR(&s_interface_style),
                       KIT_NAV_BACK);
     group = kit_group(p->content);
     for (int i = 0; i < CLOCK_UI_STYLE_COUNT; i++) {
@@ -674,7 +674,7 @@ void st_style_build(clock_ui_context_t *ctx)
         kit_row_create(&row, group, &o);
         st_bind(ctx, row.subtitle, ST_STR(&s_style_desc[style]));
         lv_obj_set_style_pad_ver(row.row, 14, 0);
-        if (st_orbit()) {
+        if (ui_skin_is_orbit()) {
             lv_obj_set_style_radius(row.row, sk->radius_m, 0);
             lv_obj_set_style_pad_left(row.row, 14, 0);
         }
@@ -711,7 +711,7 @@ void st_style_sync(clock_ui_context_t *ctx)
         if (st->style_check[i] == NULL) {
             continue;
         }
-        st_show(st->style_check[i], i == (int)chosen_style(ctx));
+        kit_show(st->style_check[i], i == (int)chosen_style(ctx));
         holder = lv_obj_get_child(lv_obj_get_parent(lv_obj_get_parent(st->style_check[i])), 0);
         lv_obj_set_style_border_width(holder, i == (int)chosen_style(ctx) ? 3 : 1, 0);
         lv_obj_set_style_border_color(holder, i == (int)chosen_style(ctx) ? sk->accent : sk->line_strong, 0);

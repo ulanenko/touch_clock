@@ -68,7 +68,7 @@ static void create_drums(clock_ui_context_t *ctx, lv_obj_t *parent)
 {
     const ui_skin_t *sk = ui_skin();
     alm_timeset_t *ts = &ctx->alarms.ts;
-    lv_obj_t *well = alm_box(parent);
+    lv_obj_t *well = kit_plain(parent);
     lv_obj_t *colon;
     lv_obj_t *l;
 
@@ -93,7 +93,7 @@ static void create_drums(clock_ui_context_t *ctx, lv_obj_t *parent)
         kit_roller_set_marks(r, i == 0, i == 1);
     }
     /* The colon, centred in the window between the drums. */
-    colon = alm_box(parent);
+    colon = kit_plain(parent);
     lv_obj_set_pos(colon, 344, 121);
     lv_obj_set_size(colon, 32, 94);
     lv_obj_set_style_bg_opa(colon, LV_OPA_COVER, 0);
@@ -111,7 +111,7 @@ static int32_t day_angle_x10(int hour, int minute)
 
 static lv_obj_t *dot(lv_obj_t *parent, int32_t d, lv_color_t fill, int32_t border, lv_color_t border_color)
 {
-    lv_obj_t *o = alm_box(parent);
+    lv_obj_t *o = kit_plain(parent);
 
     lv_obj_set_size(o, d, d);
     lv_obj_set_style_radius(o, LV_RADIUS_CIRCLE, 0);
@@ -455,7 +455,7 @@ static void create_atelier(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_set_style_text_align(ts->repeat, LV_TEXT_ALIGN_CENTER, 0);
     lv_label_set_long_mode(ts->repeat, LV_LABEL_LONG_MODE_DOTS);
     lv_obj_align(ts->repeat, LV_ALIGN_TOP_MID, 0, 262 - 13);
-    row = alm_box(parent);
+    row = kit_plain(parent);
     lv_obj_set_size(row, LV_SIZE_CONTENT, LV_SIZE_CONTENT);
     lv_obj_set_flex_flow(row, LV_FLEX_FLOW_ROW);
     lv_obj_align(row, LV_ALIGN_TOP_MID, 0, 338 - lv_font_get_line_height(sk->font_time_l) / 2);
@@ -469,7 +469,7 @@ static void create_atelier(clock_ui_context_t *ctx, lv_obj_t *parent)
     lv_obj_align(ctx->alarms.editor_countdown, LV_ALIGN_TOP_MID, 0, 408 - 15);
 
     /* The rings take the drags; the centre (pushers, page scroll) stays free. */
-    ts->touch = alm_box(parent);
+    ts->touch = kit_plain(parent);
     lv_obj_set_size(ts->touch, KIT_SCREEN, KIT_SCREEN);
     lv_obj_add_flag(ts->touch, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_ADV_HITTEST);
     lv_obj_remove_flag(ts->touch, LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER | LV_OBJ_FLAG_GESTURE_BUBBLE);
@@ -513,18 +513,18 @@ static void atelier_sync(clock_ui_context_t *ctx, bool hour_changed, bool minute
 
     if (hour_changed) {
         snprintf(text, sizeof(text), "%02u", d->hour);
-        alm_set_text(ts->hour_jewel_label, text);
-        alm_set_text(ts->hh, text);
+        kit_label_set_text_if_changed(ts->hour_jewel_label, text);
+        kit_label_set_text_if_changed(ts->hh, text);
         place_on_ring(ts->hour_jewel, KIT_CENTER, KIT_CENTER, A_HOUR_R, d->hour * 150);
     }
     if (minute_changed) {
         snprintf(text, sizeof(text), "%02u", d->minute);
-        alm_set_text(ts->mm, text);
+        kit_label_set_text_if_changed(ts->mm, text);
         place_on_ring(ts->knob, KIT_CENTER, KIT_CENTER, A_MIN_JEWEL_R, d->minute * 60);
         lv_arc_set_angles(ts->arc, 0, (lv_value_precise_t)(d->minute * 6));
-        alm_show(ts->minute_mark, d->minute % 5 == 0);
+        kit_show(ts->minute_mark, d->minute % 5 == 0);
         if (d->minute % 5 == 0) {
-            alm_set_text(ts->minute_mark, text);
+            kit_label_set_text_if_changed(ts->minute_mark, text);
             lv_obj_update_layout(ts->minute_mark);
             place_on_ring(ts->minute_mark, KIT_CENTER, KIT_CENTER, A_MIN_LABEL_R, d->minute * 60);
         }
@@ -546,9 +546,9 @@ void alm_timeset_create(clock_ui_context_t *ctx, lv_obj_t *parent)
     ctx->alarms.ts.shown_hour = -1;
     ctx->alarms.ts.shown_minute = -1;
     ctx->alarms.ts.shown_now_angle = -1;
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         create_drums(ctx, parent);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         create_orbit(ctx, parent);
     } else {
         create_atelier(ctx, parent);
@@ -563,9 +563,9 @@ void alm_timeset_sync(clock_ui_context_t *ctx)
     bool hour_changed = ts->shown_hour != (int8_t)d->hour;
     bool minute_changed = ts->shown_minute != (int8_t)d->minute;
 
-    if (ALM_IS_ATELIER()) {
+    if (ui_skin_is_atelier()) {
         atelier_ensure_dial(ctx);
-        alm_set_text(ts->repeat, alm_repeat_title(ctx, d));
+        kit_label_set_text_if_changed(ts->repeat, alm_repeat_title(ctx, d));
     }
     if (!hour_changed && !minute_changed) {
         return;
@@ -582,16 +582,16 @@ void alm_timeset_sync(clock_ui_context_t *ctx)
         }
         ctx->suppress_events = false;
     }
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         orbit_arc(ctx, alm_now());
-    } else if (ALM_IS_ATELIER()) {
+    } else if (ui_skin_is_atelier()) {
         atelier_sync(ctx, hour_changed, minute_changed);
     }
 }
 
 void alm_timeset_tick(clock_ui_context_t *ctx, time_t now)
 {
-    if (ALM_IS_ORBIT() && ctx->alarms.ts.arc != NULL) {
+    if (ui_skin_is_orbit() && ctx->alarms.ts.arc != NULL) {
         orbit_arc(ctx, now);
     }
 }

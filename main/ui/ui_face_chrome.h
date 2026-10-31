@@ -24,8 +24,6 @@
 
 /* --- Small shared helpers (ui_face_controls.c) ----------------------------------------- */
 
-/* A plain object without theme styles: not clickable, not scrollable, transparent. */
-lv_obj_t *face_plain(lv_obj_t *parent);
 /* A text label in an explicit font and colour (one-off sizes the kit roles do not cover). */
 lv_obj_t *face_text(lv_obj_t *parent, const lv_font_t *font, lv_color_t color, const char *text);
 /* Remembers where presses on obj start, for face_click_is_tap(). */

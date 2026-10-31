@@ -385,7 +385,7 @@ static void apply_enabled(clock_ui_context_t *ctx, bool on)
             st_set_clickable(st->night_jewel[i], on);
         }
     }
-    st_show(st->night_hint, !on);
+    kit_show(st->night_hint, !on);
     if (st->night_dial != NULL) {
         lv_obj_invalidate(st->night_dial);
     }
@@ -431,11 +431,11 @@ static void sunrise_options_row(clock_ui_context_t *ctx, lv_obj_t *group)
     o.tint = sk->tint_night;
     o.on_click = sunrise_row_cb;
     o.user_data = ctx;
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_SUN;
     }
     st_row(ctx, &row, group, &o, ST_STR(&s_sunrise), ST_NONE);
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         lv_obj_set_style_radius(row.row, sk->radius_m, 0);
     }
     st->night_sunrise_value = row.value;
@@ -505,7 +505,7 @@ void st_sunrise_build(clock_ui_context_t *ctx)
     kit_row_opts_t o = {0};
     char text[64];
 
-    p = st_page_begin(ctx, UI_ST_SUNRISE, st_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_STR(&s_sunrise),
+    p = st_page_begin(ctx, UI_ST_SUNRISE, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_STR(&s_sunrise),
                       KIT_NAV_BACK);
     group = kit_group(p->content);
     o.icon = KIT_ICON_PLAY;
@@ -580,12 +580,12 @@ void st_sunrise_sync(clock_ui_context_t *ctx)
     for (int i = 0; i < 3; i++) {
         snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_sunrise_minutes), s_sunrise_lengths[i]);
         kit_label_set_text_if_changed(st->sunrise_len_title[i], text);
-        st_show(st->sunrise_len_check[i], nm->sunrise_minutes == s_sunrise_lengths[i]);
-        st_show(st->sunrise_peak_check[i], nm->sunrise_peak == s_sunrise_peaks[i]);
+        kit_show(st->sunrise_len_check[i], nm->sunrise_minutes == s_sunrise_lengths[i]);
+        kit_show(st->sunrise_peak_check[i], nm->sunrise_peak == s_sunrise_peaks[i]);
     }
     for (int i = 0; i < 4; i++) {
         kit_label_set_text_if_changed(st->sunrise_face_title[i], ui_l10n_str(ctx, &s_sunrise_faces[i]));
-        st_show(st->sunrise_face_check[i], nm->sunrise_face == (i < 3 ? i + 1 : 0));
+        kit_show(st->sunrise_face_check[i], nm->sunrise_face == (i < 3 ? i + 1 : 0));
     }
     kit_switch_set(st->sunrise_chime_sw, nm->sunrise_chime);
 }
@@ -791,7 +791,7 @@ static void build_list(clock_ui_context_t *ctx, kit_page_t *p, lv_obj_t *group)
     o.trail = KIT_TRAIL_CUSTOM;
     o.on_click = schedule_cb;
     o.user_data = ctx;
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         o.subtitle = " ";
     }
     st_row(ctx, &row, group, &o, ST_ID(L10N_SCHEDULE), ST_NONE);
@@ -800,7 +800,7 @@ static void build_list(clock_ui_context_t *ctx, kit_page_t *p, lv_obj_t *group)
     st->night_sched_value = kit_label(row.trail, KIT_TEXT_VALUE, "");
     dim_row(ctx, &row);
     dim_add(ctx, st->night_sched_value);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_text_font(row.subtitle, sk->font_caption, 0);
         lv_obj_set_style_text_color(row.subtitle, sk->text_3, 0);
         dim_add(ctx, row.subtitle);
@@ -820,12 +820,12 @@ static void build_list(clock_ui_context_t *ctx, kit_page_t *p, lv_obj_t *group)
     o.on_click = face_cb;
     o.user_data = ctx;
     o.subtitle = " ";
-    o.trail = st_instrument() ? KIT_TRAIL_CUSTOM : KIT_TRAIL_CHEVRON;
+    o.trail = ui_skin_is_instrument() ? KIT_TRAIL_CUSTOM : KIT_TRAIL_CHEVRON;
     st_row(ctx, &row, group, &o, ST_ID(L10N_NIGHT_FACE), ST_NONE);
     st->night_click[1] = row.row;
     st->night_face_sub = row.subtitle;
     dim_row(ctx, &row);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         st->night_face_img = face_thumb(row.trail, FACE_THUMB_INSTRUMENT, 1, sk->line_strong);
         lv_obj_set_style_pad_ver(row.row, 14, 0);
     } else {
@@ -839,7 +839,7 @@ static void build_list(clock_ui_context_t *ctx, kit_page_t *p, lv_obj_t *group)
     o.trail = KIT_TRAIL_CUSTOM;
     st_row(ctx, &row, group, &o, ST_ID(L10N_BRIGHTNESS), ST_NONE);
     dim_row(ctx, &row);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_flex_flow(row.row, LV_FLEX_FLOW_ROW_WRAP);
         lv_obj_set_style_pad_row(row.row, 4, 0);
         lv_obj_set_style_pad_top(row.row, 14, 0);
@@ -936,9 +936,9 @@ void st_night_build(clock_ui_context_t *ctx)
     kit_row_opts_t o = {0};
 
     st->night_dim_count = 0;
-    p = st_page_begin(ctx, UI_ST_NIGHT, st_atelier() ? ST_ID(L10N_SETTINGS) : ST_NONE, ST_ID(L10N_NIGHT_MODE),
+    p = st_page_begin(ctx, UI_ST_NIGHT, ui_skin_is_atelier() ? ST_ID(L10N_SETTINGS) : ST_NONE, ST_ID(L10N_NIGHT_MODE),
                       KIT_NAV_BACK);
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         kit_page_set_eyebrow(p, " ");
     }
     kit_set_tint(p->nav, sk->tint_night);
@@ -948,22 +948,22 @@ void st_night_build(clock_ui_context_t *ctx)
     o.trail = KIT_TRAIL_SWITCH;
     o.tint = sk->tint_night;
     o.subtitle = " ";
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         o.icon = KIT_ICON_MOON;
     }
     st_row(ctx, &row, group, &o, ST_ID(L10N_ENABLED), ST_ID(L10N_NIGHT_DISABLED_HINT));
     st->night_sw = row.control;
     st->night_hint = row.subtitle;
     /* A single-line row while the hint is hidden. */
-    lv_obj_set_style_min_height(lv_obj_get_parent(row.title), sk->row_h - 20 - (st_orbit() ? 0 : 1), 0);
+    lv_obj_set_style_min_height(lv_obj_get_parent(row.title), sk->row_h - 20 - (ui_skin_is_orbit() ? 0 : 1), 0);
     lv_label_set_long_mode(row.subtitle, LV_LABEL_LONG_MODE_WRAP);
     lv_obj_add_event_cb(row.control, enabled_cb, LV_EVENT_VALUE_CHANGED, ctx);
     st_keep_gestures(row.control);
 
-    if (st_orbit()) {
+    if (ui_skin_is_orbit()) {
         build_orbit(ctx, p);
     } else {
-        if (st_atelier()) {
+        if (ui_skin_is_atelier()) {
             /* Atelier rows share one ruled list. */
             build_list(ctx, p, group);
         } else {
@@ -972,7 +972,7 @@ void st_night_build(clock_ui_context_t *ctx)
     }
     lv_obj_add_event_cb(st->night_sunrise_sw, sunrise_cb, LV_EVENT_VALUE_CHANGED, ctx);
     st_keep_gestures(st->night_sunrise_sw);
-    if (st_atelier()) {
+    if (ui_skin_is_atelier()) {
         build_ring(ctx, p);
     }
     st->night_valid = false;
@@ -1025,15 +1025,15 @@ void st_night_sync(clock_ui_context_t *ctx, bool force)
         }
     }
 
-    if (st_instrument()) {
+    if (ui_skin_is_instrument()) {
         snprintf(text, sizeof(text), "%s · %s", face_catalog_name(face), ui_l10n_str(ctx, &s_tap_to_choose));
         kit_label_set_text_if_changed(st->night_face_sub, text);
-    } else if (st_atelier()) {
+    } else if (ui_skin_is_atelier()) {
         kit_label_set_text_if_changed(st->night_face_sub, ui_l10n_str(ctx, &s_tap_to_choose));
     }
     if (st->night_face_buf == NULL || !st->night_valid || st->night_face_shown != face ||
         st->night_face_key != st_face_key(ctx, face)) {
-        int32_t size = st_instrument() ? FACE_THUMB_INSTRUMENT : st_orbit() ? FACE_THUMB_ORBIT : FACE_THUMB_ATELIER;
+        int32_t size = ui_skin_is_instrument() ? FACE_THUMB_INSTRUMENT : ui_skin_is_orbit() ? FACE_THUMB_ORBIT : FACE_THUMB_ATELIER;
 
         st_render_face_thumb(ctx, st->night_face_img, &st->night_face_buf, size, face);
         st->night_face_shown = face;
@@ -1104,9 +1104,9 @@ void st_schedule_build(clock_ui_context_t *ctx)
     lv_obj_t *row;
     lv_obj_t *b;
     lv_obj_t *label;
-    int32_t w = st_orbit() ? 170 : 160;
+    int32_t w = ui_skin_is_orbit() ? 170 : 160;
 
-    p = st_page_begin(ctx, UI_ST_SCHEDULE, st_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_ID(L10N_NIGHT_SCHEDULE),
+    p = st_page_begin(ctx, UI_ST_SCHEDULE, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_ID(L10N_NIGHT_SCHEDULE),
                       KIT_NAV_BACK);
     kit_set_tint(p->nav, sk->tint_night);
     st->sched_seg = kit_segmented(p->content, labels, 2, 0);
@@ -1206,7 +1206,7 @@ void st_face_build(clock_ui_context_t *ctx)
     int32_t thumb = picker_thumb();
     int32_t col = (sk->content_w - 2 * sk->gap_s) / 3;
 
-    p = st_page_begin(ctx, UI_ST_FACE, st_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_ID(L10N_NIGHT_FACE),
+    p = st_page_begin(ctx, UI_ST_FACE, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_ID(L10N_NIGHT_FACE),
                       KIT_NAV_BACK);
     kit_set_tint(p->nav, sk->tint_night);
     grid = lv_obj_create(p->content);
@@ -1246,11 +1246,11 @@ void st_face_build(clock_ui_context_t *ctx)
         lv_obj_set_size(check, 34, 34);
         lv_obj_set_style_radius(check, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_opa(check, LV_OPA_COVER, 0);
-        lv_obj_set_style_bg_color(check, st_orbit() ? sk->tint_night : sk->accent, 0);
+        lv_obj_set_style_bg_color(check, ui_skin_is_orbit() ? sk->tint_night : sk->accent, 0);
         lv_obj_set_style_border_width(check, 3, 0);
         lv_obj_set_style_border_color(check, sk->bg, 0);
         lv_obj_align(check, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
-        lv_obj_center(kit_icon_small(check, KIT_ICON_CHECK, st_orbit() ? sk->text : sk->accent_text));
+        lv_obj_center(kit_icon_small(check, KIT_ICON_CHECK, ui_skin_is_orbit() ? sk->text : sk->accent_text));
         st->face_check[face] = check;
         st->face_name[face] = kit_label(item, KIT_TEXT_BODY, face_catalog_name(face));
         lv_obj_set_width(st->face_name[face], lv_pct(100));
@@ -1295,7 +1295,7 @@ void st_face_sync(clock_ui_context_t *ctx, bool force)
     const ui_skin_t *sk = ui_skin();
     clock_ui_settings_state_t *st = ST(ctx);
     clock_face_id_t selected = sanitize_enabled_face(ctx->settings->night_mode.face);
-    lv_color_t accent = st_orbit() ? sk->tint_night : sk->accent;
+    lv_color_t accent = ui_skin_is_orbit() ? sk->tint_night : sk->accent;
     bool stale = false;
 
     LV_UNUSED(force);
@@ -1310,7 +1310,7 @@ void st_face_sync(clock_ui_context_t *ctx, bool force)
         }
         lv_obj_set_style_border_width(st->face_ring[face], on ? 3 : 1, 0);
         lv_obj_set_style_border_color(st->face_ring[face], on ? accent : sk->line, 0);
-        st_show(st->face_check[face], on);
+        kit_show(st->face_check[face], on);
         lv_obj_set_style_text_color(st->face_name[face], on ? sk->text : sk->text_2, 0);
         st->face_want[face] = st_face_key(ctx, (clock_face_id_t)face);
         if (on && st->face_key[face] != st->face_want[face]) {
@@ -1340,7 +1340,7 @@ void st_night_bright_build(clock_ui_context_t *ctx)
     kit_page_t *p;
     lv_obj_t *row;
 
-    p = st_page_begin(ctx, UI_ST_NIGHT_BRIGHT, st_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_ID(L10N_BRIGHTNESS),
+    p = st_page_begin(ctx, UI_ST_NIGHT_BRIGHT, ui_skin_is_orbit() ? ST_NONE : ST_ID(L10N_NIGHT_MODE), ST_ID(L10N_BRIGHTNESS),
                       KIT_NAV_BACK);
     kit_set_tint(p->nav, sk->tint_night);
     st->nb_value = kit_label(p->content, KIT_TEXT_TIME_M, "");

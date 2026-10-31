@@ -27,7 +27,7 @@ lv_obj_t *kit_switch(lv_obj_t *parent, lv_color_t tint)
     kit_ensure_tap(sw, w, h);
     ui_attach_click_feedback(sw, LV_EVENT_VALUE_CHANGED);
 
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         /* Slide switch: recessed window, keycap thumb with grip ridges, and a lit bar (on) or
          * an empty ring (off) in the free half of the window. The indicator part is that mark:
          * the main padding places it. */
@@ -59,7 +59,7 @@ lv_obj_t *kit_switch(lv_obj_t *parent, lv_color_t tint)
         lv_obj_set_style_border_color(sw, kit_rgb(0x686460), LV_PART_KNOB);
         lv_obj_set_style_border_color(sw, kit_rgb(0xF8F4E8), LV_PART_KNOB | LV_STATE_CHECKED);
         lv_obj_set_style_bg_image_src(sw, &ui_kit_instrument_grip, LV_PART_KNOB);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         /* iOS-style capsule: area tint when on; Other's graphite turns silver. */
         bool silver = lv_color_eq(tint, sk->tint_other);
 
@@ -235,7 +235,7 @@ static void slider_draw_cb(lv_event_t *e)
     lv_opa_t opa;
 
     if (lv_event_get_code(e) == LV_EVENT_REFR_EXT_DRAW_SIZE) {
-        lv_event_set_ext_draw_size(e, kit_is_orbit() ? 18 : 16);
+        lv_event_set_ext_draw_size(e, ui_skin_is_orbit() ? 18 : 16);
         return;
     }
     layer = lv_event_get_layer(e);
@@ -247,12 +247,12 @@ static void slider_draw_cb(lv_event_t *e)
     tint = lv_obj_get_style_bg_color(obj, LV_PART_INDICATOR);
     opa = lv_obj_get_style_opa_recursive(obj, LV_PART_MAIN);
 
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         /* Ruler: a tick every 2 %, majors every 10 %, a fader cap with the signal index. */
         draw_ruler(layer, &a, kx, opa);
         fill(layer, kx - 10, a.y1 + 4, kx + 10, a.y1 + 45, sk->text, 4, opa);
         fill(layer, kx - 1, a.y1 + 10, kx, a.y1 + 39, tint, 0, opa);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         /* Capsule: 12 px track, white fill, 32 px knob. */
         int32_t cy = a.y1 + lv_area_get_height(&a) / 2;
 
@@ -288,13 +288,13 @@ lv_obj_t *kit_slider(lv_obj_t *parent, int32_t min, int32_t max, lv_color_t tint
 {
     const ui_skin_t *sk = ui_skin();
     lv_obj_t *slider = lv_slider_create(parent);
-    int32_t h = kit_is_instrument() ? 48 : kit_is_orbit() ? 32 : 40;
+    int32_t h = ui_skin_is_instrument() ? 48 : ui_skin_is_orbit() ? 32 : 40;
 
     lv_obj_remove_style_all(slider);
     lv_slider_set_range(slider, min, max);
     lv_obj_set_size(slider, sk->content_w, h);
     /* The tint is kept on the (undrawn) indicator part for the draw callback. */
-    lv_obj_set_style_bg_color(slider, kit_is_orbit() && lv_color_eq(tint, sk->accent) ? kit_rgb(0xF8FCF8) : tint,
+    lv_obj_set_style_bg_color(slider, ui_skin_is_orbit() && lv_color_eq(tint, sk->accent) ? kit_rgb(0xF8FCF8) : tint,
                               LV_PART_INDICATOR);
     lv_obj_set_style_bg_opa(slider, LV_OPA_TRANSP, LV_PART_INDICATOR);
     lv_obj_set_ext_click_area(slider, (sk->tap_min - h + 1) / 2);
@@ -336,10 +336,10 @@ static void seg_style_item(lv_obj_t *item, bool on)
     } else {
         lv_obj_remove_state(item, LV_STATE_CHECKED);
     }
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_text_font(label, on ? &it_medium_22 : sk->font_body, 0);
         lv_obj_set_style_text_color(label, on ? sk->text : sk->text_3, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_text_color(label, on ? kit_on_color(lv_obj_get_style_bg_color(item, LV_STATE_CHECKED)) : sk->text,
                                     0);
     } else {
@@ -459,14 +459,14 @@ lv_obj_t *kit_segmented(lv_obj_t *parent, const char *const *labels, int count, 
     lv_obj_set_flex_flow(seg, LV_FLEX_FLOW_ROW);
     lv_obj_set_flex_align(seg, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_style_bg_opa(seg, LV_OPA_COVER, 0);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(seg, sk->well, 0);
         lv_obj_set_style_border_width(seg, 1, 0);
         lv_obj_set_style_border_color(seg, sk->line, 0);
         lv_obj_set_style_radius(seg, sk->radius_s, 0);
         lv_obj_set_style_pad_all(seg, 4, 0);
         lv_obj_add_event_cb(seg, seg_sep_cb, LV_EVENT_DRAW_MAIN_END, d);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(seg, sk->surface, 0);
         lv_obj_set_style_radius(seg, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_pad_all(seg, 6, 0);
@@ -487,16 +487,16 @@ lv_obj_t *kit_segmented(lv_obj_t *parent, const char *const *labels, int count, 
         d->seg[i] = item;
         lv_obj_add_flag(item, LV_OBJ_FLAG_CLICKABLE);
         lv_obj_set_height(item, lv_pct(100));
-        lv_obj_set_style_radius(item, kit_is_instrument() ? 7 : LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_radius(item, ui_skin_is_instrument() ? 7 : LV_RADIUS_CIRCLE, 0);
         lv_obj_add_event_cb(item, seg_click_cb, LV_EVENT_CLICKED, d);
         ui_attach_click_feedback(item, LV_EVENT_CLICKED);
-        if (kit_is_instrument()) {
+        if (ui_skin_is_instrument()) {
             lv_obj_set_flex_grow(item, 1);
             lv_obj_set_style_bg_opa(item, LV_OPA_COVER, LV_STATE_CHECKED);
             lv_obj_set_style_bg_color(item, sk->raised, LV_STATE_CHECKED);
             kit_add_key_deco(item, &kit_deco_segment);
             lv_obj_add_event_cb(item, seg_index_cb, LV_EVENT_DRAW_MAIN_END, NULL);
-        } else if (kit_is_orbit()) {
+        } else if (ui_skin_is_orbit()) {
             lv_obj_set_style_pad_hor(item, 12, 0);
             lv_obj_set_style_bg_opa(item, LV_OPA_COVER, LV_STATE_CHECKED);
             lv_obj_set_style_bg_color(item, sk->accent, LV_STATE_CHECKED);
@@ -507,11 +507,11 @@ lv_obj_t *kit_segmented(lv_obj_t *parent, const char *const *labels, int count, 
             lv_obj_set_style_bg_opa(item, LV_OPA_COVER, LV_STATE_CHECKED);
             lv_obj_set_style_bg_color(item, sk->raised, LV_STATE_CHECKED);
         }
-        label = kit_label_raw(item, kit_is_orbit() ? KIT_TEXT_VALUE : KIT_TEXT_BODY, labels[i]);
+        label = kit_label_raw(item, ui_skin_is_orbit() ? KIT_TEXT_VALUE : KIT_TEXT_BODY, labels[i]);
         lv_obj_center(label);
         seg_style_item(item, false);
     }
-    if (!kit_is_instrument()) {
+    if (!ui_skin_is_instrument()) {
         lv_obj_add_event_cb(seg, seg_size_cb, LV_EVENT_SIZE_CHANGED, d);
     }
     kit_segmented_set(seg, selected);
@@ -556,7 +556,7 @@ void kit_segmented_set_label(lv_obj_t *seg, int index, const char *label)
         return;
     }
     kit_label_set_text_if_changed(lv_obj_get_child(d->seg[index], 0), label);
-    if (!kit_is_instrument()) {
+    if (!ui_skin_is_instrument()) {
         seg_layout(seg, d);
     }
 }
@@ -571,9 +571,9 @@ static void day_state_cb(lv_event_t *e)
     bool on = lv_obj_has_state(key, LV_STATE_CHECKED);
     lv_color_t c;
 
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         c = on ? sk->text : sk->text_3;
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         c = on ? kit_on_color(lv_obj_get_style_bg_color(key, LV_STATE_CHECKED)) : sk->text;
     } else {
         c = on ? sk->text : sk->text_3;
@@ -611,7 +611,7 @@ lv_obj_t *kit_day_toggle(lv_obj_t *parent, const char *letter, bool on)
     const ui_skin_t *sk = ui_skin();
     lv_obj_t *key = kit_plain(parent);
     lv_obj_t *label;
-    int32_t d = kit_is_instrument() ? 64 : kit_is_orbit() ? 66 : 56;
+    int32_t d = ui_skin_is_instrument() ? 64 : ui_skin_is_orbit() ? 66 : 56;
 
     lv_obj_add_flag(key, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_CHECKABLE);
     lv_obj_set_size(key, d, d);
@@ -620,7 +620,7 @@ lv_obj_t *kit_day_toggle(lv_obj_t *parent, const char *letter, bool on)
     kit_ensure_tap(key, d, d);
     kit_add_pressed_dim(key);
     ui_attach_click_feedback(key, LV_EVENT_CLICKED);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(key, sk->well, 0);
         lv_obj_set_style_border_width(key, 1, 0);
         lv_obj_set_style_border_color(key, sk->line, 0);
@@ -629,7 +629,7 @@ lv_obj_t *kit_day_toggle(lv_obj_t *parent, const char *letter, bool on)
         lv_obj_add_event_cb(key, day_led_cb, LV_EVENT_DRAW_MAIN_END, NULL);
         label = kit_label_raw(key, KIT_TEXT_BUTTON, letter);
         lv_obj_align(label, LV_ALIGN_CENTER, 0, -3);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(key, sk->surface, 0);
         lv_obj_set_style_bg_color(key, sk->accent, LV_STATE_CHECKED);
         label = kit_label_raw(key, KIT_TEXT_HEADING, letter);
@@ -692,7 +692,7 @@ void kit_roller_set_marks(lv_obj_t *roller, bool left, bool right)
 {
     uintptr_t sides = (left ? MARK_LEFT : 0U) | (right ? MARK_RIGHT : 0U);
 
-    if (roller == NULL || !kit_is_instrument()) {
+    if (roller == NULL || !ui_skin_is_instrument()) {
         return;
     }
     kit_remove_event_cb(roller, roller_marks_cb);
@@ -715,11 +715,11 @@ lv_obj_t *kit_roller(lv_obj_t *parent, const char *options, uint32_t visible_row
     if (selected_font == NULL) {
         selected_font = sk->font_time_l;
     }
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         main_font = &it_light_34;
         main_color = sk->text_3;
         extra = 14;
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         main_font = sk->font_title;
         main_color = kit_rgb(0x484848);
         extra = 30;
@@ -740,14 +740,14 @@ lv_obj_t *kit_roller(lv_obj_t *parent, const char *options, uint32_t visible_row
     lv_obj_set_style_anim_duration(roller, 200, 0);
     lv_obj_set_style_text_font(roller, selected_font, LV_PART_SELECTED);
     lv_obj_set_style_text_color(roller, sk->text, LV_PART_SELECTED);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_opa(roller, LV_OPA_COVER, LV_PART_SELECTED);
         lv_obj_set_style_bg_color(roller, sk->well, LV_PART_SELECTED);
         lv_obj_set_style_border_width(roller, 1, LV_PART_SELECTED);
         lv_obj_set_style_border_color(roller, sk->line, LV_PART_SELECTED);
         lv_obj_set_style_radius(roller, sk->radius_s, LV_PART_SELECTED);
         kit_roller_set_marks(roller, true, true);
-    } else if (kit_is_atelier()) {
+    } else if (ui_skin_is_atelier()) {
         lv_obj_set_style_border_side(roller, LV_BORDER_SIDE_TOP | LV_BORDER_SIDE_BOTTOM, LV_PART_SELECTED);
         lv_obj_set_style_border_width(roller, 1, LV_PART_SELECTED);
         lv_obj_set_style_border_color(roller, sk->line_strong, LV_PART_SELECTED);
@@ -851,7 +851,7 @@ static void keyboard_event_cb(lv_event_t *e)
 void kit_style_keyboard(lv_obj_t *keyboard)
 {
     const ui_skin_t *sk = ui_skin();
-    const lv_font_t *font = kit_is_instrument() ? sk->font_heading : kit_is_orbit() ? sk->font_heading : &at_sans_26;
+    const lv_font_t *font = ui_skin_is_instrument() ? sk->font_heading : ui_skin_is_orbit() ? sk->font_heading : &at_sans_26;
 
     if (keyboard == NULL) {
         return;
@@ -869,21 +869,21 @@ void kit_style_keyboard(lv_obj_t *keyboard)
     lv_obj_remove_style_all(keyboard);
     lv_obj_set_style_bg_opa(keyboard, LV_OPA_TRANSP, 0);
     lv_obj_set_style_pad_all(keyboard, 0, 0);
-    lv_obj_set_style_pad_row(keyboard, kit_is_orbit() ? 8 : 6, 0);
-    lv_obj_set_style_pad_column(keyboard, kit_is_orbit() ? 8 : 6, 0);
+    lv_obj_set_style_pad_row(keyboard, ui_skin_is_orbit() ? 8 : 6, 0);
+    lv_obj_set_style_pad_column(keyboard, ui_skin_is_orbit() ? 8 : 6, 0);
     lv_obj_set_style_text_font(keyboard, font, LV_PART_ITEMS);
     lv_obj_set_style_text_color(keyboard, sk->text, LV_PART_ITEMS);
     lv_obj_set_style_bg_opa(keyboard, LV_OPA_COVER, LV_PART_ITEMS);
     lv_obj_set_style_opa(keyboard, LV_OPA_70, LV_PART_ITEMS | LV_STATE_PRESSED);
     lv_obj_set_style_text_font(keyboard, sk->font_body, LV_PART_ITEMS | LV_STATE_CHECKED);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(keyboard, sk->raised, LV_PART_ITEMS);
         lv_obj_set_style_border_width(keyboard, 1, LV_PART_ITEMS);
         lv_obj_set_style_border_color(keyboard, sk->line, LV_PART_ITEMS);
         lv_obj_set_style_radius(keyboard, sk->radius_s, LV_PART_ITEMS);
         lv_obj_set_style_bg_color(keyboard, sk->well, LV_PART_ITEMS | LV_STATE_CHECKED);
         lv_obj_set_style_text_color(keyboard, sk->text_2, LV_PART_ITEMS | LV_STATE_CHECKED);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(keyboard, sk->raised, LV_PART_ITEMS);
         lv_obj_set_style_radius(keyboard, 14, LV_PART_ITEMS);
         lv_obj_set_style_bg_color(keyboard, sk->surface, LV_PART_ITEMS | LV_STATE_CHECKED);
@@ -905,7 +905,7 @@ void kit_style_field(lv_obj_t *textarea)
 {
     const ui_skin_t *sk = ui_skin();
     const lv_font_t *font = sk->font_heading;
-    int32_t h = kit_is_orbit() ? 80 : 72;
+    int32_t h = ui_skin_is_orbit() ? 80 : 72;
     int32_t lh = lv_font_get_line_height(font);
 
     if (textarea == NULL) {
@@ -917,21 +917,21 @@ void kit_style_field(lv_obj_t *textarea)
     lv_obj_set_style_bg_opa(textarea, LV_OPA_COVER, 0);
     lv_obj_set_style_text_font(textarea, font, 0);
     lv_obj_set_style_text_color(textarea, sk->text, 0);
-    lv_obj_set_style_pad_ver(textarea, (h - lh) / 2 - (kit_is_orbit() ? 2 : 1), 0);
+    lv_obj_set_style_pad_ver(textarea, (h - lh) / 2 - (ui_skin_is_orbit() ? 2 : 1), 0);
     lv_obj_set_style_text_color(textarea, sk->text_3, LV_PART_TEXTAREA_PLACEHOLDER);
     lv_obj_set_style_bg_opa(textarea, LV_OPA_TRANSP, LV_PART_CURSOR);
     lv_obj_set_style_border_side(textarea, LV_BORDER_SIDE_LEFT, LV_PART_CURSOR);
-    lv_obj_set_style_border_width(textarea, kit_is_orbit() ? 3 : 2, LV_PART_CURSOR);
+    lv_obj_set_style_border_width(textarea, ui_skin_is_orbit() ? 3 : 2, LV_PART_CURSOR);
     lv_obj_set_style_border_color(textarea, sk->accent, LV_PART_CURSOR);
     lv_obj_set_style_anim_duration(textarea, 500, LV_PART_CURSOR);
     lv_obj_set_style_text_letter_space(textarea, 3, 0);
-    if (kit_is_instrument()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(textarea, sk->well, 0);
         lv_obj_set_style_border_width(textarea, 1, 0);
         lv_obj_set_style_border_color(textarea, sk->line, 0);
         lv_obj_set_style_radius(textarea, sk->radius_s, 0);
         lv_obj_set_style_pad_hor(textarea, 20, 0);
-    } else if (kit_is_orbit()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(textarea, sk->raised, 0);
         lv_obj_set_style_border_width(textarea, 2, 0);
         lv_obj_set_style_border_color(textarea, sk->accent, 0);
@@ -962,9 +962,9 @@ void kit_set_tint(lv_obj_t *obj, lv_color_t tint)
     if (lv_obj_check_type(obj, &lv_button_class)) {
         kit_button_set_tint(obj, tint);
     } else if (lv_obj_check_type(obj, &lv_switch_class)) {
-        if (kit_is_instrument()) {
+        if (ui_skin_is_instrument()) {
             lv_obj_set_style_bg_color(obj, tint, LV_PART_INDICATOR | LV_STATE_CHECKED);
-        } else if (kit_is_orbit()) {
+        } else if (ui_skin_is_orbit()) {
             bool silver = lv_color_eq(tint, sk->tint_other);
 
             lv_obj_set_style_bg_color(obj, silver ? kit_rgb(0xE0E4E8) : tint, LV_PART_INDICATOR | LV_STATE_CHECKED);
@@ -974,7 +974,7 @@ void kit_set_tint(lv_obj_t *obj, lv_color_t tint)
         }
     } else if (lv_obj_check_type(obj, &lv_slider_class)) {
         lv_obj_set_style_bg_color(obj, tint, LV_PART_INDICATOR);
-    } else if (!kit_is_orbit()) {
+    } else if (!ui_skin_is_orbit()) {
         return;
     } else if ((d = kit_event_data(obj, seg_free_cb)) != NULL) {
         for (int i = 0; i < d->count; i++) {

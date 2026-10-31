@@ -337,7 +337,7 @@ static void ensure_background(clock_ui_context_t *ctx)
 {
     clock_ui_alarm_state_t *a = &ctx->alarms;
 
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         return;
     }
     if (ui_skin_is_glass()) {
@@ -359,7 +359,7 @@ static void ensure_background(clock_ui_context_t *ctx)
         return;
     }
     if (a->ring_bg != NULL) {
-        if (ALM_IS_ORBIT() && a->ring_bg_language != ctx->settings->language + 1) {
+        if (ui_skin_is_orbit() && a->ring_bg_language != ctx->settings->language + 1) {
             a->ring_bg_language = (uint8_t)(ctx->settings->language + 1);
             render_orbit_bg(ctx); /* "slide to stop" is set in the language */
             lv_obj_invalidate(a->ring_bg);
@@ -367,7 +367,7 @@ static void ensure_background(clock_ui_context_t *ctx)
         return;
     }
     a->ring_bg_language = (uint8_t)(ctx->settings->language + 1);
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         a->ring_bg = alm_canvas(a->ring_main, KIT_SCREEN, KIT_SCREEN - O_GLOW_Y, &a->ring_bg_buf);
         if (a->ring_bg == NULL) {
             return;
@@ -502,7 +502,7 @@ static void hold_cb(lv_event_t *e)
 static void slide_place(clock_ui_context_t *ctx, int32_t angle)
 {
     lv_obj_t *k = ctx->alarms.ring_knob;
-    int32_t r = ALM_IS_ORBIT() ? O_SLIDE_R : A_SLIDE_R;
+    int32_t r = ui_skin_is_orbit() ? O_SLIDE_R : A_SLIDE_R;
     int32_t x;
     int32_t y;
 
@@ -522,8 +522,8 @@ static void slide_cb(lv_event_t *e)
 {
     clock_ui_context_t *ctx = lv_event_get_user_data(e);
     lv_event_code_t code = lv_event_get_code(e);
-    int32_t start = ALM_IS_ORBIT() ? O_SLIDE_START : A_SLIDE_START;
-    int32_t end = ALM_IS_ORBIT() ? O_SLIDE_END : A_SLIDE_END;
+    int32_t start = ui_skin_is_orbit() ? O_SLIDE_START : A_SLIDE_START;
+    int32_t end = ui_skin_is_orbit() ? O_SLIDE_END : A_SLIDE_END;
     lv_indev_t *indev = lv_indev_active();
     lv_point_t p;
     int32_t angle;
@@ -593,7 +593,7 @@ static void reset_stop_controls(clock_ui_context_t *ctx)
     }
     if (a->ring_knob != NULL) {
         lv_anim_delete(ctx, slide_exec_cb);
-        slide_place(ctx, ALM_IS_ORBIT() ? O_SLIDE_START : A_SLIDE_START);
+        slide_place(ctx, ui_skin_is_orbit() ? O_SLIDE_START : A_SLIDE_START);
     }
 }
 
@@ -613,13 +613,13 @@ static void math_show_answer(clock_ui_context_t *ctx)
 {
     clock_ui_alarm_state_t *a = &ctx->alarms;
 
-    alm_set_text(a->math_answer, a->math_answer_len > 0 ? a->math_answer_text : "");
+    kit_label_set_text_if_changed(a->math_answer, a->math_answer_len > 0 ? a->math_answer_text : "");
 }
 
 static void math_set_error(clock_ui_context_t *ctx, bool error)
 {
-    alm_show(ctx->alarms.math_error, error);
-    alm_show(ctx->alarms.math_head, !error);
+    kit_show(ctx->alarms.math_error, error);
+    kit_show(ctx->alarms.math_head, !error);
 }
 
 static void math_reset_input(clock_ui_context_t *ctx)
@@ -649,8 +649,8 @@ static void math_generate(clock_ui_context_t *ctx)
     /* Instrument sets the whole sum with its question mark; the others put the answer box
      * where the question mark would be. */
     snprintf(text, sizeof(text), "%u %s %u =%s", a->math_a, a->math_plus ? "+" : "\xE2\x88\x92", a->math_b,
-             ALM_IS_INSTRUMENT() ? " ?" : "");
-    alm_set_text(a->math_problem, text);
+             ui_skin_is_instrument() ? " ?" : "");
+    kit_label_set_text_if_changed(a->math_problem, text);
     math_reset_input(ctx);
     math_set_error(ctx, false);
 }
@@ -712,8 +712,8 @@ static void math_set_visible(clock_ui_context_t *ctx, bool visible)
     clock_ui_alarm_state_t *a = &ctx->alarms;
 
     a->math_visible = visible;
-    alm_show(a->math, visible);
-    alm_show(a->ring_main, !visible);
+    kit_show(a->math, visible);
+    kit_show(a->ring_main, !visible);
     if (!visible) {
         math_reset_input(ctx);
         math_set_error(ctx, false);
@@ -777,7 +777,7 @@ static lv_obj_t *label_at(lv_obj_t *parent, const lv_font_t *font, lv_color_t co
 
 static lv_obj_t *hrow(lv_obj_t *parent, int32_t center_y, int32_t height, int32_t gap)
 {
-    lv_obj_t *r = alm_box(parent);
+    lv_obj_t *r = kit_plain(parent);
 
     lv_obj_set_size(r, LV_SIZE_CONTENT, height);
     lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
@@ -865,7 +865,7 @@ static void build_orbit_main(clock_ui_context_t *ctx, lv_obj_t *m)
     a->ring_sub = label_at(m, sk->font_body, sk->text_2, 324, 520);
 
     /* The band itself takes a press near the knob's end too (under the snooze key). */
-    a->ring_track = alm_box(m);
+    a->ring_track = kit_plain(m);
     lv_obj_set_size(a->ring_track, KIT_SCREEN, KIT_SCREEN - 400);
     lv_obj_set_pos(a->ring_track, 0, 400);
     lv_obj_add_flag(a->ring_track, LV_OBJ_FLAG_CLICKABLE);
@@ -880,7 +880,7 @@ static void build_orbit_main(clock_ui_context_t *ctx, lv_obj_t *m)
     lv_obj_add_event_cb(btn, snooze_cb, LV_EVENT_CLICKED, ctx);
     a->ring_snooze = btn;
 
-    a->ring_knob = alm_box(m);
+    a->ring_knob = kit_plain(m);
     lv_obj_set_size(a->ring_knob, O_SLIDE_W - 16, O_SLIDE_W - 16);
     lv_obj_set_style_radius(a->ring_knob, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_opa(a->ring_knob, LV_OPA_COVER, 0);
@@ -916,7 +916,7 @@ static void build_atelier_main(clock_ui_context_t *ctx, lv_obj_t *m)
     a->ring_time = label_at(m, sk->font_display, sk->text, 214, 640);
     a->ring_sub = label_at(m, sk->font_body, sk->text_2, 302, 600);
 
-    btn = alm_box(m);
+    btn = kit_plain(m);
     lv_obj_set_size(btn, 320, 112);
     lv_obj_set_pos(btn, 200, 352);
     lv_obj_set_style_radius(btn, 56, 0);
@@ -962,7 +962,7 @@ static lv_obj_t *math_key(clock_ui_context_t *ctx, lv_obj_t *parent, int k, int3
     kit_button_kind_t kind = k == KEY_OK ? KIT_BUTTON_PRIMARY : KIT_BUTTON_SECONDARY;
     kit_icon_t icon = k == KEY_OK ? KIT_ICON_CHECK : k == KEY_BKSP ? KIT_ICON_BACKSPACE : KIT_ICON_NONE;
 
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         key = kit_button(parent, kind, icon, k <= 9 ? text : "");
         lv_obj_set_size(key, 112, 72);
         lv_obj_set_style_pad_hor(key, 0, 0);
@@ -973,18 +973,18 @@ static lv_obj_t *math_key(clock_ui_context_t *ctx, lv_obj_t *parent, int k, int3
         }
         lv_obj_set_pos(key, cx - 56, cy - 36);
     } else {
-        int32_t d = ALM_IS_ORBIT() ? 80 : 84;
+        int32_t d = ui_skin_is_orbit() ? 80 : 84;
 
         key = kit_round_button(parent, kind, icon, d);
         lv_obj_set_pos(key, cx - d / 2, cy - d / 2);
-        if (ALM_IS_ATELIER()) {
+        if (ui_skin_is_atelier()) {
             lv_obj_set_style_outline_width(key, 0, 0);
             if (k == KEY_BKSP) {
                 lv_obj_set_style_bg_color(key, sk->raised, 0);
                 lv_obj_set_style_border_color(key, sk->line_strong, 0);
             }
         }
-        if (ALM_IS_ORBIT()) {
+        if (ui_skin_is_orbit()) {
             if (k == KEY_OK) {
                 kit_set_tint(key, sk->tint_alarms);
             } else if (k == KEY_BKSP) {
@@ -992,7 +992,7 @@ static lv_obj_t *math_key(clock_ui_context_t *ctx, lv_obj_t *parent, int k, int3
             }
         }
         if (k <= 9) {
-            lv_obj_t *l = alm_label(key, ALM_IS_ORBIT() ? sk->font_title : &at_serif_40, sk->text, text);
+            lv_obj_t *l = alm_label(key, ui_skin_is_orbit() ? sk->font_title : &at_serif_40, sk->text, text);
 
             lv_obj_center(l);
         }
@@ -1004,7 +1004,7 @@ static lv_obj_t *math_key(clock_ui_context_t *ctx, lv_obj_t *parent, int k, int3
 
 static void math_rim_cb(lv_event_t *e)
 {
-    alm_draw_rim(lv_event_get_layer(e), -1, -1);
+    kit_draw_minute_rim(lv_event_get_layer(e), -1, -1);
 }
 
 static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
@@ -1015,14 +1015,14 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
     lv_obj_t *r;
     lv_obj_t *box;
     lv_obj_t *btn;
-    int32_t head_y = ALM_IS_INSTRUMENT() ? 59 : ALM_IS_ORBIT() ? 98 : 78;
+    int32_t head_y = ui_skin_is_instrument() ? 59 : ui_skin_is_orbit() ? 98 : 78;
 
-    if (ALM_IS_ATELIER()) {
+    if (ui_skin_is_atelier()) {
         lv_obj_add_event_cb(m, math_rim_cb, LV_EVENT_DRAW_MAIN_END, NULL);
     }
 
     /* Header, and the wrong-answer message in its place. */
-    if (ALM_IS_ORBIT()) {
+    if (ui_skin_is_orbit()) {
         r = hrow(m, head_y, 30, 8);
         kit_icon_small(r, KIT_ICON_BELL, sk->tint_alarms);
         a->math_head = alm_label(r, &or_medium_22, sk->text_2, "");
@@ -1030,19 +1030,19 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
         a->math_head = r;
         lv_obj_set_user_data(r, lv_obj_get_child(r, 1));
     } else {
-        a->math_head = label_at(m, sk->font_label, ALM_IS_ATELIER() ? sk->accent : sk->text_3, head_y, 560);
+        a->math_head = label_at(m, sk->font_label, ui_skin_is_atelier() ? sk->accent : sk->text_3, head_y, 560);
         lv_obj_set_style_text_letter_space(a->math_head, sk->label_letter_space, 0);
         lv_label_set_recolor(a->math_head, true);
     }
-    a->math_error = label_at(m, ALM_IS_ORBIT() ? &or_medium_22 : sk->font_body, sk->danger_text, head_y, 560);
-    alm_set_text(a->math_error, alm_text(ctx, L10N_WRONG_ANSWER));
+    a->math_error = label_at(m, ui_skin_is_orbit() ? &or_medium_22 : sk->font_body, sk->danger_text, head_y, 560);
+    kit_label_set_text_if_changed(a->math_error, alm_text(ctx, L10N_WRONG_ANSWER));
     lv_obj_add_flag(a->math_error, LV_OBJ_FLAG_HIDDEN);
 
     /* The sum and the answer. */
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         r = hrow(m, 114, 56, 18);
         a->math_problem = alm_label(r, sk->font_time_m, sk->text, "");
-        box = alm_box(m);
+        box = kit_plain(m);
         lv_obj_set_size(box, 180, 68);
         lv_obj_set_pos(box, 270, 160);
         lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
@@ -1054,12 +1054,12 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
         lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(box, 4, 0);
         a->math_answer = alm_label(box, &it_medium_34, sk->text, "");
-        a->math_caret = alm_box(box);
+        a->math_caret = kit_plain(box);
         lv_obj_set_size(a->math_caret, 2, 36);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         r = hrow(m, 160, 72, 18);
         a->math_problem = alm_label(r, sk->font_time_m, sk->text, "");
-        box = alm_box(r);
+        box = kit_plain(r);
         lv_obj_set_size(box, 128, 72);
         lv_obj_set_style_radius(box, 36, 0);
         lv_obj_set_style_bg_opa(box, LV_OPA_COVER, 0);
@@ -1070,12 +1070,12 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
         lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(box, 4, 0);
         a->math_answer = alm_label(box, sk->font_time_m, sk->text, "");
-        a->math_caret = alm_box(box);
+        a->math_caret = kit_plain(box);
         lv_obj_set_size(a->math_caret, 3, 44);
     } else {
         r = hrow(m, 135, 62, 16);
         a->math_problem = alm_label(r, sk->font_time_m, sk->text, "");
-        box = alm_box(r);
+        box = kit_plain(r);
         lv_obj_set_size(box, LV_SIZE_CONTENT, 62);
         lv_obj_set_style_min_width(box, 84, 0);
         lv_obj_set_style_border_side(box, LV_BORDER_SIDE_BOTTOM, 0);
@@ -1086,11 +1086,11 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
         lv_obj_set_flex_align(box, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
         lv_obj_set_style_pad_column(box, 4, 0);
         a->math_answer = alm_label(box, sk->font_time_m, sk->accent, "");
-        a->math_caret = alm_box(box);
+        a->math_caret = kit_plain(box);
         lv_obj_set_size(a->math_caret, 2, 44);
     }
     lv_obj_set_style_bg_opa(a->math_caret, LV_OPA_COVER, 0);
-    lv_obj_set_style_bg_color(a->math_caret, ALM_IS_ORBIT() ? sk->tint_alarms : sk->accent, 0);
+    lv_obj_set_style_bg_color(a->math_caret, ui_skin_is_orbit() ? sk->tint_alarms : sk->accent, 0);
 
     /* Keypad, fitted to the circle. */
     for (int i = 0; i < 12; i++) {
@@ -1099,10 +1099,10 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
         int32_t cx;
         int32_t cy;
 
-        if (ALM_IS_INSTRUMENT()) {
+        if (ui_skin_is_instrument()) {
             cx = 236 + c * 124;
             cy = 284 + row * 84;
-        } else if (ALM_IS_ORBIT()) {
+        } else if (ui_skin_is_orbit()) {
             cx = 260 + c * 100;
             cy = 256 + row * 92;
         } else {
@@ -1113,21 +1113,21 @@ static void build_math(clock_ui_context_t *ctx, lv_obj_t *m)
     }
 
     /* Snooze stays one tap away. */
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_t *vr;
 
         btn = kit_button(m, KIT_BUTTON_SECONDARY, KIT_ICON_NONE, alm_text(ctx, L10N_SNOOZE));
         lv_obj_set_height(btn, 64);
         lv_obj_set_style_radius(btn, 32, 0);
         lv_obj_set_style_pad_hor(btn, 24, 0);
-        vr = alm_box(btn);
+        vr = kit_plain(btn);
         lv_obj_set_size(vr, 1, 22);
         lv_obj_set_style_bg_opa(vr, LV_OPA_COVER, 0);
         lv_obj_set_style_bg_color(vr, sk->line_strong, 0);
         a->math_snooze_label = kit_label(btn, KIT_TEXT_LABEL, "");
         lv_obj_set_style_text_color(a->math_snooze_label, sk->text_2, 0);
         lv_obj_align(btn, LV_ALIGN_TOP_MID, 0, 592);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         btn = kit_button(m, KIT_BUTTON_SECONDARY, KIT_ICON_NONE, "");
         lv_obj_set_height(btn, 60);
         lv_obj_set_style_pad_hor(btn, 26, 0);
@@ -1151,21 +1151,21 @@ void alm_ring_create(clock_ui_context_t *ctx)
     const ui_skin_t *sk = ui_skin();
     clock_ui_alarm_state_t *a = &ctx->alarms;
 
-    a->ring = alm_box(ui_chrome_root(ctx));
+    a->ring = kit_plain(ui_chrome_root(ctx));
     lv_obj_set_size(a->ring, KIT_SCREEN, KIT_SCREEN);
     lv_obj_set_style_bg_opa(a->ring, LV_OPA_COVER, 0);
     lv_obj_set_style_bg_color(a->ring, sk->bg, 0);
     lv_obj_add_flag(a->ring, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_HIDDEN);
 
-    a->ring_main = alm_box(a->ring);
+    a->ring_main = kit_plain(a->ring);
     lv_obj_set_size(a->ring_main, KIT_SCREEN, KIT_SCREEN);
-    a->math = alm_box(a->ring);
+    a->math = kit_plain(a->ring);
     lv_obj_set_size(a->math, KIT_SCREEN, KIT_SCREEN);
     lv_obj_add_flag(a->math, LV_OBJ_FLAG_HIDDEN);
 
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         build_instrument_main(ctx, a->ring_main);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         build_orbit_main(ctx, a->ring_main);
     } else {
         build_atelier_main(ctx, a->ring_main);
@@ -1184,7 +1184,7 @@ void alm_ring_create(clock_ui_context_t *ctx)
         lv_obj_add_event_cb(a->ring_knob, slide_cb, LV_EVENT_PRESS_LOST, ctx);
         lv_obj_remove_flag(a->ring_knob, LV_OBJ_FLAG_SCROLL_CHAIN_HOR | LV_OBJ_FLAG_SCROLL_CHAIN_VER);
         ui_attach_click_feedback(a->ring_knob, LV_EVENT_PRESSED);
-        slide_place(ctx, ALM_IS_ORBIT() ? O_SLIDE_START : A_SLIDE_START);
+        slide_place(ctx, ui_skin_is_orbit() ? O_SLIDE_START : A_SLIDE_START);
     }
     build_math(ctx, a->math);
     a->ring_sec_shown = -1;
@@ -1203,11 +1203,11 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
 
     localtime_r(&now, &tm);
     alm_format_hm(a->ring_time_text, sizeof(a->ring_time_text), tm.tm_hour, tm.tm_min);
-    alm_set_text(a->ring_time, a->ring_time_text);
-    alm_set_text(a->ring_title, alm_text(ctx, L10N_ALARM));
+    kit_label_set_text_if_changed(a->ring_time, a->ring_time_text);
+    kit_label_set_text_if_changed(a->ring_title, alm_text(ctx, L10N_ALARM));
     alm_format_minutes(ctx, ctx->settings->snooze_minutes, mins, sizeof(mins));
-    alm_set_text(a->ring_snooze_min, mins);
-    if (ALM_IS_INSTRUMENT()) {
+    kit_label_set_text_if_changed(a->ring_snooze_min, mins);
+    if (ui_skin_is_instrument()) {
         kit_button_set_text(a->ring_snooze, alm_text(ctx, L10N_SNOOZE));
         alm_format_short_date(ctx, now, date, sizeof(date));
         if (alarm != NULL) {
@@ -1216,8 +1216,8 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
             snprintf(text, sizeof(text), "%s", date);
         }
         kit_text_upper(date, sizeof(date), text);
-        alm_set_text(a->ring_sub, date);
-    } else if (ALM_IS_ORBIT()) {
+        kit_label_set_text_if_changed(a->ring_sub, date);
+    } else if (ui_skin_is_orbit()) {
         char sum[48] = "";
 
         if (alarm != NULL) {
@@ -1226,7 +1226,7 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
         } else {
             snprintf(text, sizeof(text), "%s", sound);
         }
-        alm_set_text(a->ring_sub, text);
+        kit_label_set_text_if_changed(a->ring_sub, text);
         {
             /* "Snooze" in Title 40 if it fits the 184 px circle, else in Heading 26. */
             lv_obj_t *l = lv_obj_get_child(a->ring_snooze, 0);
@@ -1239,40 +1239,40 @@ static void sync_texts(clock_ui_context_t *ctx, time_t now)
             if (lv_obj_get_style_text_font(l, 0) != f) {
                 lv_obj_set_style_text_font(l, f, 0);
             }
-            alm_set_text(l, t);
+            kit_label_set_text_if_changed(l, t);
         }
     } else {
         alm_format_long_date(ctx, now, date, sizeof(date));
         snprintf(text, sizeof(text), "%s \xC2\xB7 %s", date, sound);
-        alm_set_text(a->ring_sub, text);
-        alm_set_text(lv_obj_get_child(a->ring_snooze, 0), alm_text(ctx, L10N_SNOOZE));
+        kit_label_set_text_if_changed(a->ring_sub, text);
+        kit_label_set_text_if_changed(lv_obj_get_child(a->ring_snooze, 0), alm_text(ctx, L10N_SNOOZE));
     }
 
     /* Math header and snooze. */
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         char head[96];
 
         kit_text_upper(head, sizeof(head), alm_str(ctx, &alm_s_solve));
         snprintf(text, sizeof(text), "#%06" PRIX32 " %s# \xC2\xB7 %s", lv_color_to_u32(sk->accent) & 0xFFFFFF,
                  a->ring_time_text, head);
-        alm_set_text(a->math_head, text);
+        kit_label_set_text_if_changed(a->math_head, text);
         kit_button_set_text(a->math_snooze, alm_text(ctx, L10N_SNOOZE));
-        alm_set_text(a->math_snooze_label, mins);
-    } else if (ALM_IS_ORBIT()) {
+        kit_label_set_text_if_changed(a->math_snooze_label, mins);
+    } else if (ui_skin_is_orbit()) {
         snprintf(text, sizeof(text), "#%06" PRIX32 " %s# %s", lv_color_to_u32(sk->tint_alarms) & 0xFFFFFF,
                  a->ring_time_text, alm_str(ctx, &alm_s_solve_long));
-        alm_set_text(lv_obj_get_user_data(a->math_head), text);
+        kit_label_set_text_if_changed(lv_obj_get_user_data(a->math_head), text);
         snprintf(text, sizeof(text), "%s \xC2\xB7 %s", alm_text(ctx, L10N_SNOOZE), mins);
-        alm_set_text(a->math_snooze_label, text);
+        kit_label_set_text_if_changed(a->math_snooze_label, text);
     } else {
         char up[96];
 
         kit_text_upper(up, sizeof(up), alm_str(ctx, &alm_s_solve));
-        alm_set_text(a->math_head, up);
+        kit_label_set_text_if_changed(a->math_head, up);
         snprintf(text, sizeof(text), "%s \xC2\xB7 %s", alm_text(ctx, L10N_SNOOZE), mins);
         kit_label_set_text_if_changed(a->math_snooze_label, text);
     }
-    alm_set_text(a->math_error, alm_text(ctx, L10N_WRONG_ANSWER));
+    kit_label_set_text_if_changed(a->math_error, alm_text(ctx, L10N_WRONG_ANSWER));
 }
 
 void alm_ring_sync(clock_ui_context_t *ctx, time_t now)
@@ -1289,7 +1289,7 @@ void alm_ring_sync(clock_ui_context_t *ctx, time_t now)
         if (shown) {
             math_set_visible(ctx, false);
             reset_stop_controls(ctx);
-            alm_show(a->ring, false);
+            kit_show(a->ring, false);
         }
         return;
     }
@@ -1299,7 +1299,7 @@ void alm_ring_sync(clock_ui_context_t *ctx, time_t now)
         reset_stop_controls(ctx);
         math_set_visible(ctx, false);
         a->ring_sec_shown = -1;
-        alm_show(a->ring, true);
+        kit_show(a->ring, true);
     }
     if (a->math_visible && !requires_math(ctx)) {
         math_set_visible(ctx, false);
@@ -1319,7 +1319,7 @@ void alm_ring_tick(clock_ui_context_t *ctx, time_t now)
         return;
     }
     localtime_r(&now, &tm);
-    if (ALM_IS_INSTRUMENT() && tm.tm_sec != a->ring_sec_shown) {
+    if (ui_skin_is_instrument() && tm.tm_sec != a->ring_sec_shown) {
         if (a->ring_sec_shown >= 0) {
             invalidate_sec_mark(ctx, a->ring_sec_shown);
         }
@@ -1357,7 +1357,7 @@ static bool banner_held(const clock_ui_context_t *ctx)
 
 static void banner_set_visible(clock_ui_context_t *ctx, bool visible)
 {
-    alm_show(ctx->alarms.banner, visible && !banner_held(ctx));
+    kit_show(ctx->alarms.banner, visible && !banner_held(ctx));
     if (ctx->alarms.banner_visible == visible) {
         return;
     }
@@ -1395,8 +1395,8 @@ void alm_banner_create(clock_ui_context_t *ctx)
 {
     const ui_skin_t *sk = ui_skin();
     clock_ui_alarm_state_t *a = &ctx->alarms;
-    lv_obj_t *b = alm_box(ui_chrome_root(ctx));
-    int32_t h = ALM_IS_INSTRUMENT() ? 44 : 56;
+    lv_obj_t *b = kit_plain(ui_chrome_root(ctx));
+    int32_t h = ui_skin_is_instrument() ? 44 : 56;
 
     a->banner = b;
     lv_obj_set_size(b, LV_SIZE_CONTENT, h);
@@ -1412,13 +1412,13 @@ void alm_banner_create(clock_ui_context_t *ctx)
     kit_make_pressable(b);
     lv_obj_add_event_cb(b, banner_click_cb, LV_EVENT_CLICKED, ctx);
 
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(b, sk->bg, 0);
         lv_obj_set_style_bg_opa(b, 230, 0);
         lv_obj_set_style_border_color(b, sk->line_strong, 0);
         lv_obj_set_style_pad_hor(b, 18, 0);
         lv_obj_set_style_pad_column(b, 10, 0);
-        a->banner_mark = alm_box(b);
+        a->banner_mark = kit_plain(b);
         lv_obj_set_size(a->banner_mark, 8, 8);
         lv_obj_set_style_radius(a->banner_mark, LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_bg_opa(a->banner_mark, LV_OPA_COVER, 0);
@@ -1426,7 +1426,7 @@ void alm_banner_create(clock_ui_context_t *ctx)
         a->banner_time = alm_label(b, sk->font_caption, sk->text, "");
         a->banner_label = kit_label(b, KIT_TEXT_LABEL, "");
         lv_obj_set_style_text_color(a->banner_label, sk->text_2, 0);
-    } else if (ALM_IS_ORBIT()) {
+    } else if (ui_skin_is_orbit()) {
         lv_obj_set_style_bg_color(b, lv_color_hex(0x1C1C1E), 0);
         lv_obj_set_style_border_color(b, lv_color_hex(0x333336), 0);
         lv_obj_set_style_pad_left(b, 20, 0);
@@ -1447,7 +1447,7 @@ void alm_banner_create(clock_ui_context_t *ctx)
     }
     alm_one_line(a->banner_label);
     lv_obj_set_width(a->banner_label, LV_SIZE_CONTENT);
-    lv_obj_set_style_max_width(a->banner_label, ALM_IS_INSTRUMENT() ? 440 : 400, 0);
+    lv_obj_set_style_max_width(a->banner_label, ui_skin_is_instrument() ? 440 : 400, 0);
     a->banner_face = -1;
     a->banner_kind = BANNER_NONE;
 }
@@ -1458,13 +1458,13 @@ static void banner_set(clock_ui_context_t *ctx, uint8_t kind, const char *time_t
 
     if (a->banner_kind != kind) {
         a->banner_kind = kind;
-        if (!ALM_IS_INSTRUMENT()) {
+        if (!ui_skin_is_instrument()) {
             kit_icon_set(a->banner_mark, kind == BANNER_SNOOZE ? KIT_ICON_SNOOZE : KIT_ICON_BELL);
         }
     }
-    alm_show(a->banner_time, time_text != NULL && time_text[0] != '\0');
-    alm_set_text(a->banner_time, time_text != NULL ? time_text : "");
-    alm_set_text(a->banner_label, text);
+    kit_show(a->banner_time, time_text != NULL && time_text[0] != '\0');
+    kit_label_set_text_if_changed(a->banner_time, time_text != NULL ? time_text : "");
+    kit_label_set_text_if_changed(a->banner_label, text);
 }
 
 /* Whether the banner has something to say: feedback, a snooze, or an alarm within half an
@@ -1559,7 +1559,7 @@ void alm_banner_style(clock_ui_context_t *ctx, clock_face_id_t face)
     lv_obj_set_style_border_color(a->banner, lv_color_mix(ink.soft, ink.paper, 120), 0);
     lv_obj_set_style_text_color(a->banner_time, ink.text, 0);
     lv_obj_set_style_text_color(a->banner_label, ink.soft, 0);
-    if (ALM_IS_INSTRUMENT()) {
+    if (ui_skin_is_instrument()) {
         lv_obj_set_style_bg_color(a->banner_mark, ink.accent, 0);
     } else {
         lv_obj_set_style_image_recolor(a->banner_mark, ink.accent, 0);
