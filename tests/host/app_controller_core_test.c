@@ -42,6 +42,7 @@ typedef struct {
     int ota_snapshot_calls;
     int ota_check_calls;
     int ota_install_calls;
+    int ota_confirm_calls;
     int telemetry_init_calls;
     int telemetry_init_result;
     int telemetry_tick_calls;
@@ -230,6 +231,11 @@ static int fake_ota_request_install(void)
     return 0;
 }
 
+static void fake_ota_confirm_image(void)
+{
+    g_env->ota_confirm_calls += 1;
+}
+
 static int fake_telemetry_init(void)
 {
     g_env->telemetry_init_calls += 1;
@@ -331,6 +337,7 @@ static const ota_service_t s_ota_service = {
     .snapshot = fake_ota_snapshot,
     .request_check = fake_ota_request_check,
     .request_install = fake_ota_request_install,
+    .confirm_image = fake_ota_confirm_image,
 };
 
 static const telemetry_service_t s_telemetry_service = {
@@ -885,6 +892,35 @@ static int test_boot_survives_failed_settings_load(void)
     return 0;
 }
 
+/* A new firmware image is kept once the clock has run a minute, not at boot: a crash in its
+ * first minute rolls it back. Even with the update service down, or it would be rolled back
+ * at the next reboot. */
+static int test_new_image_kept_after_a_minute(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    env.ota_init_result = -1;
+    env.now = make_utc_time(2026, 3, 12, 7, 0, 0);
+    env.monotonic_ms = 5000;
+    core = make_core(&env);
+
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    EXPECT_EQ_INT(0, env.ota_confirm_calls);
+    env.monotonic_ms = 5000 + 59999;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(0, env.ota_confirm_calls);
+    env.monotonic_ms = 5000 + 60000;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(1, env.ota_confirm_calls);
+    env.monotonic_ms += 3600 * 1000;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(1, env.ota_confirm_calls);
+    return 0;
+}
+
 int main(void)
 {
     int status;
@@ -892,6 +928,11 @@ int main(void)
     test_use_utc();
 
     status = test_boot_survives_failed_network_services();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_new_image_kept_after_a_minute();
     if (status != 0) {
         return status;
     }

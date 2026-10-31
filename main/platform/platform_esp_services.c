@@ -285,11 +285,17 @@ static const display_service_t s_display_service = {
     .set_level_permille = esp_display_set_level_permille,
 };
 
+static void esp_ota_confirm_image(void)
+{
+    ota_update_confirm_image();
+}
+
 static const ota_service_t s_ota_service = {
     .init = esp_ota_init_service,
     .snapshot = esp_ota_snapshot,
     .request_check = esp_ota_request_check,
     .request_install = esp_ota_request_install,
+    .confirm_image = esp_ota_confirm_image,
 };
 
 static const telemetry_service_t s_telemetry_service = {

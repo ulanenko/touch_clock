@@ -336,6 +336,9 @@ static esp_err_t run_install(void)
         goto cleanup;
     }
 
+    /* An update asked for in a new image's first minute: that image is kept first, as the
+     * driver begins no update while the running one is unconfirmed. */
+    ota_update_confirm_image();
     err = esp_ota_begin(partition, OTA_WITH_SEQUENTIAL_WRITES, &ota_handle);
     if (err != ESP_OK) {
         goto cleanup;
@@ -498,32 +501,57 @@ static esp_err_t start_ota_task(ota_request_t request)
     return ESP_OK;
 }
 
-/* A new image is kept once it has started its network; one that cannot could never be updated
- * again. It goes back to the image it replaced instead: a single reboot, as the bootloader
- * marks this one aborted. An image already confirmed stays and runs without the network. */
-static void confirm_or_roll_back(const esp_partition_t *running, bool network_available)
+static bool image_pending_verify(const esp_partition_t *running)
 {
 #ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
     esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+
+    return running != NULL && esp_ota_get_state_partition(running, &state) == ESP_OK &&
+           state == ESP_OTA_IMG_PENDING_VERIFY;
+#else
+    (void)running;
+    return false;
+#endif
+}
+
+/* A new image that came up without its network could never be updated again: it goes back to
+ * the image it replaced, a single reboot. An image already kept runs on without the network. */
+static void roll_back_without_network(const esp_partition_t *running, bool network_available)
+{
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
     esp_err_t err;
 
-    if (running == NULL || esp_ota_get_state_partition(running, &state) != ESP_OK ||
-        state != ESP_OTA_IMG_PENDING_VERIFY) {
+    if (network_available || !image_pending_verify(running)) {
         return;
     }
-    if (!network_available) {
-        ESP_LOGE(TAG, "New firmware started without Wi-Fi: rolling back");
-        err = esp_ota_mark_app_invalid_rollback_and_reboot();
-        /* Returns only when there is no image to go back to: this one has to do. */
-        ESP_LOGE(TAG, "Rollback impossible: %s", esp_err_to_name(err));
-    }
-    err = esp_ota_mark_app_valid_cancel_rollback();
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Confirming the new firmware failed: %s", esp_err_to_name(err));
-    }
+    ESP_LOGE(TAG, "New firmware started without Wi-Fi: rolling back");
+    err = esp_ota_mark_app_invalid_rollback_and_reboot();
+    /* Returns only when there is no image to go back to: this one has to do. */
+    ESP_LOGE(TAG, "Rollback impossible: %s", esp_err_to_name(err));
+    ota_update_confirm_image();
 #else
     (void)running;
     (void)network_available;
+#endif
+}
+
+/* A new image is kept only once the clock has run on it (the controller says when): one that
+ * crashes before then, in the UI's first minute say, is rolled back by the bootloader at its
+ * next boot instead of being kept for good. */
+void ota_update_confirm_image(void)
+{
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    esp_err_t err;
+
+    if (!image_pending_verify(esp_ota_get_running_partition())) {
+        return;
+    }
+    err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Keeping the new firmware failed: %s", esp_err_to_name(err));
+    } else {
+        ESP_LOGI(TAG, "New firmware kept");
+    }
 #endif
 }
 
@@ -536,7 +564,7 @@ esp_err_t ota_update_init(bool network_available)
     }
 
     /* Before anything that can fail here: the image's fate does not hang on this service. */
-    confirm_or_roll_back(running, network_available);
+    roll_back_without_network(running, network_available);
 
     memset(&s_ota, 0, sizeof(s_ota));
     s_ota.lock = xSemaphoreCreateMutex();

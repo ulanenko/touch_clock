@@ -57,6 +57,9 @@ typedef struct {
     void (*snapshot)(app_runtime_state_t *runtime);
     int (*request_check)(void);
     int (*request_install)(void);
+    /* Keeps a new image for good, once the clock has run on it: one that fails before then
+     * goes back to the image it replaced at its next boot. */
+    void (*confirm_image)(void);
 } ota_service_t;
 
 typedef struct {

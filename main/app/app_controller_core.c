@@ -13,6 +13,9 @@
 #define APP_ALARM_AUTO_STOP_SECONDS 600
 #define APP_BRIGHTNESS_FADE_DOWN_MS 3500
 #define APP_OTA_AUTO_CHECK_INITIAL_DELAY_MS 30000
+/* A new firmware image is kept after this long running (UI up, ticking); a crash before then
+ * rolls it back at the next boot. */
+#define APP_IMAGE_CONFIRM_DELAY_MS 60000
 #define APP_OTA_AUTO_CHECK_INTERVAL_MS (6 * 60 * 60 * 1000)
 
 static int64_t monotonic_ms(const app_controller_core_t *core)
@@ -487,6 +490,7 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
     alarm_scheduler_init(&core->state.runtime, &core->state.settings);
     core->state.applied_brightness = UCHAR_MAX;
     core->state.ota_next_check_ms = monotonic_ms(core) + APP_OTA_AUTO_CHECK_INITIAL_DELAY_MS;
+    core->state.image_confirm_ms = monotonic_ms(core) + APP_IMAGE_CONFIRM_DELAY_MS;
 
     if (core->config.audio_service != NULL && core->config.audio_service->init != NULL) {
         if (core->config.audio_service->init(core->state.settings.alarm_volume) == 0) {
@@ -661,6 +665,13 @@ time_t app_controller_core_tick(app_controller_core_t *core)
         core->config.ota_service->snapshot(&core->state.runtime);
     }
     maybe_request_periodic_ota_check(core);
+    /* Even when the update service did not start: a new image left unconfirmed would be rolled
+     * back at the next reboot. */
+    if (core->state.image_confirm_ms != 0 && monotonic_ms(core) >= core->state.image_confirm_ms &&
+        core->config.ota_service != NULL && core->config.ota_service->confirm_image != NULL) {
+        core->config.ota_service->confirm_image();
+        core->state.image_confirm_ms = 0;
+    }
     if (core->config.telemetry_service != NULL && core->state.telemetry_available &&
         core->config.telemetry_service->tick != NULL) {
         core->config.telemetry_service->tick(&core->state.runtime, &core->state.settings, now);

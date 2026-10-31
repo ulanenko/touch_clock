@@ -11,6 +11,7 @@ typedef struct {
     app_runtime_state_t runtime;
     int64_t save_deadline_ms;
     int64_t ota_next_check_ms;
+    int64_t image_confirm_ms; /* when a new firmware image is kept; 0 once it is */
     int64_t cancel_revert_deadline_ms;
     int64_t brightness_fade_start_ms;
     int64_t brightness_fade_duration_ms;
