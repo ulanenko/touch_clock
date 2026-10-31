@@ -86,11 +86,6 @@ static esp_err_t storage_set_blob(void *ctx, const char *key, const void *value,
     return storage_check_write(key, nvs_set_blob(*(nvs_handle_t *)ctx, key, value, size));
 }
 
-static esp_err_t storage_erase_key(void *ctx, const char *key)
-{
-    return nvs_erase_key(*(nvs_handle_t *)ctx, key);
-}
-
 static esp_err_t storage_commit(void *ctx)
 {
     return nvs_commit(*(nvs_handle_t *)ctx);
@@ -110,7 +105,6 @@ static const app_settings_storage_t s_nvs_storage = {
     .set_i64 = storage_set_i64,
     .set_str = storage_set_str,
     .set_blob = storage_set_blob,
-    .erase_key = storage_erase_key,
     .commit = storage_commit,
 };
 

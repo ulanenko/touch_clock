@@ -20,7 +20,6 @@
 #error "Storage backend must define a not-found error code"
 #endif
 
-#define SETTINGS_VERSION_V4 4U
 #define SETTINGS_VERSION_V5 5U
 #define SETTINGS_VERSION_V6 6U
 #define SETTINGS_VERSION_V7 7U
@@ -28,7 +27,6 @@
 #define SETTINGS_VERSION_V9 9U
 #define SETTINGS_VERSION_V10 10U
 #define SETTINGS_VERSION_V11 11U
-#define SETTINGS_KEY_LEGACY_BLOB "settings"
 #define SETTINGS_KEY_VERSION "ver"
 #define SETTINGS_KEY_BASE_BRIGHTNESS "base_bri"
 #define SETTINGS_KEY_ALARM_VOLUME "alarm_vol"
@@ -410,43 +408,6 @@ static esp_err_t load_structured_settings(const app_settings_storage_t *storage,
     return ESP_OK;
 }
 
-static esp_err_t load_legacy_v4_settings(const app_settings_storage_t *storage, app_settings_t *settings)
-{
-    app_settings_t loaded;
-    size_t size = sizeof(loaded);
-    esp_err_t err;
-
-    if (storage->get_blob == NULL) {
-        return ESP_OK;
-    }
-
-    err = storage->get_blob(storage->ctx, SETTINGS_KEY_LEGACY_BLOB, &loaded, &size);
-    if (err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
-        return ESP_OK;
-    }
-    if (err != ESP_OK) {
-        return err;
-    }
-    if (size != sizeof(loaded)) {
-        return ESP_ERR_INVALID_SIZE;
-    }
-    if (loaded.version != SETTINGS_VERSION_V4) {
-        return ESP_ERR_INVALID_VERSION;
-    }
-
-    *settings = loaded;
-    settings->night_mode.sunrise_brightness_enabled = true;
-    settings->ui_click_sound_enabled = true;
-    settings->ui_click_volume = 70;
-    settings->language = CLOCK_LANGUAGE_ENGLISH;
-    settings->ui_style = CLOCK_UI_STYLE_DEFAULT;
-    settings->wifi.timezone_id = timezone_id_from_legacy_offset(settings->wifi.timezone_offset_hours);
-    settings->wifi.time_sync_mode = TIME_SYNC_MODE_AUTO;
-    settings_policy_sanitize(settings);
-    settings->version = SETTINGS_VERSION_V11;
-    return ESP_OK;
-}
-
 esp_err_t app_settings_load_from_storage(const app_settings_storage_t *storage, app_settings_t *settings)
 {
     uint32_t version = 0;
@@ -467,7 +428,7 @@ esp_err_t app_settings_load_from_storage(const app_settings_storage_t *storage, 
         return load_structured_settings(storage, settings, version);
     }
     if (err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
-        return load_legacy_v4_settings(storage, settings);
+        return ESP_OK; /* nothing saved yet: the defaults */
     }
 
     return err;
@@ -499,12 +460,6 @@ esp_err_t app_settings_save_to_storage(const app_settings_storage_t *storage, co
                                 SETTINGS_KEY_FACE_THEMES,
                                 copy.face_themes,
                                 sizeof(copy.face_themes));
-    }
-    if (err == ESP_OK || err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
-        err = storage->erase_key(storage->ctx, SETTINGS_KEY_LEGACY_BLOB);
-        if (err == SETTINGS_STORAGE_ERR_NOT_FOUND) {
-            err = ESP_OK;
-        }
     }
     if (err == ESP_OK) {
         err = storage->commit(storage->ctx);

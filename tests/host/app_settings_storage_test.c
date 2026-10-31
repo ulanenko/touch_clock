@@ -224,18 +224,6 @@ static esp_err_t store_set_blob(void *ctx, const char *key, const void *value, s
     return ESP_OK;
 }
 
-static esp_err_t store_erase_key(void *ctx, const char *key)
-{
-    store_entry_t *entry = find_entry((fake_store_t *)ctx, key);
-
-    if (entry == NULL) {
-        return ESP_ERR_NVS_NOT_FOUND;
-    }
-
-    memset(entry, 0, sizeof(*entry));
-    return ESP_OK;
-}
-
 static esp_err_t store_commit(void *ctx)
 {
     ((fake_store_t *)ctx)->commit_calls += 1;
@@ -258,7 +246,6 @@ static app_settings_storage_t make_storage(fake_store_t *store)
         .set_i64 = store_set_i64,
         .set_str = store_set_str,
         .set_blob = store_set_blob,
-        .erase_key = store_erase_key,
         .commit = store_commit,
     };
 
@@ -362,31 +349,20 @@ static int test_v5_round_trip(void)
     return 0;
 }
 
-static int test_legacy_migration_and_sanitize(void)
+/* A clock that never saved (its first boot) starts from the defaults. */
+static int test_nothing_saved_loads_defaults(void)
 {
     fake_store_t store = {0};
     app_settings_storage_t storage = make_storage(&store);
-    app_settings_t legacy;
     app_settings_t loaded;
+    app_settings_t defaults;
 
-    memset(&legacy, 0, sizeof(legacy));
-    legacy.version = 4;
-    legacy.base_brightness = 0;
-    legacy.current_face = CLOCK_FACE_SLAVA_DARK;
-    legacy.night_mode.face = CLOCK_FACE_SLAVA;
-    legacy.wifi.timezone_offset_hours = 99;
-
-    EXPECT_EQ_INT(ESP_OK, store_set_blob(&store, "settings", &legacy, sizeof(legacy)));
+    settings_policy_set_defaults(&defaults);
     EXPECT_EQ_INT(ESP_OK, app_settings_load_from_storage(&storage, &loaded));
-    EXPECT_EQ_INT(0, loaded.base_brightness);
-    EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.current_face);
-    EXPECT_EQ_INT(0, loaded.face_themes[CLOCK_FACE_DIGITAL]);
-    EXPECT_EQ_INT(CLOCK_FACE_DIGITAL, loaded.night_mode.face);
-    EXPECT_EQ_INT(0, loaded.wifi.timezone_offset_hours);
-    EXPECT_TRUE(loaded.night_mode.sunrise_brightness_enabled);
-    EXPECT_TRUE(loaded.ui_click_sound_enabled);
-    EXPECT_EQ_INT(70, loaded.ui_click_volume);
-    EXPECT_FALSE(loaded.alarms[0].math_unlock_enabled);
+    EXPECT_EQ_INT(defaults.base_brightness, loaded.base_brightness);
+    EXPECT_EQ_INT(defaults.current_face, loaded.current_face);
+    EXPECT_EQ_INT(defaults.alarm_volume, loaded.alarm_volume);
+    EXPECT_EQ_INT(defaults.wifi.timezone_id, loaded.wifi.timezone_id);
     EXPECT_EQ_INT(11, loaded.version);
     return 0;
 }
@@ -556,7 +532,7 @@ int main(void)
         return status;
     }
 
-    status = test_legacy_migration_and_sanitize();
+    status = test_nothing_saved_loads_defaults();
     if (status != 0) {
         return status;
     }

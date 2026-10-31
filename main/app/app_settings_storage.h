@@ -21,7 +21,6 @@ typedef struct {
     esp_err_t (*set_i64)(void *ctx, const char *key, int64_t value);
     esp_err_t (*set_str)(void *ctx, const char *key, const char *value);
     esp_err_t (*set_blob)(void *ctx, const char *key, const void *value, size_t size);
-    esp_err_t (*erase_key)(void *ctx, const char *key);
     esp_err_t (*commit)(void *ctx);
 } app_settings_storage_t;
 
