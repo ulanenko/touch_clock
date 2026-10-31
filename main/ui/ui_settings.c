@@ -850,9 +850,11 @@ static void sync_home(clock_ui_context_t *ctx)
         }
     } else if (ctx->settings->wifi.ssid[0] != '\0') {
         snprintf(net, sizeof(net), "%s", ctx->settings->wifi.ssid);
-        snprintf(sync, sizeof(sync), "%s",
-                 rt->wifi_status[0] != '\0' ? l10n_runtime_status(ctx->settings->language, rt->wifi_status)
-                                            : ui_l10n_str(ctx, &s_not_connected));
+        if (rt->wifi_status[0] != '\0') {
+            l10n_runtime_status(ctx->settings->language, rt->wifi_status, sync, sizeof(sync));
+        } else {
+            snprintf(sync, sizeof(sync), "%s", ui_l10n_str(ctx, &s_not_connected));
+        }
     } else {
         net[0] = '\0';
         snprintf(sync, sizeof(sync), "%s", ui_l10n_str(ctx, &s_not_connected));

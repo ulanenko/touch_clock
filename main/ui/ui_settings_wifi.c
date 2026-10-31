@@ -529,7 +529,7 @@ void st_wifi_sync(clock_ui_context_t *ctx, bool force)
                      ui_l10n_str(ctx, &s_signal[level >= 4 ? 2 : level >= 3 ? 1 : 0]));
         }
     } else if (saved && rt->wifi_status[0] != '\0') {
-        snprintf(text, sizeof(text), "%s", l10n_runtime_status(ctx->settings->language, rt->wifi_status));
+        l10n_runtime_status(ctx->settings->language, rt->wifi_status, text, sizeof(text));
     } else {
         snprintf(text, sizeof(text), "%s", saved ? ui_l10n_str(ctx, &s_not_connected) : ui_l10n_text(ctx, L10N_SAVED_NONE));
     }

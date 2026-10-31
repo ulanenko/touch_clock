@@ -18,6 +18,7 @@ add_library(touch_clock_host_core STATIC
     ../../main/app/app_actions.c
     ../../main/app/app_controller_core.c
     ../../main/app/app_settings_storage.c
+    ../../main/localization.c
 )
 
 target_include_directories(touch_clock_host_core PUBLIC ../../main fakes)
@@ -40,3 +41,4 @@ add_touch_clock_host_test(app_actions_test app_actions_test.c)
 add_touch_clock_host_test(app_controller_core_test app_controller_core_test.c)
 add_touch_clock_host_test(app_settings_storage_test app_settings_storage_test.c)
 add_touch_clock_host_test(ota_manifest_test ota_manifest_test.c)
+add_touch_clock_host_test(localization_test localization_test.c)

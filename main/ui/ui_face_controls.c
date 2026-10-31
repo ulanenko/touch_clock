@@ -121,11 +121,6 @@ bool face_click_is_tap(const clock_ui_context_t *ctx, lv_event_t *e)
     return LV_ABS(p.x - ctx->face_chrome.press_point.x) < 24 && LV_ABS(p.y - ctx->face_chrome.press_point.y) < 24;
 }
 
-static void stop_bubble_cb(lv_event_t *e)
-{
-    lv_event_stop_bubbling(e);
-}
-
 void face_draw_rim_arc(lv_layer_t *layer, lv_point_t c, int32_t radius, int32_t width, int32_t start, int32_t end,
                        lv_color_t color, lv_opa_t opa, bool rounded)
 {

@@ -538,7 +538,7 @@ void st_other_sync(clock_ui_context_t *ctx, bool force)
     } else if (!rt->wifi_connected) {
         snprintf(text, sizeof(text), "%s", ui_l10n_str(ctx, &s_needs_wifi));
     } else if (rt->ota_status[0] != '\0') {
-        snprintf(text, sizeof(text), "%s", l10n_runtime_status(ctx->settings->language, rt->ota_status));
+        l10n_runtime_status(ctx->settings->language, rt->ota_status, text, sizeof(text));
     } else if (st_orbit()) {
         snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_installed), TOUCH_CLOCK_FIRMWARE_VERSION);
     } else {
