@@ -234,15 +234,24 @@ static void write_silence(void)
     esp_codec_dev_write(s_alarm_audio.speaker, silence, sizeof(silence));
 }
 
+/* The codec's volume is an I2C write on the bus the touch controller shares, and every click
+ * asks for one: it is written only when it changes. The codec is opened once, before the first
+ * write, and never closed, so it keeps what was written last. Only the audio task writes it
+ * once init is done. */
+static int s_applied_volume = -1;
+
 static void apply_volume(uint8_t volume)
 {
-    if (s_alarm_audio.speaker == NULL) {
+    if (s_alarm_audio.speaker == NULL || volume == s_applied_volume) {
         return;
     }
 
     if (esp_codec_dev_set_out_vol(s_alarm_audio.speaker, volume) != ESP_CODEC_DEV_OK) {
         ESP_LOGW(TAG, "Failed to set alarm volume to %u%%", volume);
+        s_applied_volume = -1; /* tried again next time */
+        return;
     }
+    s_applied_volume = volume;
 }
 
 static uint8_t ramp_start_volume(uint8_t target_volume)
