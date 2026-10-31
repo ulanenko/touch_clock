@@ -1755,7 +1755,9 @@ static void bake_rows(const bake_job_t *j, int32_t y0, int32_t y1, bake_scratch_
         int32_t x0 = corner_row ? corner : 0;
         int32_t x1 = corner_row ? w - corner : w;
 
-        /* The corners, from their optics (exactly, should there be no room for those). */
+        /* The corners, from their optics (exactly, should there be no room for those). Their
+         * refraction reads other rows of the back, which can take the cached row brow points
+         * to (the frost's rows are cached 8 at a time): this row is fetched again each time. */
         if (corner_row) {
             int32_t ly = y < corner ? y : y - (h - corner);
             int qy = y < corner ? 0 : 2;
@@ -1769,7 +1771,7 @@ static void bake_rows(const bake_job_t *j, int32_t y0, int32_t y1, bake_scratch_
                     x = x1 - 1; /* past the span between the corners */
                     continue;
                 }
-                ground = brow[LV_CLAMP(0, sx, SCREEN - 1)];
+                ground = fetch_back(sc, sx, sy);
                 if (sc->frosted) {
                     /* Ahead of the page, the back is the frost undimmed: the page's ground is
                      * it dimmed (as back_build makes it), and the corners show that. */
@@ -1780,7 +1782,7 @@ static void bake_rows(const bake_job_t *j, int32_t y0, int32_t y1, bake_scratch_
                     : x < x0       ? &j->ctab->px[(qy * corner + ly) * corner + x]
                                    : &j->ctab->px[((qy + 1) * corner + ly) * corner + (x - (w - corner))];
                 row[x] = o == NULL ? corner_px(sc, b, &j->bz, &j->l, il, j->hx, j->hy, j->rr, x, y, sx, sy, ground)
-                         : smooth && o->flat ? flat_px(sc, il, brow, frow, sx, sy)
+                         : smooth && o->flat ? flat_px(sc, il, back_row(sc, sy), frow, sx, sy)
                                              : corner_fast(sc, b, il, o, sx, sy, ground);
             }
         }
