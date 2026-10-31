@@ -25,8 +25,6 @@ typedef struct {
     bool time_synced;
     bool auto_time_sync;
     int rssi;
-    char ssid[33];
-    char password[65];
     char ip[16];
     char status[96];
     uint32_t scan_generation;
@@ -122,7 +120,15 @@ static void wifi_scan_task(void *arg)
     ESP_LOGI(TAG, "Wi-Fi scan started");
     err = esp_wifi_scan_start(NULL, true);
     if (err == ESP_OK) {
-        ESP_ERROR_CHECK_WITHOUT_ABORT(esp_wifi_scan_get_ap_records(&ap_count, ap_records));
+        /* On failure the count is still the 16 asked for, with nothing in the rows: a failed
+         * scan, not 16 nameless networks. */
+        err = esp_wifi_scan_get_ap_records(&ap_count, ap_records);
+        if (err != ESP_OK) {
+            (void)esp_wifi_clear_ap_list();
+        }
+    }
+    if (err != ESP_OK) {
+        ap_count = 0;
     }
     ESP_LOGI(TAG, "Wi-Fi scan done in %lld ms: %s, %u networks", (esp_timer_get_time() - started_us) / 1000,
              esp_err_to_name(err), (unsigned)ap_count);
@@ -220,8 +226,6 @@ esp_err_t wifi_time_init(const app_settings_t *settings)
     s_wifi.initialized = true;
 
     if (settings->wifi.ssid[0] != '\0') {
-        snprintf(s_wifi.ssid, sizeof(s_wifi.ssid), "%s", settings->wifi.ssid);
-        snprintf(s_wifi.password, sizeof(s_wifi.password), "%s", settings->wifi.password);
         s_wifi.has_credentials = true;
         /* The Wi-Fi is up even if this first attempt is refused: it can be connected again. */
         err = wifi_time_connect(settings->wifi.ssid, settings->wifi.password);
@@ -309,9 +313,22 @@ esp_err_t wifi_time_connect(const char *ssid, const char *password)
         return ESP_ERR_INVALID_ARG;
     }
 
-    snprintf((char *)config.sta.ssid, sizeof(config.sta.ssid), "%s", ssid);
-    snprintf((char *)config.sta.password, sizeof(config.sta.password), "%s", password ? password : "");
-    config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    if (password == NULL) {
+        password = "";
+    }
+    /* The driver takes a full 32-byte SSID and a 64-digit PSK without a terminator. */
+    memcpy(config.sta.ssid, ssid, strnlen(ssid, sizeof(config.sta.ssid)));
+    memcpy(config.sta.password, password, strnlen(password, sizeof(config.sta.password)));
+    /* With a password, nothing weaker than it may answer to the SSID: an open network of the
+     * same name is not joined. 8 characters and more are a WPA2 passphrase (WPA2 or better, as
+     * the driver's own default for them), fewer a WEP key. */
+    if (password[0] == '\0') {
+        config.sta.threshold.authmode = WIFI_AUTH_OPEN;
+    } else if (strlen(password) >= 8) {
+        config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    } else {
+        config.sta.threshold.authmode = WIFI_AUTH_WEP;
+    }
     config.sta.pmf_cfg.capable = true;
     config.sta.pmf_cfg.required = false;
 
@@ -320,8 +337,6 @@ esp_err_t wifi_time_connect(const char *ssid, const char *password)
     s_wifi.connecting = true;
     s_wifi.connected = false;
     s_wifi.time_synced = false;
-    snprintf(s_wifi.ssid, sizeof(s_wifi.ssid), "%s", ssid);
-    snprintf(s_wifi.password, sizeof(s_wifi.password), "%s", password ? password : "");
     snprintf(s_wifi.status, sizeof(s_wifi.status), "Connecting to %s", ssid);
     xSemaphoreGive(s_wifi.lock);
 
@@ -341,8 +356,6 @@ esp_err_t wifi_time_forget(void)
     s_wifi.connected = false;
     s_wifi.connecting = false;
     s_wifi.time_synced = false;
-    s_wifi.ssid[0] = '\0';
-    s_wifi.password[0] = '\0';
     s_wifi.ip[0] = '\0';
     set_status_locked("Wi-Fi not configured");
     xSemaphoreGive(s_wifi.lock);
