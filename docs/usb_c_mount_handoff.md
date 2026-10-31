@@ -1,12 +1,12 @@
 # USB-C Bosses And Holes Handoff
 
-This note packages the USB-C shell-side geometry from [3d_model.scad](/Users/borysulanenko/PycharmProjects/touch_clock/3d_model.scad) into a form that can be transplanted into another OpenSCAD project.
+This note packages the USB-C shell-side geometry from [3d_model.scad](../3d_model.scad) into a form that can be transplanted into another OpenSCAD project.
 
 ## Included files
 
-- Reusable code extract: [usb_c_mount_reference.scad](/Users/borysulanenko/PycharmProjects/touch_clock/usb_c_mount_reference.scad)
-- Original shell implementation: [3d_model.scad](/Users/borysulanenko/PycharmProjects/touch_clock/3d_model.scad)
-- Matching holder model: [usb_c_holder.scad](/Users/borysulanenko/PycharmProjects/touch_clock/usb_c_holder.scad)
+- Reusable code extract: [usb_c_mount_reference.scad](../usb_c_mount_reference.scad)
+- Original shell implementation: [3d_model.scad](../3d_model.scad)
+- Matching holder model: [usb_c_holder.scad](../usb_c_holder.scad)
 
 ## What the shell-side geometry does
 
@@ -34,7 +34,7 @@ These are the values used in the touch clock model.
 
 ## Matching holder assumptions
 
-The boss pattern matches the flange holes in [usb_c_holder.scad](/Users/borysulanenko/PycharmProjects/touch_clock/usb_c_holder.scad):
+The boss pattern matches the flange holes in [usb_c_holder.scad](../usb_c_holder.scad):
 
 - Holder screw spacing: `20.0 mm`
 - Holder screw diameter: `1.8 mm`
@@ -43,7 +43,7 @@ That means the shell bosses and the holder flange are already dimensionally pair
 
 ## Coordinate convention in the extracted file
 
-In [usb_c_mount_reference.scad](/Users/borysulanenko/PycharmProjects/touch_clock/usb_c_mount_reference.scad), the local USB mount frame is:
+In [usb_c_mount_reference.scad](../usb_c_mount_reference.scad), the local USB mount frame is:
 
 - Origin: center of the USB-C opening on the exterior shell face
 - `X`: left/right across the screw pattern
@@ -65,7 +65,7 @@ The extracted helper `sphere_rear_port_anchor(body_d=152, rear_port_z=-40)` recr
 
 ## Integration recipe for another project
 
-1. Copy [usb_c_mount_reference.scad](/Users/borysulanenko/PycharmProjects/touch_clock/usb_c_mount_reference.scad) into the target project.
+1. Copy [usb_c_mount_reference.scad](../usb_c_mount_reference.scad) into the target project.
 2. Decide the anchor point on the new enclosure where the center of the USB-C opening should land.
 3. Decide the local mount angle for the holder.
 4. Add `usb_c_mount_positive(...)` to the enclosure union.
@@ -99,6 +99,6 @@ difference() {
 
 ## Notes for handoff
 
-- The shell-side geometry is designed around the holder in [usb_c_holder.scad](/Users/borysulanenko/PycharmProjects/touch_clock/usb_c_holder.scad), not around raw USB-C connector dimensions alone.
+- The shell-side geometry is designed around the holder in [usb_c_holder.scad](../usb_c_holder.scad), not around raw USB-C connector dimensions alone.
 - The port opening is intentionally a little simplified and should be treated as a printable clearance cut, not as a standards drawing.
 - If the new enclosure wall is much thinner or thicker than `4 mm`, the boss start depth and overlap should be revisited so the bosses are neither floating nor overly buried in the wall.

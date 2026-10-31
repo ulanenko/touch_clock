@@ -1,23 +1,80 @@
 # UI Performance Audit (2026-10-26)
 
 Status of the clock, what was measured, what is fixed, what is still open, and the
-on-device test plan. Findings marked *unverified* come from code review only and
-still need a measurement.
+on-device test plan. The dated sections below the open items are the history, kept as
+written. Findings marked *code only* (*unverified* in the older sections) come from code
+review and still need a measurement.
 
-## Current state (2026-10-27)
+## Current state (2026-10-31)
 
-On the clock (and in `build/`, ELF `dc9c0668e`):
-- `d7e42dc` plus the MAC fix, the Other-menu and theme-sheet fixes, and the low-risk per-tick fixes
-- `TRIPLE_FULL` display mode
-- LVGL style cache and shadow cache
-- panel pixel clock 48 MHz, via the vendored BSP in `components/`
-- the 2026-10-27 fixes below (face reveal, button pressed style, Night preview, settings save bug, smooth theme sheet dimming, PPA blending, snapshot backdrop for the pull sheets)
+What is in place in the firmware now. The measurements behind it are in the dated sections below.
 
-The perf tour is not in this firmware.
+- **Display.** `TRIPLE_FULL` (one full-screen pass a frame, [main/main.c](../main/main.c)); the panel at a 48 MHz
+  pixel clock in the vendored BSP; two software draw units.
+- **LVGL.** Style cache, shadow cache and circle cache on. The `clip_radius` mask leak in LVGL 9.3.0 is patched at
+  configure time ([cmake/lvgl_patches.cmake](../cmake/lvgl_patches.cmake)). Pressed buttons dim with `opa` 70 %,
+  never `recolor`; every button, switch and slider is a kit control with the default theme's styles removed.
+- **Blending.** Full-width fills and RGB565 image blends go to the PPA ([main/ui/ui_ppa_blend.c](../main/ui/ui_ppa_blend.c));
+  sparse tiles blend only their visible runs.
+- **Faces.** The face slide moves two disc-masked snapshots, taken ahead at idle. Analog faces are one RGB565
+  canvas with the hands drawn into the dial snapshot, sharing one view buffer; dot faces redraw only changed dots;
+  evening faces keep a base per theme and day.
+- **Sheets.** While a sheet moves, the face is a dimmed snapshot and the panel an image. In Liquid Glass the
+  quick sheet's glass and snapshot are made at idle.
+- **Kit.** Rings, rims and dials are cached tiles (cache 6 MB); no live `lv_draw_arc`.
+- **Liquid Glass.** One baked image per shape. Bake cache 6 MB and 96 shapes, leaving 2 MB of PSRAM free.
+  Bakes and frosts split across both cores (`glass_bake` task). The face's idle tick prewarms the controls,
+  the quick sheet, then the pages; the most used settings pages are built 20 s after boot.
+- **Memory.** LVGL's allocations and draw buffers come from PSRAM ([main/ui/ui_lv_mem.c](../main/ui/ui_lv_mem.c));
+  LP RAM is not heap; buffers dropped mid-frame are freed after it ([main/ui/ui_frame_free.c](../main/ui/ui_frame_free.c)).
+  Stacks: UI thread 10 KB, `alarm_audio` 5 KB. Update checks keep their stack in PSRAM.
+- **Audio.** Only the synthesised sounds the enabled alarms use stay rendered. The codec volume (an I2C write
+  on the touch controller's bus) is written only when it changes.
+- **Settings.** Each change is saved once, synchronously on the UI thread (about 2.6 ms). The time zone and
+  SNTP are applied again only when they change.
+- **Dependencies.** `main/idf_component.yml` pins `esp_hosted` 2.12.0 and `esp_wifi_remote` 1.4.0, and
+  `dependencies.lock` is tracked. With `"*"` and an ignored lock file, a reconfigure had silently pulled
+  `esp_hosted` 3.0.10, which does not match the 2.12.0 firmware on the C6 (`major version mismatch` at boot).
+- **Perf tour** (`CONFIG_TOUCH_CLOCK_PERF_TOUR`) is off by default; see [development.md](development.md#perf-tour-on-the-clock).
 
-Dependencies:
-- `main/idf_component.yml` now pins `esp_hosted` to 2.12.0 and `esp_wifi_remote` to 1.4.0.
-- With `"*"` and a git-ignored lock file, a reconfigure had silently pulled `esp_hosted` 3.0.10. That no longer matches the 2.12.0 firmware on the C6 Wi-Fi coprocessor (`major version mismatch` at boot).
+## Open items (re-checked against the code 2026-10-31)
+
+Measured on the clock unless marked *code only* (seen in the code, not measured) or *simulator only*.
+
+- **Atelier frames.** Settings pages about 15 ms a frame (Instrument and Orbit 11-15 ms): about 75 draw tasks,
+  the 164 px gradient scrim (about 2.5 ms), pill borders (about 0.7 ms each), rim and register (about 4 ms of
+  PSRAM misses). With the face controls up, about 26 ms (Glass about 22 ms).
+- **Liquid Glass page scrolling** is about 20-28 ms a frame (Night page 25.8-27.8 ms), against Orbit's 11-13 ms.
+  The page ground and rows are images: memory bandwidth. The settings scroll's full-screen ground blit is about
+  12 ms of it; cutting that needs occlusion bookkeeping against the opaque rows.
+- **Liquid Glass first opens.** A page opened right after the face changed bakes its rows then. Pages not
+  built ahead (all but Home, Night and Other) bake in their first frame on the first visit after a boot. The
+  style picker's first open stays at about 117 ms, by choice: building it ahead would hold about 0.5 MB of the
+  glass cache for a page rarely seen.
+- **To measure on the clock** (*simulator only*): the quick sheet's snapshot taken at idle (the brightness
+  pull's first frame, PSRAM's low point); Night's first open (`settings_night_open`, 63 ms max before); the
+  blur and upscale speed-ups.
+- **Theme sheet first pull** (*code only*). Its panel snapshot is taken in the pull's first frame: only the
+  Glass quick sheet is snapshotted ahead (`face_sheet_presnapshot`). On Digital the face snapshot is taken
+  again too (`sync_face_animation_state` shows the snapshot while a sheet is dragged).
+- **Extra snapshot on a face change** (*code only*). `set_active_face` calls `lv_tileview_set_tile_by_index`,
+  whose `SCROLL_BEGIN`/`SCROLL_END` handlers call `sync_face_animation_state`; on Digital that retakes the
+  snapshot when the live face was showing.
+- **Task priorities** (*code only*). `CONFIG_LV_DRAW_THREAD_PRIO=3` is below `wifi_scan`, `ota_check`/`ota_install`
+  and `alarm_audio` (4); `glass_bake` is at 5.
+- **Wi-Fi calls on the UI thread** (*code only*). Connect and forget call `esp_wifi_disconnect`,
+  `esp_wifi_set_config` and `esp_wifi_connect` on the LVGL task: RPCs to the C6.
+- **Small ones** (*code only*). The Wi-Fi list is rebuilt with `lv_obj_clean` whenever a scan finishes. Each
+  alarm page adds four transparent edge sensors (`alm_add_edge_close`).
+- **Not re-checked:** the alarm settings slider and switch had no drag passthrough (a vertical drag starting
+  on them did not scroll the page).
+
+Removed from the list as done: the affordance fade (the face controls now come in as a designed sweep and fade
+out in 230 ms); the alarm volume slider closing every empty slot's swipe with an animation (they close without
+one, `alm_list_sync`); the swipe-to-delete width change (rows move by `translate_x` only); the brightness
+panel's 70 % scrim (the panel is gone; brightness is the quick sheet's rim control) and the Wi-Fi dialog's (the
+join screen is opaque, with a kit-styled keyboard); dropdown re-styling (no dropdowns are left); 80 ms theme
+transitions on press (kit controls remove the theme's styles); the codec volume written on every click.
 
 ## Root cause of the slow "Other" scrolling (measured, fixed)
 
@@ -423,29 +480,9 @@ sheet (as at the bedside: the idle prewarm needs that long after a boot or a sty
   on demand and opened only to change the style; building and baking it ahead would hold about
   0.5 MB of the glass cache for a page rarely seen.
 
-## Open findings, by priority (*unverified* unless measured)
+## Open findings
 
-### High
-- **Atelier settings take about 15 ms a frame** (Instrument and Orbit: 11-15 ms). What remains is about 75 draw tasks (each image task costs about 70 us of LVGL setup), the 164 px gradient scrim (about 2.5 ms), pill borders (about 0.7 ms each) and the rim and register (about 4 ms, mostly PSRAM misses along the ring).
-- **Atelier screens with the face controls up take about 26 ms a frame** (Glass about 22 ms).
-
-
-### Medium
-- Extra snapshots during `set_active_face` and reveal end: `lv_tileview_set_tile` fires `SCROLL_BEGIN`/`END` synchronously, which triggers `refresh_digital_face_snapshot`.
-- The theme sheet's first pull after a face change still takes the panel snapshot plus a digital snapshot in one frame. Pre-take them on an idle timer.
-- Affordance fade in/out is about 15 full frames per tap. Show/hide instantly or in 2 steps.
-- The alarm volume slider starts swipe-close animations for every empty slot on each drag step. The alarm settings slider and switch have no drag passthrough.
-- The swipe-to-delete animation changes width and `translate_x`, which re-lays out the list every frame.
-- The brightness panel and Wi-Fi dialog use a 70% scrim, so the live page underneath is redrawn every frame (keyboard cursor blink included). The keyboard keys use the light theme.
-- `CONFIG_LV_DRAW_THREAD_PRIO=3` is below `ota_task`, `wifi_scan` and `alarm_audio` (4).
-
-### Low
-- The Wi-Fi list is rebuilt with `lv_obj_clean` on every scan.
-- Dropdown lists are re-styled on every open (12 styles, including fonts).
-- Theme transitions (80 ms) add 4-5 full frames per press.
-- Every surface has 4 transparent edge sensors.
-- Wi-Fi RPCs run on the LVGL task.
-- Every click writes the codec volume over the I2C bus shared with touch.
+Moved to [Open items](#open-items-re-checked-against-the-code-2026-10-31) at the top, re-checked against the code.
 
 ## On-device test plan
 

@@ -43,15 +43,20 @@ rg -n "CLOCK_STATUS_TOKEN|CONFIG_TOUCH_CLOCK_TELEMETRY_TOKEN|your-real-token" \
 
 ## Current Firmware Release Model
 
-The project uses an OTA-ready partition table:
+The project uses an OTA-ready partition table on the 32 MB flash
+([../partitions.csv](../partitions.csv)):
 
-- `ota_0`: 8 MB app slot
-- `ota_1`: 8 MB app slot
-- `otadata`: boot slot metadata
-- `nvs`: persisted settings
-- `storage`: SPIFFS data
+| Partition | Size | Holds |
+|---|---|---|
+| `nvs` | 24 KB (0x6000) | settings, alarms and the saved Wi-Fi network (namespace `clock`, [../main/app_settings.c](../main/app_settings.c)) |
+| `phy_init` | 4 KB | radio calibration data |
+| `otadata` | 8 KB | which app slot boots, and a new image's verify state |
+| `ota_0`, `ota_1` | 8 MB each | the two app slots; an update writes the one not running |
+| `storage` | 15 MB | SPIFFS; reserved: the firmware does not mount it today |
 
-See [../partitions.csv](../partitions.csv).
+A firmware update rewrites only the inactive app slot and `otadata`; `nvs` is kept, so settings and
+alarms survive an update. Erasing the whole flash (`idf.py erase-flash`) clears them, and the saved
+Wi-Fi network with them.
 
 The default OTA manifest URL is configured in
 [../sdkconfig.defaults](../sdkconfig.defaults). Local builds may override this

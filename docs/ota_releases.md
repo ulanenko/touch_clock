@@ -80,11 +80,22 @@ Rollback support is enabled in `sdkconfig.defaults` through
 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A failed app can roll back to the
 previous valid OTA slot when ESP-IDF marks the new image invalid.
 
-A new image confirms itself at boot only once its Wi-Fi has started
-(`ota_update_init`): one that cannot start it could never be updated again, so
-it marks itself invalid and reboots into the image it replaced. An image already
-confirmed keeps running without Wi-Fi (the clock still keeps time and rings);
-it does not reboot over a Wi-Fi failure.
+A new image is not confirmed at boot. The controller confirms it once the clock
+has run on it for 60 s (`APP_IMAGE_CONFIRM_DELAY_MS` in
+[../main/app/app_controller_core.c](../main/app/app_controller_core.c), through
+`ota_service_t.confirm_image` to `ota_update_confirm_image` in
+[../main/ota_update.c](../main/ota_update.c)), even if the update service itself
+failed to start. So:
+
+- A new image that crashes or resets in its first minute is rolled back by the
+  bootloader at its next boot.
+- A new image whose Wi-Fi does not start is rolled back at once
+  (`ota_update_init`): it could never be updated again. That is one reboot, into
+  the image it replaced.
+- An install asked for in a new image's first minute confirms the running image
+  first, because the OTA driver begins no update while it is unconfirmed.
+- An image already confirmed keeps running without Wi-Fi (the clock still keeps
+  time and rings); it does not reboot over a Wi-Fi failure.
 
 ## Telemetry Caveat
 
