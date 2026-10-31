@@ -15,6 +15,7 @@
 
 #include "ui/clock_ui_private.h"
 #include "ui/kit/ui_kit_internal.h"
+#include "ui/ui_frame_free.h"
 #include "src/draw/lv_draw_private.h"
 #include "src/misc/lv_area_private.h"
 
@@ -373,12 +374,17 @@ static lv_draw_buf_t *build_tile(const kit_dial_t *dial, float a0, float a1, flo
     return buf;
 }
 
-static void free_tiles(dial_tiles_t *tiles)
+/* later: dropped while a frame is drawn, whose draw tasks may still read the tiles. */
+static void free_tiles(dial_tiles_t *tiles, bool later)
 {
     for (int t = 0; t < KIT_DIAL_TILES; t++) {
         if (tiles->buf[t] != NULL) {
-            ui_sparse_image_unregister(tiles->buf[t]);
-            lv_draw_buf_destroy(tiles->buf[t]);
+            if (later) {
+                ui_frame_free(tiles->buf[t]);
+            } else {
+                ui_sparse_image_unregister(tiles->buf[t]);
+                lv_draw_buf_destroy(tiles->buf[t]);
+            }
             tiles->buf[t] = NULL;
         }
     }
@@ -415,16 +421,16 @@ static void build_tiles(const kit_dial_t *dial, dial_tiles_t *tiles)
 
 /* --- Cache -------------------------------------------------------------------------------- */
 
-static void entry_free(dial_entry_t *entry)
+static void entry_free(dial_entry_t *entry, bool later)
 {
-    free_tiles(&entry->tiles);
+    free_tiles(&entry->tiles, later);
     s_cache_bytes -= entry->bytes;
     entry->bytes = 0;
     entry->used = false;
 }
 
 /* Over its byte budget, the cache drops its least recently drawn dials, never one drawn in
- * the last 100 ms (its tiles may still be queued in this frame's draw tasks). */
+ * the last 100 ms (it would only be built again for the next frame). */
 static void cache_trim(const dial_entry_t *keep)
 {
     while (s_cache_bytes > KIT_DIAL_CACHE_BYTES) {
@@ -441,7 +447,7 @@ static void cache_trim(const dial_entry_t *keep)
         if (oldest == NULL) {
             return;
         }
-        entry_free(oldest);
+        entry_free(oldest, true);
     }
 }
 
@@ -472,7 +478,7 @@ static const dial_tiles_t *dial_get(const kit_dial_t *dial_in)
             slot = &s_cache[i];
         }
     }
-    entry_free(slot);
+    entry_free(slot, true);
     memcpy(&slot->key, dial, sizeof(*dial));
     build_tiles(dial, &slot->tiles);
     for (int t = 0; t < KIT_DIAL_TILES; t++) {
@@ -559,8 +565,9 @@ void kit_dial_prewarm(const kit_dial_t *dial)
 void kit_dial_cache_flush(void)
 {
     kit_slider_cache_flush();
+    /* Between frames (a chrome rebuild): the memory comes back at once. */
     for (int i = 0; i < KIT_DIAL_CACHE; i++) {
-        entry_free(&s_cache[i]);
+        entry_free(&s_cache[i], false);
     }
 }
 

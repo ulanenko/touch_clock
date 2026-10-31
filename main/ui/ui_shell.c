@@ -12,6 +12,7 @@
 #include "ui/ui_areas.h"
 #include "ui/ui_face_chrome.h"
 #include "ui/kit/ui_glass.h"
+#include "ui/ui_frame_free.h"
 
 #include "esp_heap_caps.h"
 #include "src/draw/lv_draw_buf_private.h"
@@ -1226,11 +1227,11 @@ void ui_face_chrome_create_top(clock_ui_context_t *ctx)
 void ui_face_chrome_destroy(clock_ui_context_t *ctx)
 {
     for (int i = 0; i < 2; i++) {
-        if (ctx->face_chrome.rim_band[i] != NULL) {
-            lv_draw_buf_destroy(ctx->face_chrome.rim_band[i]);
-            ctx->face_chrome.rim_band[i] = NULL;
-        }
+        /* Liquid Glass registers its bands as sparse images: freed with that forgotten. */
+        ui_frame_free(ctx->face_chrome.rim_band[i]);
+        ctx->face_chrome.rim_band[i] = NULL;
     }
+    face_controls_destroy(ctx);
     face_themes_destroy(ctx);
     face_quick_destroy(ctx);
 }

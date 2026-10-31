@@ -39,13 +39,12 @@
 
 #include "src/misc/lv_area_private.h"
 #include "ui/kit/ui_skin.h"
+#include "ui/ui_frame_free.h"
 
 /* From ui_ppa_blend.c (clock_ui_private.h). */
 void ui_sparse_image_register(const lv_draw_buf_t *buf);
-void ui_sparse_image_unregister(const lv_draw_buf_t *buf);
 bool ui_moving_row_mark(const lv_draw_buf_t *row, int32_t rim, int32_t corner, const lv_draw_buf_t *ground);
 void ui_moving_rows_clear(void);
-void ui_moving_row_forget(const void *data);
 
 #define SCREEN 720
 #define LOW 180   /* the blur works at a quarter of the resolution */
@@ -1057,11 +1056,7 @@ static uint32_t s_bake_stamp;
 static size_t s_bake_bytes;
 static lv_timer_t *s_settle_timer;
 
-/* Baked images dropped from the cache wait here until the frame being drawn is done: its
- * draw tasks may still read them. */
-#define GRAVE_MAX 16
-static lv_draw_buf_t *s_grave[GRAVE_MAX];
-static bool s_grave_hooked;
+static bool s_frame_hooked;
 
 /* The opaque page shapes that hide the ground this frame (ground_draw_uncovered), -1: not yet.
  * A page shows fewer; any past the last are drawn over the ground, as before. */
@@ -1069,22 +1064,10 @@ static bool s_grave_hooked;
 static lv_area_t s_cover[COVER_MAX];
 static int s_cover_n = -1;
 
-static void grave_free(void)
-{
-    for (int i = 0; i < GRAVE_MAX; i++) {
-        if (s_grave[i] != NULL) {
-            ui_moving_row_forget(s_grave[i]->data);
-            lv_draw_buf_destroy(s_grave[i]);
-            s_grave[i] = NULL;
-        }
-    }
-}
-
 static void render_ready_cb(lv_event_t *e)
 {
     LV_UNUSED(e);
     ui_moving_rows_clear();
-    grave_free();
     s_resettle_left = 1;
     s_cover_n = -1;
 }
@@ -1102,17 +1085,8 @@ static void bake_drop(bake_t *b)
         return;
     }
     s_bake_bytes -= b->buf->data_size;
-    for (int i = 0; i < GRAVE_MAX; i++) {
-        if (s_grave[i] == NULL) {
-            s_grave[i] = b->buf;
-            b->buf = NULL;
-            b->key = NULL;
-            return;
-        }
-    }
-    lv_draw_wait_for_finish();
-    grave_free();
-    s_grave[0] = b->buf;
+    /* The frame being drawn may still read it. */
+    ui_frame_free(b->buf);
     b->buf = NULL;
     b->key = NULL;
 }
@@ -1126,22 +1100,16 @@ static void bake_drop(bake_t *b)
 
 static size_t bake_budget(void)
 {
-    size_t have = s_bake_bytes + heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t have = s_bake_bytes + heap_caps_get_free_size(MALLOC_CAP_SPIRAM) + ui_frame_free_waiting_bytes();
 
-    for (int i = 0; i < GRAVE_MAX; i++) {
-        have += s_grave[i] != NULL ? s_grave[i]->data_size : 0;
-    }
     return have > PSRAM_FLOOR ? LV_MIN((size_t)BAKE_BYTES, have - PSRAM_FLOOR) : 0;
 }
 
 void ui_glass_make_room(size_t bytes)
 {
-    size_t have = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+    size_t have = heap_caps_get_free_size(MALLOC_CAP_SPIRAM) + ui_frame_free_waiting_bytes();
     bool dropped = false;
 
-    for (int i = 0; i < GRAVE_MAX; i++) {
-        have += s_grave[i] != NULL ? s_grave[i]->data_size : 0;
-    }
     while (have < PSRAM_FLOOR + bytes) {
         bake_t *oldest = NULL;
 
@@ -1160,7 +1128,7 @@ void ui_glass_make_room(size_t bytes)
     }
     if (dropped) {
         lv_draw_wait_for_finish();
-        grave_free();
+        ui_frame_free_now();
     }
 }
 
@@ -2048,12 +2016,15 @@ static bake_t *bake_get(const void *key, const lv_area_t *area, int32_t radius, 
         }
         return b;
     }
-    if (!s_grave_hooked && lv_display_get_default() != NULL) {
+    if (!s_frame_hooked && lv_display_get_default() != NULL) {
         lv_display_add_event_cb(lv_display_get_default(), render_ready_cb, LV_EVENT_REFR_READY, NULL);
         lv_display_add_event_cb(lv_display_get_default(), render_start_cb, LV_EVENT_REFR_START, NULL);
-        s_grave_hooked = true;
+        s_frame_hooked = true;
     }
     budget = bake_budget();
+    if (need > budget) {
+        return NULL; /* it would empty the cache and still not fit */
+    }
     /* Room: the least recently drawn go first. */
     while (true) {
         bake_t *oldest = NULL;
@@ -2102,8 +2073,9 @@ void ui_glass_release(void)
     for (int i = 0; i < BAKE_MAX; i++) {
         bake_drop(&s_bakes[i]);
     }
+    shells_release();
     lv_draw_wait_for_finish();
-    grave_free();
+    ui_frame_free_now();
     if (s_frost != NULL) {
         lv_draw_buf_destroy(s_frost);
         s_frost = NULL;
@@ -2122,7 +2094,6 @@ void ui_glass_release(void)
         lv_draw_buf_destroy(s_deep_full);
         s_deep_full = NULL;
     }
-    shells_release();
     for (int i = 0; i < CORNER_TABS; i++) {
         lv_free(s_corner_tabs[i].px);
         s_corner_tabs[i].px = NULL;
@@ -2865,7 +2836,9 @@ static void arc_bounds(int32_t cx, int32_t cy, int32_t r_mid, int32_t width, flo
     box->x2 = box->x1;
     box->y1 = cy + (int32_t)floorf(r_out * sinf(a0));
     box->y2 = box->y1;
-    for (float a = a0; a <= a1 + 0.001f; a += (a1 - a0) / 32.0f) {
+    for (int i = 0; i <= 32; i++) {
+        float a = a0 + (a1 - a0) * (float)i / 32.0f;
+
         for (int k = 0; k < 2; k++) {
             float rr = k == 0 ? r_out : (float)r_mid - (float)width / 2.0f - 2.0f;
             int32_t x = cx + (int32_t)floorf(rr * cosf(a));
@@ -2956,10 +2929,7 @@ lv_draw_buf_t *ui_glass_arc_image(int32_t cx, int32_t cy, int32_t r_mid, int32_t
 
 void ui_glass_image_free(lv_draw_buf_t *image)
 {
-    if (image != NULL) {
-        ui_sparse_image_unregister(image);
-        lv_draw_buf_destroy(image);
-    }
+    ui_frame_free(image);
 }
 
 void ui_glass_arc_blend(lv_draw_buf_t *dst, int32_t dst_x, int32_t dst_y, int32_t cx, int32_t cy, int32_t r_mid,

@@ -8,6 +8,7 @@
 #include "src/draw/lv_draw_private.h"
 #include "ui/kit/ui_kit_internal.h"
 #include "ui/ui_controls.h"
+#include "ui/ui_frame_free.h"
 
 /* --- Switch ----------------------------------------------------------------------------- */
 
@@ -158,8 +159,9 @@ static const lv_draw_buf_t *ruler_image(int32_t w, bool lit)
         }
     }
     if (slot == NULL) {
+        /* Made while a frame is drawn: the one dropped may be in its draw tasks. */
         slot = &s_rulers[0];
-        lv_draw_buf_destroy(slot->buf);
+        ui_frame_free(slot->buf);
     }
     slot->w = w;
     slot->lit = lit;
