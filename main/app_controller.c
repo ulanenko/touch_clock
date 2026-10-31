@@ -18,7 +18,6 @@
 
 typedef struct {
     app_controller_core_t core;
-    lv_timer_t *tick_timer;
 } app_controller_t;
 
 static const char *TAG = "clock_app";
@@ -528,6 +527,7 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
         .ui_refresh = ui_refresh,
         .ui_refresh_ctx = NULL,
     };
+    lv_timer_t *tick_timer;
     esp_err_t err;
 
     memset(&s_app, 0, sizeof(s_app));
@@ -547,22 +547,16 @@ esp_err_t app_controller_start(const bsp_display_cfg_t *display_cfg)
     }
     if (err == ESP_OK) {
         clock_ui_refresh();
+        /* Under the display lock, like every LVGL call: the LVGL task is already running. */
+        tick_timer = lv_timer_create(clock_tick_cb, 1000, NULL);
+        if (tick_timer == NULL) {
+            err = ESP_ERR_NO_MEM;
+        } else {
+            clock_tick_cb(tick_timer);
+        }
     }
     bsp_display_unlock();
     ESP_RETURN_ON_ERROR(err, TAG, "Failed to initialize UI");
-
-    s_app.tick_timer = lv_timer_create(clock_tick_cb, 1000, NULL);
-    if (s_app.tick_timer == NULL) {
-        return ESP_ERR_NO_MEM;
-    }
-
-    err = bsp_display_lock(1000);
-    if (err != ESP_OK) {
-        ESP_LOGW(TAG, "Skipping first tick because display lock timed out: %s", esp_err_to_name(err));
-    } else {
-        clock_tick_cb(s_app.tick_timer);
-        bsp_display_unlock();
-    }
 
     bsp_display_backlight_on();
 
