@@ -8,7 +8,6 @@ idf_component_register(
     SRCS
         alarm_audio.c
         alarm_tones.c
-        alarm_logic.c
         ota_update.c
         telemetry_update.c
         app/app_actions.c
@@ -16,7 +15,6 @@ idf_component_register(
         app/app_settings_storage.c
         app_settings.c
         clock_ui.c
-        clock_model.c
         localization.c
         domain/alarm_scheduler.c
         domain/brightness_policy.c

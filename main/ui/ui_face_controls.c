@@ -249,7 +249,7 @@ static void format_day_word(const clock_ui_context_t *ctx, time_t now, time_t wh
 
 static int8_t visible_index(clock_face_id_t face)
 {
-    int index = clock_face_visible_id_to_index(face);
+    int index = face_catalog_visible_id_to_index(face);
 
     return (int8_t)(index < 0 ? 0 : index);
 }
@@ -849,7 +849,7 @@ void face_controls_create(clock_ui_context_t *ctx)
 {
     clock_ui_face_chrome_state_t *fc = &ctx->face_chrome;
 
-    fc->dot_count = (uint8_t)LV_MIN(clock_face_visible_count(), CLOCK_FACE_COUNT);
+    fc->dot_count = (uint8_t)LV_MIN(face_catalog_visible_count(), CLOCK_FACE_COUNT);
     fc->dot_active = -1;
     fc->synced_minute = -1;
     fc->night_minute = -1;

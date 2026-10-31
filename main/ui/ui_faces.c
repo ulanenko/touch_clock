@@ -106,7 +106,7 @@ typedef struct {
 
 static uint8_t face_theme_value(const clock_ui_context_t *ctx, clock_face_id_t face)
 {
-    if (ctx == NULL || ctx->settings == NULL || !clock_face_is_valid(face)) {
+    if (ctx == NULL || ctx->settings == NULL || !face_catalog_is_valid(face)) {
         return 0;
     }
 

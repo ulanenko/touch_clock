@@ -10,7 +10,7 @@
 #include <string.h>
 
 #include "assets/seven_segment_font.h"
-#include "clock_model.h"
+#include "domain/face_catalog.h"
 #include "domain/brightness_policy.h"
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -22,44 +22,13 @@
 
 #define SCREEN_SIZE 720
 #define CENTER (SCREEN_SIZE / 2)
-#define CLOCK_RADIUS 340
-#define HOUR_HAND_LEN 195
-#define MIN_HAND_LEN 270
-#define SEC_HAND_LEN 310
-#define TICK_INNER 315
-#define TICK_OUTER 338
 
 #define BOTTOM_EDGE_ZONE 196
-#define QUICK_ACTION_SWIPE_TRIGGER 28
-#define BRIGHTNESS_SHEET_WIDTH SCREEN_SIZE
-#define BRIGHTNESS_SHEET_HEIGHT 244
-#define BRIGHTNESS_SHEET_X 0
-#define BRIGHTNESS_SHEET_OPEN_Y (SCREEN_SIZE - BRIGHTNESS_SHEET_HEIGHT)
-#define BRIGHTNESS_SHEET_CLOSED_Y SCREEN_SIZE
-#define BRIGHTNESS_SCRIM_OPA LV_OPA_60
-#define BRIGHTNESS_SHEET_SHOW_MS 110
-#define BRIGHTNESS_SHEET_HIDE_MS 90
-#define AFFORDANCE_VISIBLE_MS 1000
-#define AFFORDANCE_FADE_IN_MS 140
-#define AFFORDANCE_FADE_OUT_MS 220
 #define SETTINGS_CLOSE_EDGE_ZONE 16
 #define SETTINGS_CLOSE_SWIPE_TRIGGER 26
 #define ALARM_CLOSE_BOTTOM_EDGE_ZONE 24
-#define FACE_THEME_SHEET_HEIGHT SCREEN_SIZE
-#define FACE_THEME_SHEET_OPEN_Y 0
-#define FACE_THEME_SHEET_CLOSED_Y (-FACE_THEME_SHEET_HEIGHT)
-#define FACE_THEME_SCRIM_OPA LV_OPA_70
-#define FACE_THEME_SHEET_SHOW_MS 140
-#define FACE_THEME_SHEET_HIDE_MS 110
 #define UI_L10N_BINDING_MAX 400
 #define UI_CHROME_TIMER_MAX 24
-
-#define SETTINGS_PANEL_MARGIN 32
-#define SETTINGS_HEADER_HEIGHT 76
-
-#define KEYBOARD_WIDTH 620
-#define KEYBOARD_HEIGHT 208
-#define KEYBOARD_BOTTOM_INSET 18
 
 #define MTX_GRID_X 33
 #define MTX_GRID_Y 33
@@ -83,16 +52,6 @@
 #define WH_COL_ON 0xD4A017
 #define WH_COL_OFF 0x1E1600
 
-#define WIFI_DIALOG_WIDTH 620
-#define WIFI_DIALOG_HEIGHT 440
-#define QUICK_ACTION_SYMBOL_BRIGHTNESS LV_SYMBOL_TINT
-#define UI_ACCENT_COL 0xD8DDE3
-#define UI_ACCENT_COL_PRESSED 0xB8BEC6
-#define UI_ACCENT_TEXT_COL 0x14171B
-#define UI_ACCENT_BORDER_COL 0x8D959E
-#define UI_ACCENT_GLOW_COL 0xEEF2F5
-#define UI_ACCENT_MUTED_COL 0xB2B9C1
-
 enum {
     SETTINGS_TAB_WIFI = 0,
     SETTINGS_TAB_NIGHT = 1,
@@ -108,16 +67,6 @@ typedef struct {
     uint8_t alarm_index;
     uint8_t day_index;
 } alarm_day_ctx_t;
-
-typedef struct {
-    struct clock_ui_state_t *ui;
-    uint8_t network_index;
-} network_ctx_t;
-
-typedef struct {
-    struct clock_ui_state_t *ui;
-    clock_face_id_t face;
-} face_ctx_t;
 
 typedef struct {
     struct clock_ui_state_t *ui;
@@ -154,7 +103,6 @@ typedef struct {
     uint8_t steps;
     bool revealing;    /* the wordmark fading, the face to come up */
 } clock_ui_boot_state_t;
-
 
 /* Inks that belong to a face in its current theme, for details drawn over it (the night
  * alarm): text in the face's own ink, the accent its glow or hand colour, soft a quieter
@@ -225,24 +173,6 @@ typedef struct {
     lv_obj_t *digital_day_label[7];
     lv_obj_t *digital_date_glow;
     lv_obj_t *digital_date_label;
-    lv_point_precise_t hour_pts[2];
-    lv_point_precise_t min_pts[2];
-    lv_point_precise_t sec_pts[2];
-    lv_obj_t *line_hour;
-    lv_obj_t *line_min;
-    lv_obj_t *line_sec;
-    lv_obj_t *center_dot;
-    void *analog_face_buf;
-    lv_point_precise_t sternglas_hour_pts[2];
-    lv_point_precise_t sternglas_min_pts[2];
-    lv_point_precise_t sternglas_hour_shadow_pts[2];
-    lv_point_precise_t sternglas_min_shadow_pts[2];
-    lv_obj_t *sternglas_line_hour;
-    lv_obj_t *sternglas_line_min;
-    lv_obj_t *sternglas_line_hour_shadow;
-    lv_obj_t *sternglas_line_min_shadow;
-    lv_obj_t *sternglas_center_dot;
-    lv_obj_t *sternglas_center_inner_dot;
     lv_obj_t *sternglas_snapshot_img;
     lv_draw_buf_t *sternglas_snapshot_buf;
     uint8_t sternglas_snapshot_theme;
@@ -312,7 +242,6 @@ typedef struct {
     clock_face_id_t evening_owner;
     uint8_t *filament_ghosts; /* the ten cathode digits' outlines, one tube, A8 */
 } clock_ui_face_state_t;
-
 
 #include "ui/ui_face_chrome_state.h"
 

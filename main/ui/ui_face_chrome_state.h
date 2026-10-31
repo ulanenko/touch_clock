@@ -101,7 +101,6 @@ typedef struct {
     lv_obj_t *title;
     lv_obj_t *option_card[CLOCK_FACE_THEME_COUNT];
     lv_obj_t *option_thumb[CLOCK_FACE_THEME_COUNT];
-    lv_obj_t *option_ring[CLOCK_FACE_THEME_COUNT];
     lv_obj_t *option_key[CLOCK_FACE_THEME_COUNT];  /* "Theme 1" (Instrument, Atelier) */
     lv_obj_t *option_name[CLOCK_FACE_THEME_COUNT];
     lv_obj_t *option_swatches[CLOCK_FACE_THEME_COUNT][3];

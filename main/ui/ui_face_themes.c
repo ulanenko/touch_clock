@@ -92,7 +92,7 @@ static const lv_image_dsc_t *theme_thumb(clock_face_id_t face, uint8_t theme)
 
 static uint8_t face_theme_value(const clock_ui_context_t *ctx, clock_face_id_t face)
 {
-    if (!clock_face_is_valid(face)) {
+    if (!face_catalog_is_valid(face)) {
         return 0;
     }
     return ctx->settings->face_themes[face] < CLOCK_FACE_THEME_COUNT ? ctx->settings->face_themes[face] : 0;
@@ -203,15 +203,15 @@ void face_themes_sync(clock_ui_context_t *ctx)
     }
     ft->synced_key = key;
 
-    index = clock_face_visible_id_to_index(face) + 1;
+    index = face_catalog_visible_id_to_index(face) + 1;
     switch (ui_skin_style()) {
     case CLOCK_UI_STYLE_INSTRUMENT:
-        snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_eyebrow_instrument), index, clock_face_visible_count(),
+        snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_eyebrow_instrument), index, face_catalog_visible_count(),
                  face_catalog_name(face));
         break;
     case CLOCK_UI_STYLE_ATELIER:
         snprintf(text, sizeof(text), ui_l10n_str(ctx, &s_eyebrow_atelier), face_catalog_name(face), index,
-                 clock_face_visible_count());
+                 face_catalog_visible_count());
         break;
     default:
         snprintf(text, sizeof(text), "%s", face_catalog_name(face));

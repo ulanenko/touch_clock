@@ -1026,7 +1026,7 @@ void st_night_sync(clock_ui_context_t *ctx, bool force)
     }
 
     if (st_instrument()) {
-        snprintf(text, sizeof(text), "%s · %s", clock_face_name(face), ui_l10n_str(ctx, &s_tap_to_choose));
+        snprintf(text, sizeof(text), "%s · %s", face_catalog_name(face), ui_l10n_str(ctx, &s_tap_to_choose));
         kit_label_set_text_if_changed(st->night_face_sub, text);
     } else if (st_atelier()) {
         kit_label_set_text_if_changed(st->night_face_sub, ui_l10n_str(ctx, &s_tap_to_choose));
@@ -1188,7 +1188,7 @@ static void face_pick_cb(lv_event_t *e)
     ui_st_item_t *item = lv_event_get_user_data(e);
     clock_ui_context_t *ctx = item->ui;
 
-    if (!clock_face_is_enabled((clock_face_id_t)item->index)) {
+    if (!face_catalog_is_enabled((clock_face_id_t)item->index)) {
         return;
     }
     request_set_night_face(ctx, (clock_face_id_t)item->index);
@@ -1202,7 +1202,7 @@ void st_face_build(clock_ui_context_t *ctx)
     clock_ui_settings_state_t *st = ST(ctx);
     kit_page_t *p;
     lv_obj_t *grid;
-    int visible = clock_face_visible_count();
+    int visible = face_catalog_visible_count();
     int32_t thumb = picker_thumb();
     int32_t col = (sk->content_w - 2 * sk->gap_s) / 3;
 
@@ -1220,7 +1220,7 @@ void st_face_build(clock_ui_context_t *ctx)
     lv_obj_set_style_pad_top(grid, sk->gap_s, 0);
 
     for (int i = 0; i < visible && i < CLOCK_FACE_COUNT; i++) {
-        clock_face_id_t face = clock_face_visible_index_to_id(i);
+        clock_face_id_t face = face_catalog_visible_index_to_id(i);
         lv_obj_t *item = lv_obj_create(grid);
         lv_obj_t *ring;
         lv_obj_t *check;
@@ -1252,7 +1252,7 @@ void st_face_build(clock_ui_context_t *ctx)
         lv_obj_align(check, LV_ALIGN_BOTTOM_RIGHT, 0, 0);
         lv_obj_center(kit_icon_small(check, KIT_ICON_CHECK, st_orbit() ? sk->text : sk->accent_text));
         st->face_check[face] = check;
-        st->face_name[face] = kit_label(item, KIT_TEXT_BODY, clock_face_name(face));
+        st->face_name[face] = kit_label(item, KIT_TEXT_BODY, face_catalog_name(face));
         lv_obj_set_width(st->face_name[face], lv_pct(100));
         lv_obj_set_style_text_align(st->face_name[face], LV_TEXT_ALIGN_CENTER, 0);
         lv_label_set_long_mode(st->face_name[face], LV_LABEL_LONG_MODE_DOTS);

@@ -220,7 +220,7 @@ static bool face_slide_begin(clock_ui_context_t *ctx)
 {
     clock_face_id_t from = face_slide_current(ctx);
 
-    if (ctx->faces.face_slide_shell == NULL || clock_face_step_enabled(from, 1) == from ||
+    if (ctx->faces.face_slide_shell == NULL || face_catalog_step_enabled(from, 1) == from ||
         !face_slide_snapshot(ctx, from, 0)) {
         return false;
     }
@@ -253,7 +253,7 @@ static void face_slide_prepare_side(clock_ui_context_t *ctx, int32_t offset)
     if (dir == 0 || dir == ctx->faces.face_slide_dir) {
         return;
     }
-    to = clock_face_step_enabled(ctx->faces.face_slide_from, dir);
+    to = face_catalog_step_enabled(ctx->faces.face_slide_from, dir);
     if (!face_slide_shot_fresh(ctx, slot, to) && !face_slide_snapshot(ctx, to, slot)) {
         ctx->faces.face_slide_dir = 0;
         return;
@@ -329,7 +329,7 @@ static void face_slide_prepare_cb(lv_timer_t *timer)
         return;
     }
     for (int8_t dir = 1; dir >= -1; dir -= 2) {
-        clock_face_id_t face = clock_face_step_enabled(current, dir);
+        clock_face_id_t face = face_catalog_step_enabled(current, dir);
         int slot = face_slide_side_slot(dir);
 
         if (face == current || face_slide_shot_fresh(ctx, slot, face)) {
@@ -683,7 +683,7 @@ void ui_backdrop_set(clock_ui_context_t *ctx, lv_obj_t *overlay, lv_obj_t *backd
 clock_face_id_t tile_to_face(clock_ui_context_t *ctx, lv_obj_t *tile)
 {
     for (int i = 0; i < CLOCK_FACE_COUNT; ++i) {
-        if (!clock_face_is_enabled((clock_face_id_t)i)) {
+        if (!face_catalog_is_enabled((clock_face_id_t)i)) {
             continue;
         }
         if (ctx->tiles[i] == tile) {
@@ -691,7 +691,7 @@ clock_face_id_t tile_to_face(clock_ui_context_t *ctx, lv_obj_t *tile)
         }
     }
 
-    return clock_face_first_enabled();
+    return face_catalog_first_enabled();
 }
 
 static void apply_face_navigation_mode(clock_ui_context_t *ctx, clock_face_id_t face)
@@ -850,17 +850,17 @@ void set_active_face(clock_ui_context_t *ctx, clock_face_id_t face, lv_anim_enab
     int visible_index;
     bool changed;
 
-    if (!clock_face_is_valid(face)) {
-        face = clock_face_first_enabled();
+    if (!face_catalog_is_valid(face)) {
+        face = face_catalog_first_enabled();
     }
-    if (!clock_face_is_enabled(face)) {
-        face = clock_face_first_enabled();
+    if (!face_catalog_is_enabled(face)) {
+        face = face_catalog_first_enabled();
     }
 
-    visible_index = clock_face_visible_id_to_index(face);
+    visible_index = face_catalog_visible_id_to_index(face);
     if (visible_index < 0) {
-        face = clock_face_first_enabled();
-        visible_index = clock_face_visible_id_to_index(face);
+        face = face_catalog_first_enabled();
+        visible_index = face_catalog_visible_id_to_index(face);
     }
 
     /* A refresh re-applies the same face: only a real face change closes the theme sheet. */
@@ -989,8 +989,8 @@ void build_root_ui(clock_ui_context_t *ctx)
     lv_obj_set_scroll_snap_y(ctx->tileview, LV_SCROLL_SNAP_NONE);
     lv_obj_align(ctx->tileview, LV_ALIGN_CENTER, 0, 0);
 
-    for (int index = 0; index < clock_face_visible_count(); ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
+    for (int index = 0; index < face_catalog_visible_count(); ++index) {
+        clock_face_id_t face = face_catalog_visible_index_to_id(index);
 
         ctx->tiles[face] = lv_tileview_add_tile(ctx->tileview, index, 0, LV_DIR_HOR);
         lv_obj_set_style_pad_all(ctx->tiles[face], 0, 0);

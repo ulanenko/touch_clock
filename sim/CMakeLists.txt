@@ -56,7 +56,6 @@ add_executable(sim
     sim_main.c
     ${UI_SOURCES}
     ${REPO_ROOT}/main/clock_ui.c
-    ${REPO_ROOT}/main/clock_model.c
     ${REPO_ROOT}/main/localization.c
 )
 target_include_directories(sim PRIVATE ${REPO_ROOT}/main)

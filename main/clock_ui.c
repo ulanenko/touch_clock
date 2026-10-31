@@ -115,14 +115,14 @@ static void build_timezone_options(char *buffer, size_t size)
 static void build_face_options(char *buffer, size_t size)
 {
     size_t pos = 0;
-    int visible_count = clock_face_visible_count();
+    int visible_count = face_catalog_visible_count();
 
     buffer[0] = '\0';
     for (int index = 0; index < visible_count; ++index) {
-        clock_face_id_t face = clock_face_visible_index_to_id(index);
+        clock_face_id_t face = face_catalog_visible_index_to_id(index);
 
         pos += snprintf(buffer + pos, size - pos, "%s%s",
-                        clock_face_name(face),
+                        face_catalog_name(face),
                         (index == (visible_count - 1)) ? "" : "\n");
     }
 }
@@ -138,9 +138,9 @@ static void prewarm_face_previews(clock_ui_context_t *ctx)
 
     lv_obj_update_layout(ctx->screen);
 
-    visible_count = clock_face_visible_count();
+    visible_count = face_catalog_visible_count();
     for (int index = 0; index < visible_count; ++index) {
-        update_face(ctx, clock_face_visible_index_to_id(index));
+        update_face(ctx, face_catalog_visible_index_to_id(index));
         ui_boot_step(ctx);
     }
 
@@ -432,8 +432,8 @@ void set_root_ui_hidden(clock_ui_context_t *ctx, bool hidden)
 
 clock_face_id_t sanitize_enabled_face(clock_face_id_t face)
 {
-    if (!clock_face_is_enabled(face)) {
-        return clock_face_first_enabled();
+    if (!face_catalog_is_enabled(face)) {
+        return face_catalog_first_enabled();
     }
 
     return face;
@@ -563,7 +563,7 @@ esp_err_t clock_ui_begin_boot(const app_settings_t *settings,
     build_face_options(ctx->face_options, sizeof(ctx->face_options));
     styles_init();
     /* Steps: the interface, each face, the digital snapshot, the chrome. */
-    ui_boot_create(ctx, (uint8_t)(clock_face_visible_count() + 3));
+    ui_boot_create(ctx, (uint8_t)(face_catalog_visible_count() + 3));
     return ESP_OK;
 }
 

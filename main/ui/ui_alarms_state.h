@@ -53,7 +53,6 @@ typedef struct {
     bool settings_open;
     bool editor_open;
     bool editor_is_new;
-    bool editor_from_list;
     bool close_dragging;
     bool close_swipe_consumed;
     bool management_scrolling;
@@ -85,7 +84,6 @@ typedef struct {
     lv_obj_t *list_settings_row;
     lv_obj_t *list_settings_title;
     lv_obj_t *list_settings_sub;
-    lv_obj_t *list_empty;
     alm_row_t rows[MAX_ALARMS];
 
     /* --- alarm settings -------------------------------------------------------------- */
@@ -137,14 +135,12 @@ typedef struct {
     lv_obj_t *ring_sub;
     lv_obj_t *ring_snooze;
     lv_obj_t *ring_snooze_min;
-    lv_obj_t *ring_sec_tick;    /* Instrument: orange second mark on the rim */
     lv_obj_t *ring_hold_btn;    /* Instrument */
     lv_obj_t *ring_hold_arc;
     lv_obj_t *ring_knob;        /* Orbit, Atelier slide */
     lv_obj_t *ring_track;       /* Orbit: the band, taking a press near the knob too */
     bool ring_holding;
     bool ring_sliding;
-    bool ring_done;
     int16_t ring_knob_angle;    /* 0.1 degree */
     int16_t ring_sec_shown;
     lv_obj_t *math;             /* math challenge layer */

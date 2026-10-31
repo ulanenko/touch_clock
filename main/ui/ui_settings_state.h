@@ -92,7 +92,6 @@ typedef struct {
     uint32_t wifi_list_gen;
     bool wifi_list_valid;
     bool wifi_list_connected;
-    bool wifi_list_scanning;
     char wifi_list_ssid[33];
     ui_st_item_t net_item[UI_ST_NET_MAX];
 
