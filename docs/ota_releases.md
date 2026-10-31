@@ -80,6 +80,12 @@ Rollback support is enabled in `sdkconfig.defaults` through
 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A failed app can roll back to the
 previous valid OTA slot when ESP-IDF marks the new image invalid.
 
+A new image confirms itself at boot only once its Wi-Fi has started
+(`ota_update_init`): one that cannot start it could never be updated again, so
+it marks itself invalid and reboots into the image it replaced. An image already
+confirmed keeps running without Wi-Fi (the clock still keeps time and rings);
+it does not reboot over a Wi-Fi failure.
+
 ## Telemetry Caveat
 
 Do not put telemetry tokens into public OTA binaries. For production, use a
