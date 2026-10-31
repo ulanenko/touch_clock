@@ -93,6 +93,17 @@ static void wifi_event_handler(void *arg,
         snprintf(s_wifi.ip, sizeof(s_wifi.ip), IPSTR, IP2STR(&event->ip_info.ip));
         snprintf(s_wifi.status, sizeof(s_wifi.status), "Connected: %s", s_wifi.ip);
         xSemaphoreGive(s_wifi.lock);
+        /* The signal as it was on joining, for Settings' meter (it read 0, the weakest, until
+         * now). Asked here, off the UI thread: through the co-processor it is a request. */
+        {
+            wifi_ap_record_t ap;
+
+            if (esp_wifi_sta_get_ap_info(&ap) == ESP_OK) {
+                xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
+                s_wifi.rssi = s_wifi.connected ? ap.rssi : 0;
+                xSemaphoreGive(s_wifi.lock);
+            }
+        }
         if (s_wifi.auto_time_sync) {
             start_sntp();
         }
