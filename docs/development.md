@@ -29,7 +29,8 @@ idf.py size
   `set-target`. Note that `idf.py set-target` regenerates `sdkconfig` from scratch, losing local values.
 - The first build downloads the managed components (LVGL 9.3, ESP-Hosted, the Wi-Fi remote, the codec
   and touch drivers) into `managed_components/`. Versions are pinned in
-  [main/idf_component.yml](../main/idf_component.yml) and [dependencies.lock](../dependencies.lock). The board
+  [main/idf_component.yml](../main/idf_component.yml) where it matters (ESP-Hosted must match the C6's
+  firmware); `dependencies.lock` is not tracked, as it records the vendored BSP by absolute path. The board
   support package is the vendored copy in [components/](../components/esp32_p4_wifi6_touch_lcd_xc).
 - `sdkconfig` is generated and git-ignored. The OTA manifest URL, the telemetry URL and token live there,
   set through `idf.py menuconfig` › Touch Clock ([main/Kconfig.projbuild](../main/Kconfig.projbuild)). Both

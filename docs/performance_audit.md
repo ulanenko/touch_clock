@@ -32,9 +32,11 @@ What is in place in the firmware now. The measurements behind it are in the date
   on the touch controller's bus) is written only when it changes.
 - **Settings.** Each change is saved once, synchronously on the UI thread (about 2.6 ms). The time zone and
   SNTP are applied again only when they change.
-- **Dependencies.** `main/idf_component.yml` pins `esp_hosted` 2.12.0 and `esp_wifi_remote` 1.4.0, and
-  `dependencies.lock` is tracked. With `"*"` and an ignored lock file, a reconfigure had silently pulled
-  `esp_hosted` 3.0.10, which does not match the 2.12.0 firmware on the C6 (`major version mismatch` at boot).
+- **Dependencies.** `main/idf_component.yml` pins `esp_hosted` 2.12.0 and `esp_wifi_remote` 1.4.0. With `"*"`,
+  a reconfigure had silently pulled `esp_hosted` 3.0.10, which does not match the 2.12.0 firmware on the C6
+  (`major version mismatch` at boot). `dependencies.lock` stays untracked: it records the vendored BSP by its
+  absolute path, so a lock from one checkout breaks the build in any other (CI). An LVGL that the
+  `clip_radius` patch no longer fits stops the build.
 - **Perf tour** (`CONFIG_TOUCH_CLOCK_PERF_TOUR`) is off by default; see [development.md](development.md#perf-tour-on-the-clock).
 
 ## Open items (re-checked against the code 2026-10-31)
