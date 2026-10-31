@@ -603,13 +603,45 @@ static esp_err_t start_ota_task(ota_request_t request)
     return ESP_OK;
 }
 
-esp_err_t ota_update_init(void)
+/* A new image is kept once it has started its network; one that cannot could never be updated
+ * again. It goes back to the image it replaced instead: a single reboot, as the bootloader
+ * marks this one aborted. An image already confirmed stays and runs without the network. */
+static void confirm_or_roll_back(const esp_partition_t *running, bool network_available)
 {
-    const esp_partition_t *running;
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+    esp_err_t err;
+
+    if (running == NULL || esp_ota_get_state_partition(running, &state) != ESP_OK ||
+        state != ESP_OTA_IMG_PENDING_VERIFY) {
+        return;
+    }
+    if (!network_available) {
+        ESP_LOGE(TAG, "New firmware started without Wi-Fi: rolling back");
+        err = esp_ota_mark_app_invalid_rollback_and_reboot();
+        /* Returns only when there is no image to go back to: this one has to do. */
+        ESP_LOGE(TAG, "Rollback impossible: %s", esp_err_to_name(err));
+    }
+    err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Confirming the new firmware failed: %s", esp_err_to_name(err));
+    }
+#else
+    (void)running;
+    (void)network_available;
+#endif
+}
+
+esp_err_t ota_update_init(bool network_available)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
 
     if (s_ota.initialized) {
         return ESP_OK;
     }
+
+    /* Before anything that can fail here: the image's fate does not hang on this service. */
+    confirm_or_roll_back(running, network_available);
 
     memset(&s_ota, 0, sizeof(s_ota));
     s_ota.lock = xSemaphoreCreateMutex();
@@ -620,17 +652,9 @@ esp_err_t ota_update_init(void)
     s_ota.configured = ota_manifest_url_configured();
     set_status_locked(s_ota.configured ? "Ready to check for updates" : "OTA URL not configured");
 
-    running = esp_ota_get_running_partition();
     if (running != NULL) {
         snprintf(s_ota.running_partition, sizeof(s_ota.running_partition), "%s", running->label);
     }
-
-#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
-    esp_err_t mark_err = esp_ota_mark_app_valid_cancel_rollback();
-    if (mark_err != ESP_OK) {
-        ESP_LOGD(TAG, "No pending rollback validation: %s", esp_err_to_name(mark_err));
-    }
-#endif
 
     s_ota.initialized = true;
     return ESP_OK;
@@ -662,6 +686,9 @@ void ota_update_snapshot(app_runtime_state_t *runtime)
 
 esp_err_t ota_update_request_check(void)
 {
+    if (!s_ota.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!ota_manifest_url_configured()) {
         set_status("OTA URL not configured");
         return ESP_ERR_INVALID_STATE;
@@ -671,6 +698,9 @@ esp_err_t ota_update_request_check(void)
 
 esp_err_t ota_update_request_install(void)
 {
+    if (!s_ota.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!ota_manifest_url_configured()) {
         set_status("OTA URL not configured");
         return ESP_ERR_INVALID_STATE;

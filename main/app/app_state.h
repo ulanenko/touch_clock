@@ -35,6 +35,10 @@ typedef struct {
     uint8_t temporary_brightness_floor;
     time_t alarm_auto_stop_deadline;
     bool audio_available;
+    /* The services that started at boot; one that did not is left alone after. */
+    bool wifi_available;
+    bool ota_available;
+    bool telemetry_available;
     bool settings_dirty;
     bool brightness_fade_active;
     bool temporary_brightness_floor_active;

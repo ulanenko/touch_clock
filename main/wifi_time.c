@@ -157,6 +157,7 @@ static void wifi_scan_task(void *arg)
 
 esp_err_t wifi_time_init(const app_settings_t *settings)
 {
+    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
     esp_err_t err;
 
     if (s_wifi.initialized) {
@@ -172,32 +173,49 @@ esp_err_t wifi_time_init(const app_settings_t *settings)
     set_status_locked("Wi-Fi idle");
     s_wifi.auto_time_sync = settings->wifi.time_sync_mode == TIME_SYNC_MODE_AUTO;
 
-    ESP_ERROR_CHECK(esp_netif_init());
+    /* A failure here leaves the clock without Wi-Fi, not stopped: the error goes back to the
+     * caller, and every call after this one finds the Wi-Fi not initialized. */
+    err = esp_netif_init();
+    if (err != ESP_OK) {
+        goto fail;
+    }
     err = esp_event_loop_create_default();
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
-        return err;
+        goto fail;
     }
 
     s_sta_netif = esp_netif_create_default_wifi_sta();
     if (s_sta_netif == NULL) {
-        return ESP_FAIL;
+        err = ESP_FAIL;
+        goto fail;
     }
 
-    wifi_init_config_t cfg = WIFI_INIT_CONFIG_DEFAULT();
-    ESP_ERROR_CHECK(esp_wifi_init(&cfg));
-    ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
-    ESP_ERROR_CHECK(esp_wifi_start());
+    err = esp_wifi_init(&cfg);
+    if (err != ESP_OK) {
+        goto fail;
+    }
+    err = esp_wifi_set_mode(WIFI_MODE_STA);
+    if (err == ESP_OK) {
+        err = esp_wifi_start();
+    }
+    if (err != ESP_OK) {
+        (void)esp_wifi_deinit();
+        goto fail;
+    }
 
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT,
-                                                        ESP_EVENT_ANY_ID,
-                                                        wifi_event_handler,
-                                                        NULL,
-                                                        &s_wifi_any_id));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT,
-                                                        IP_EVENT_STA_GOT_IP,
-                                                        wifi_event_handler,
-                                                        NULL,
-                                                        &s_ip_got_ip));
+    err = esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, wifi_event_handler, NULL, &s_wifi_any_id);
+    if (err == ESP_OK) {
+        err = esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, wifi_event_handler, NULL,
+                                                  &s_ip_got_ip);
+        if (err != ESP_OK) {
+            (void)esp_event_handler_instance_unregister(WIFI_EVENT, ESP_EVENT_ANY_ID, s_wifi_any_id);
+        }
+    }
+    if (err != ESP_OK) {
+        (void)esp_wifi_stop();
+        (void)esp_wifi_deinit();
+        goto fail;
+    }
 
     s_wifi.initialized = true;
 
@@ -205,14 +223,30 @@ esp_err_t wifi_time_init(const app_settings_t *settings)
         snprintf(s_wifi.ssid, sizeof(s_wifi.ssid), "%s", settings->wifi.ssid);
         snprintf(s_wifi.password, sizeof(s_wifi.password), "%s", settings->wifi.password);
         s_wifi.has_credentials = true;
-        return wifi_time_connect(settings->wifi.ssid, settings->wifi.password);
+        /* The Wi-Fi is up even if this first attempt is refused: it can be connected again. */
+        err = wifi_time_connect(settings->wifi.ssid, settings->wifi.password);
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "Connecting to the saved network failed: %s", esp_err_to_name(err));
+        }
     }
 
     return ESP_OK;
+
+fail:
+    ESP_LOGE(TAG, "Wi-Fi did not start: %s", esp_err_to_name(err));
+    xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
+    set_status_locked("Wi-Fi unavailable");
+    xSemaphoreGive(s_wifi.lock);
+    return err;
 }
 
 void wifi_time_snapshot(app_runtime_state_t *runtime)
 {
+    if (!s_wifi.initialized) {
+        snprintf(runtime->wifi_status, sizeof(runtime->wifi_status), "Wi-Fi unavailable");
+        return;
+    }
+
     xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
     runtime->wifi_connected = s_wifi.connected;
     runtime->wifi_connecting = s_wifi.connecting;
@@ -373,6 +407,10 @@ esp_err_t wifi_time_set_auto_sync(bool enabled)
 bool wifi_time_is_scanning(void)
 {
     bool scanning;
+
+    if (!s_wifi.initialized) {
+        return false;
+    }
 
     xSemaphoreTake(s_wifi.lock, portMAX_DELAY);
     scanning = s_wifi.scanning;

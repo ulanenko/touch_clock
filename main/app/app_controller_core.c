@@ -2,6 +2,7 @@
 
 #include <limits.h>
 #include <stddef.h>
+#include <stdio.h>
 #include <string.h>
 
 #include "domain/alarm_scheduler.h"
@@ -210,7 +211,8 @@ static void set_default_settings(app_settings_t *settings)
 
 static void execute_wifi_command(app_controller_core_t *core, const app_action_result_t *result)
 {
-    if (!app_action_has_effect(result, APP_EFFECT_WIFI_COMMAND) || core->config.wifi_service == NULL) {
+    if (!app_action_has_effect(result, APP_EFFECT_WIFI_COMMAND) || core->config.wifi_service == NULL ||
+        !core->state.wifi_available) {
         return;
     }
 
@@ -243,7 +245,8 @@ static void execute_wifi_command(app_controller_core_t *core, const app_action_r
 
 static void execute_ota_command(app_controller_core_t *core, const app_action_result_t *result)
 {
-    if (!app_action_has_effect(result, APP_EFFECT_OTA_COMMAND) || core->config.ota_service == NULL) {
+    if (!app_action_has_effect(result, APP_EFFECT_OTA_COMMAND) || core->config.ota_service == NULL ||
+        !core->state.ota_available) {
         return;
     }
 
@@ -273,6 +276,7 @@ static void maybe_request_periodic_ota_check(app_controller_core_t *core)
     int64_t now_ms;
 
     if (core->config.ota_service == NULL ||
+        !core->state.ota_available ||
         core->config.ota_service->request_check == NULL ||
         !core->state.runtime.wifi_connected ||
         !core->state.runtime.ota_configured ||
@@ -432,7 +436,8 @@ static void reconcile_settings_side_effects(app_controller_core_t *core, time_t 
         s->applied_timezone_id = s->settings.wifi.timezone_id;
     }
 
-    if (core->config.wifi_service != NULL && core->config.wifi_service->set_auto_sync != NULL &&
+    if (core->config.wifi_service != NULL && core->state.wifi_available &&
+        core->config.wifi_service->set_auto_sync != NULL &&
         (!s->applied_time_known || s->applied_auto_sync != auto_sync) &&
         core->config.wifi_service->set_auto_sync(auto_sync) == 0) {
         s->applied_auto_sync = auto_sync;
@@ -490,29 +495,28 @@ int app_controller_core_bootstrap(app_controller_core_t *core, time_t fallback_b
         }
     }
 
-    if (core->config.wifi_service != NULL && core->config.wifi_service->init != NULL) {
-        err = core->config.wifi_service->init(&core->state.settings);
-        if (err != 0) {
-            return err;
-        }
+    /* The network, updates and telemetry are not what a clock needs to tell the time and ring:
+     * one that fails to start is left out. Its error ending the boot rebooted the clock for as
+     * long as it failed (a Wi-Fi co-processor not answering, say). */
+    if (core->config.wifi_service != NULL) {
+        core->state.wifi_available = core->config.wifi_service->init == NULL ||
+                                     core->config.wifi_service->init(&core->state.settings) == 0;
+    }
+    if (!core->state.wifi_available) {
+        snprintf(core->state.runtime.wifi_status, sizeof(core->state.runtime.wifi_status), "Wi-Fi unavailable");
     }
     /* Both are as the settings say now (the Wi-Fi takes its sync mode at init). */
     core->state.applied_timezone_id = core->state.settings.wifi.timezone_id;
     core->state.applied_auto_sync = core->state.settings.wifi.time_sync_mode == TIME_SYNC_MODE_AUTO;
     core->state.applied_time_known = true;
 
-    if (core->config.ota_service != NULL && core->config.ota_service->init != NULL) {
-        err = core->config.ota_service->init();
-        if (err != 0) {
-            return err;
-        }
+    if (core->config.ota_service != NULL) {
+        core->state.ota_available = core->config.ota_service->init == NULL ||
+                                    core->config.ota_service->init(core->state.wifi_available) == 0;
     }
-
-    if (core->config.telemetry_service != NULL && core->config.telemetry_service->init != NULL) {
-        err = core->config.telemetry_service->init();
-        if (err != 0) {
-            return err;
-        }
+    if (core->config.telemetry_service != NULL) {
+        core->state.telemetry_available = core->config.telemetry_service->init == NULL ||
+                                          core->config.telemetry_service->init() == 0;
     }
 
     return 0;
@@ -645,14 +649,17 @@ time_t app_controller_core_tick(app_controller_core_t *core)
         now = core->config.clock_service->now();
     }
 
-    if (core->config.wifi_service != NULL && core->config.wifi_service->snapshot != NULL) {
+    if (core->config.wifi_service != NULL && core->state.wifi_available &&
+        core->config.wifi_service->snapshot != NULL) {
         core->config.wifi_service->snapshot(&core->state.runtime);
     }
-    if (core->config.ota_service != NULL && core->config.ota_service->snapshot != NULL) {
+    if (core->config.ota_service != NULL && core->state.ota_available &&
+        core->config.ota_service->snapshot != NULL) {
         core->config.ota_service->snapshot(&core->state.runtime);
     }
     maybe_request_periodic_ota_check(core);
-    if (core->config.telemetry_service != NULL && core->config.telemetry_service->tick != NULL) {
+    if (core->config.telemetry_service != NULL && core->state.telemetry_available &&
+        core->config.telemetry_service->tick != NULL) {
         core->config.telemetry_service->tick(&core->state.runtime, &core->state.settings, now);
     }
     if (alarm_scheduler_tick(&core->state.runtime, &core->state.settings, now)) {
