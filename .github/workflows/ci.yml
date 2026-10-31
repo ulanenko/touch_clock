@@ -37,7 +37,7 @@ jobs:
       - name: Simulator smoke test
         shell: bash
         run: |
-          apt-get update -qq && apt-get install -y -qq zlib1g-dev
+          apt-get update -qq && apt-get install -y -qq cmake gcc make python3 zlib1g-dev
           cmake -S sim -B /tmp/sim -DSIM_ASAN=ON \
             -DLVGL_DIR="$PWD/managed_components/lvgl__lvgl" -DSDKCONFIG="$PWD/sdkconfig"
           cmake --build /tmp/sim -j"$(nproc)"
