@@ -166,6 +166,7 @@
               <dt>IP</dt><dd>${html(clock.ip || "n/a")}</dd>
               <dt>Time sync</dt><dd>${clock.time_synced ? "yes" : "no"}</dd>
               <dt>Uptime</dt><dd>${clock.uptime_sec ? Math.round(clock.uptime_sec / 3600) + "h" : "n/a"}</dd>
+              <dt>Internal RAM free</dt><dd>${Number.isFinite(clock.free_internal_heap) ? Math.round(clock.free_internal_heap / 1024) + " KB" : "n/a"}</dd>
             </dl>
           </article>
         `).join("");

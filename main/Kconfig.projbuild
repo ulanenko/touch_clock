@@ -21,7 +21,8 @@ menu "Touch Clock"
         string "Telemetry heartbeat URL"
         default ""
         help
-            Optional HTTPS URL for remote clock status heartbeats.
+            Optional HTTPS URL for remote clock status heartbeats. Heartbeats
+            carry the token, so an http:// URL turns telemetry off.
 
     config TOUCH_CLOCK_TELEMETRY_TOKEN
         string "Telemetry API token"

@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "app_version.h"
 #include "esp_crt_bundle.h"
@@ -37,6 +38,7 @@ typedef struct {
     time_t next_alarm_epoch;
     uint32_t uptime_sec;
     uint32_t free_heap;
+    uint32_t free_internal_heap; /* free_heap counts PSRAM; the network, DMA and stacks need this */
 } telemetry_snapshot_t;
 
 typedef struct {
@@ -50,9 +52,12 @@ typedef struct {
 static const char *TAG = "telemetry";
 static telemetry_state_t s_telemetry;
 
+/* Only https: every heartbeat carries the token, which plain http would hand to anyone on the
+ * way. */
 static bool telemetry_url_configured(void)
 {
-    return CONFIG_TOUCH_CLOCK_TELEMETRY_URL[0] != '\0';
+    return strncasecmp(CONFIG_TOUCH_CLOCK_TELEMETRY_URL, "https://", 8) == 0 &&
+           CONFIG_TOUCH_CLOCK_TELEMETRY_URL[8] != '\0';
 }
 
 static void copy_text(char *dst, size_t dst_size, const char *src)
@@ -142,6 +147,7 @@ static int build_payload(const telemetry_snapshot_t *snapshot, char *payload, si
                     "\"time_synced\":%s,"
                     "\"uptime_sec\":%" PRIu32 ","
                     "\"free_heap\":%" PRIu32 ","
+                    "\"free_internal_heap\":%" PRIu32 ","
                     "\"alarm_ringing\":%s,"
                     "\"next_alarm_epoch\":%" PRId64 ","
                     "\"timezone_id\":%u,"
@@ -156,6 +162,7 @@ static int build_payload(const telemetry_snapshot_t *snapshot, char *payload, si
                     snapshot->time_synced ? "true" : "false",
                     snapshot->uptime_sec,
                     snapshot->free_heap,
+                    snapshot->free_internal_heap,
                     snapshot->alarm_ringing ? "true" : "false",
                     (int64_t)snapshot->next_alarm_epoch,
                     (unsigned int)snapshot->timezone_id,
@@ -235,6 +242,9 @@ esp_err_t telemetry_update_init(void)
     s_telemetry.configured = telemetry_url_configured();
     s_telemetry.initialized = true;
     s_telemetry.next_send_ms = 0;
+    if (!s_telemetry.configured && CONFIG_TOUCH_CLOCK_TELEMETRY_URL[0] != '\0') {
+        ESP_LOGW(TAG, "Telemetry URL is not https: telemetry is off");
+    }
     ESP_LOGI(TAG, "Telemetry %s", s_telemetry.configured ? "configured" : "disabled");
     return ESP_OK;
 }
@@ -283,6 +293,7 @@ void telemetry_update_tick(const app_runtime_state_t *runtime, const app_setting
     snapshot->next_alarm_epoch = runtime->next_alarm_epoch;
     snapshot->uptime_sec = (uint32_t)(esp_timer_get_time() / 1000000);
     snapshot->free_heap = (uint32_t)esp_get_free_heap_size();
+    snapshot->free_internal_heap = (uint32_t)heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
 
     if (xTaskCreate(telemetry_task,
                     "clock_telemetry",

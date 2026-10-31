@@ -49,6 +49,11 @@ CONFIG_TOUCH_CLOCK_TELEMETRY_TOKEN="<clock-status-token>"
 CONFIG_TOUCH_CLOCK_TELEMETRY_DEVICE_ID="<optional-human-label>"
 ```
 
+The URL must be `https://`: heartbeats carry the token, and with an `http://`
+URL the firmware sends none. Each heartbeat reports `free_heap` (all free heap,
+PSRAM included) and `free_internal_heap` (internal RAM only, what the network,
+DMA buffers and task stacks need); the dashboard shows the latter.
+
 If `CONFIG_TOUCH_CLOCK_TELEMETRY_DEVICE_ID` is empty, firmware derives a stable
 ID from the station MAC address and shows it in About This Device.
 
