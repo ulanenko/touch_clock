@@ -14,6 +14,12 @@ download the binary, verify SHA-256, write the inactive OTA slot, and reboot.
 }
 ```
 
+All three fields are required: the clock refuses a manifest without a valid
+`sha256`, with a firmware `url` that is not `https://`, with a field too long
+for the clock (version 23 characters, URL 255), or larger than 3 KB. The
+manifest URL itself (`CONFIG_TOUCH_CLOCK_OTA_MANIFEST_URL`) must be `https://`
+too, or updates are off.
+
 The current test manifest is [../ota/test/manifest.json](../ota/test/manifest.json).
 
 ## Public Release Checklist
@@ -57,14 +63,28 @@ mistake of embedding plain-text tokens in a public OTA build.
 ## Versioning
 
 Use simple monotonic versions such as `1.0`, `1.1`, and `1.2` until a formal
-release process is needed. The firmware currently treats a higher dotted number
-as newer and ignores same-version manifests.
+release process is needed. The firmware installs only a newer version and
+ignores same-version manifests. The rule (main/domain/ota_manifest.h):
+
+- one to four dotted numbers, an optional leading `v`; missing parts are 0, so
+  `1.3` equals `1.3.0`;
+- an optional `-pre-release`, older than its release: `1.3-rc1` < `1.3`, and a
+  clock on `1.3-rc1` takes `1.3`; pre-releases compare as in semantic
+  versioning (`rc.2` < `rc.10`, numbers before words);
+- optional `+build` metadata, ignored: `1.3+abc` equals `1.3`;
+- anything else is not a version and is never installed.
 
 ## Rollback
 
 Rollback support is enabled in `sdkconfig.defaults` through
 `CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE`. A failed app can roll back to the
 previous valid OTA slot when ESP-IDF marks the new image invalid.
+
+A new image confirms itself at boot only once its Wi-Fi has started
+(`ota_update_init`): one that cannot start it could never be updated again, so
+it marks itself invalid and reboots into the image it replaced. An image already
+confirmed keeps running without Wi-Fi (the clock still keeps time and rings);
+it does not reboot over a Wi-Fi failure.
 
 ## Telemetry Caveat
 

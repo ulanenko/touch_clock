@@ -19,6 +19,7 @@ idf_component_register(
         domain/alarm_scheduler.c
         domain/brightness_policy.c
         domain/face_catalog.c
+        domain/ota_manifest.c
         domain/settings_policy.c
         domain/timezone_rules.c
         main.c

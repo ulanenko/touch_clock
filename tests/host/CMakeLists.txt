@@ -14,6 +14,7 @@ add_library(touch_clock_host_core STATIC
     ../../main/domain/brightness_policy.c
     ../../main/domain/alarm_scheduler.c
     ../../main/domain/timezone_rules.c
+    ../../main/domain/ota_manifest.c
     ../../main/app/app_actions.c
     ../../main/app/app_controller_core.c
     ../../main/app/app_settings_storage.c
@@ -38,3 +39,4 @@ add_touch_clock_host_test(timezone_rules_test timezone_rules_test.c)
 add_touch_clock_host_test(app_actions_test app_actions_test.c)
 add_touch_clock_host_test(app_controller_core_test app_controller_core_test.c)
 add_touch_clock_host_test(app_settings_storage_test app_settings_storage_test.c)
+add_touch_clock_host_test(ota_manifest_test ota_manifest_test.c)

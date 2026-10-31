@@ -1,11 +1,11 @@
 #include "ota_update.h"
 
-#include <ctype.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 #include "app_version.h"
+#include "domain/ota_manifest.h"
 #include "esp_app_desc.h"
 #include "esp_app_format.h"
 #include "esp_crt_bundle.h"
@@ -23,9 +23,6 @@
 #include "sdkconfig.h"
 
 #define OTA_MANIFEST_MAX_BYTES 3072
-#define OTA_URL_MAX_LEN 256
-#define OTA_VERSION_MAX_LEN 24
-#define OTA_SHA256_HEX_LEN 64
 #define OTA_DOWNLOAD_CHUNK_BYTES 4096
 #define OTA_TASK_STACK_BYTES 12288
 
@@ -33,12 +30,6 @@ typedef enum {
     OTA_REQUEST_CHECK = 0,
     OTA_REQUEST_INSTALL = 1,
 } ota_request_t;
-
-typedef struct {
-    char version[OTA_VERSION_MAX_LEN];
-    char firmware_url[OTA_URL_MAX_LEN];
-    char sha256[OTA_SHA256_HEX_LEN + 1];
-} ota_manifest_t;
 
 typedef struct {
     SemaphoreHandle_t lock;
@@ -49,9 +40,8 @@ typedef struct {
     bool reboot_pending;
     uint8_t progress;
     char status[96];
-    char available_version[OTA_VERSION_MAX_LEN];
+    char available_version[OTA_MANIFEST_VERSION_MAX_LEN];
     char running_partition[16];
-    ota_manifest_t cached_manifest;
 } ota_update_state_t;
 
 static const char *TAG = "ota_update";
@@ -90,81 +80,11 @@ static void set_progress(uint8_t progress, const char *status)
     xSemaphoreGive(s_ota.lock);
 }
 
+/* Only an https manifest: it names the firmware to flash and its hash, which over plain http
+ * anyone on the way could replace. */
 static bool ota_manifest_url_configured(void)
 {
-    return CONFIG_TOUCH_CLOCK_OTA_MANIFEST_URL[0] != '\0';
-}
-
-static bool is_json_ws(char c)
-{
-    return c == ' ' || c == '\n' || c == '\r' || c == '\t';
-}
-
-static bool json_get_string(const char *json, const char *key, char *out, size_t out_size)
-{
-    char pattern[40];
-    const char *pos;
-    const char *value;
-    size_t len = 0;
-
-    if (json == NULL || key == NULL || out == NULL || out_size == 0) {
-        return false;
-    }
-
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    pos = strstr(json, pattern);
-    if (pos == NULL) {
-        return false;
-    }
-
-    pos += strlen(pattern);
-    while (*pos != '\0' && is_json_ws(*pos)) {
-        ++pos;
-    }
-    if (*pos != ':') {
-        return false;
-    }
-    ++pos;
-    while (*pos != '\0' && is_json_ws(*pos)) {
-        ++pos;
-    }
-    if (*pos != '"') {
-        return false;
-    }
-    value = ++pos;
-
-    while (*value != '\0' && *value != '"') {
-        if (*value == '\\' && value[1] != '\0') {
-            ++value;
-        }
-        if (len + 1 < out_size) {
-            out[len++] = *value;
-        }
-        ++value;
-    }
-
-    if (*value != '"') {
-        return false;
-    }
-
-    out[len] = '\0';
-    return true;
-}
-
-static bool sha256_hex_is_valid(const char *hex)
-{
-    if (hex == NULL || hex[0] == '\0') {
-        return true;
-    }
-    if (strlen(hex) != OTA_SHA256_HEX_LEN) {
-        return false;
-    }
-    for (size_t i = 0; i < OTA_SHA256_HEX_LEN; ++i) {
-        if (!isxdigit((unsigned char)hex[i])) {
-            return false;
-        }
-    }
-    return true;
+    return ota_manifest_url_is_https(CONFIG_TOUCH_CLOCK_OTA_MANIFEST_URL);
 }
 
 static void bytes_to_hex(const uint8_t *bytes, size_t len, char *out, size_t out_size)
@@ -181,43 +101,6 @@ static void bytes_to_hex(const uint8_t *bytes, size_t len, char *out, size_t out
         out[pos++] = s_hex[bytes[i] & 0x0F];
     }
     out[pos] = '\0';
-}
-
-static int parse_version_part(const char **cursor)
-{
-    int value = 0;
-
-    while (**cursor != '\0' && !isdigit((unsigned char)**cursor)) {
-        ++(*cursor);
-    }
-    while (isdigit((unsigned char)**cursor)) {
-        value = (value * 10) + (**cursor - '0');
-        ++(*cursor);
-    }
-    if (**cursor == '.') {
-        ++(*cursor);
-    }
-    return value;
-}
-
-static bool version_is_newer(const char *candidate, const char *current)
-{
-    const char *candidate_cursor = candidate != NULL ? candidate : "";
-    const char *current_cursor = current != NULL ? current : "";
-
-    for (int i = 0; i < 4; ++i) {
-        int candidate_part = parse_version_part(&candidate_cursor);
-        int current_part = parse_version_part(&current_cursor);
-
-        if (candidate_part > current_part) {
-            return true;
-        }
-        if (candidate_part < current_part) {
-            return false;
-        }
-    }
-
-    return false;
 }
 
 static esp_err_t fetch_text_url(const char *url, char *buffer, size_t buffer_size, size_t *out_len)
@@ -265,6 +148,16 @@ static esp_err_t fetch_text_url(const char *url, char *buffer, size_t buffer_siz
         }
         total += read_len;
     }
+    /* A body that does not fit is an error: its first part could still read as a manifest. */
+    if (total + 1 >= (int)buffer_size) {
+        char more;
+
+        if (esp_http_client_read(client, &more, 1) != 0) {
+            esp_http_client_close(client);
+            esp_http_client_cleanup(client);
+            return ESP_ERR_INVALID_SIZE;
+        }
+    }
 
     buffer[total] = '\0';
     if (out_len != NULL) {
@@ -280,6 +173,7 @@ static esp_err_t fetch_manifest(ota_manifest_t *manifest)
 {
     char *json;
     size_t json_len = 0;
+    ota_manifest_result_t parsed;
     esp_err_t err;
 
     if (!ota_manifest_url_configured()) {
@@ -297,41 +191,42 @@ static esp_err_t fetch_manifest(ota_manifest_t *manifest)
         free(json);
         return err;
     }
-    if (json_len == 0 || json_len >= OTA_MANIFEST_MAX_BYTES - 1) {
+    if (json_len == 0) {
         free(json);
         return ESP_ERR_INVALID_SIZE;
     }
 
-    memset(manifest, 0, sizeof(*manifest));
-    if (!json_get_string(json, "version", manifest->version, sizeof(manifest->version)) ||
-        !json_get_string(json, "url", manifest->firmware_url, sizeof(manifest->firmware_url))) {
-        free(json);
+    /* Version, https URL and SHA-256 all required: a firmware is never flashed unchecked. */
+    parsed = ota_manifest_parse(json, manifest);
+    free(json);
+    switch (parsed) {
+    case OTA_MANIFEST_OK:
+        return ESP_OK;
+    case OTA_MANIFEST_BAD_SHA256:
+        ESP_LOGW(TAG, "Manifest without a valid sha256");
+        return ESP_ERR_INVALID_CRC;
+    case OTA_MANIFEST_INSECURE_URL:
+        ESP_LOGW(TAG, "Manifest firmware URL is not https");
+        return ESP_ERR_INVALID_ARG;
+    case OTA_MANIFEST_BAD_VERSION:
+        ESP_LOGW(TAG, "Manifest version is not a version");
+        return ESP_ERR_INVALID_RESPONSE; /* ESP_ERR_INVALID_VERSION means "not newer" here */
+    case OTA_MANIFEST_MISSING_FIELD:
+    default:
+        ESP_LOGW(TAG, "Manifest lacks version, url or sha256 (or one is too long)");
         return ESP_ERR_INVALID_RESPONSE;
     }
-    (void)json_get_string(json, "sha256", manifest->sha256, sizeof(manifest->sha256));
-    free(json);
-
-    if (!sha256_hex_is_valid(manifest->sha256)) {
-        return ESP_ERR_INVALID_CRC;
-    }
-    if (strncmp(manifest->firmware_url, "https://", 8) != 0 &&
-        strncmp(manifest->firmware_url, "http://", 7) != 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    return ESP_OK;
 }
 
 static void cache_manifest_result(const ota_manifest_t *manifest)
 {
-    bool available = version_is_newer(manifest->version, TOUCH_CLOCK_FIRMWARE_VERSION);
+    bool available = ota_manifest_version_is_newer(manifest->version, TOUCH_CLOCK_FIRMWARE_VERSION);
 
 #if CONFIG_TOUCH_CLOCK_OTA_ALLOW_DOWNGRADE
     available = true;
 #endif
 
     xSemaphoreTake(s_ota.lock, portMAX_DELAY);
-    s_ota.cached_manifest = *manifest;
     s_ota.update_available = available;
     snprintf(s_ota.available_version, sizeof(s_ota.available_version), "%s", manifest->version);
     set_status_locked(available ? "Update available" : "Already up to date");
@@ -364,7 +259,7 @@ static esp_err_t verify_manifest_for_install(ota_manifest_t *manifest)
         return err;
     }
 
-    available = version_is_newer(manifest->version, TOUCH_CLOCK_FIRMWARE_VERSION);
+    available = ota_manifest_version_is_newer(manifest->version, TOUCH_CLOCK_FIRMWARE_VERSION);
 #if CONFIG_TOUCH_CLOCK_OTA_ALLOW_DOWNGRADE
     available = true;
 #endif
@@ -385,7 +280,7 @@ static esp_err_t run_install(void)
     esp_http_client_handle_t client = NULL;
     mbedtls_sha256_context sha_ctx;
     uint8_t digest[32];
-    char digest_hex[OTA_SHA256_HEX_LEN + 1];
+    char digest_hex[OTA_MANIFEST_SHA256_HEX_LEN + 1];
     uint8_t *buffer = NULL;
     int content_length;
     int written = 0;
@@ -486,7 +381,7 @@ static esp_err_t run_install(void)
         goto cleanup;
     }
     bytes_to_hex(digest, sizeof(digest), digest_hex, sizeof(digest_hex));
-    if (manifest.sha256[0] != '\0' && strcasecmp(digest_hex, manifest.sha256) != 0) {
+    if (strcasecmp(digest_hex, manifest.sha256) != 0) { /* the hash is never absent: parse requires it */
         ESP_LOGE(TAG, "SHA mismatch expected=%s actual=%s", manifest.sha256, digest_hex);
         err = ESP_ERR_INVALID_CRC;
         goto cleanup;
@@ -603,13 +498,45 @@ static esp_err_t start_ota_task(ota_request_t request)
     return ESP_OK;
 }
 
-esp_err_t ota_update_init(void)
+/* A new image is kept once it has started its network; one that cannot could never be updated
+ * again. It goes back to the image it replaced instead: a single reboot, as the bootloader
+ * marks this one aborted. An image already confirmed stays and runs without the network. */
+static void confirm_or_roll_back(const esp_partition_t *running, bool network_available)
 {
-    const esp_partition_t *running;
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+    esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+    esp_err_t err;
+
+    if (running == NULL || esp_ota_get_state_partition(running, &state) != ESP_OK ||
+        state != ESP_OTA_IMG_PENDING_VERIFY) {
+        return;
+    }
+    if (!network_available) {
+        ESP_LOGE(TAG, "New firmware started without Wi-Fi: rolling back");
+        err = esp_ota_mark_app_invalid_rollback_and_reboot();
+        /* Returns only when there is no image to go back to: this one has to do. */
+        ESP_LOGE(TAG, "Rollback impossible: %s", esp_err_to_name(err));
+    }
+    err = esp_ota_mark_app_valid_cancel_rollback();
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "Confirming the new firmware failed: %s", esp_err_to_name(err));
+    }
+#else
+    (void)running;
+    (void)network_available;
+#endif
+}
+
+esp_err_t ota_update_init(bool network_available)
+{
+    const esp_partition_t *running = esp_ota_get_running_partition();
 
     if (s_ota.initialized) {
         return ESP_OK;
     }
+
+    /* Before anything that can fail here: the image's fate does not hang on this service. */
+    confirm_or_roll_back(running, network_available);
 
     memset(&s_ota, 0, sizeof(s_ota));
     s_ota.lock = xSemaphoreCreateMutex();
@@ -619,18 +546,13 @@ esp_err_t ota_update_init(void)
 
     s_ota.configured = ota_manifest_url_configured();
     set_status_locked(s_ota.configured ? "Ready to check for updates" : "OTA URL not configured");
+    if (!s_ota.configured && CONFIG_TOUCH_CLOCK_OTA_MANIFEST_URL[0] != '\0') {
+        ESP_LOGW(TAG, "OTA manifest URL is not https: updates are off");
+    }
 
-    running = esp_ota_get_running_partition();
     if (running != NULL) {
         snprintf(s_ota.running_partition, sizeof(s_ota.running_partition), "%s", running->label);
     }
-
-#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
-    esp_err_t mark_err = esp_ota_mark_app_valid_cancel_rollback();
-    if (mark_err != ESP_OK) {
-        ESP_LOGD(TAG, "No pending rollback validation: %s", esp_err_to_name(mark_err));
-    }
-#endif
 
     s_ota.initialized = true;
     return ESP_OK;
@@ -662,6 +584,9 @@ void ota_update_snapshot(app_runtime_state_t *runtime)
 
 esp_err_t ota_update_request_check(void)
 {
+    if (!s_ota.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!ota_manifest_url_configured()) {
         set_status("OTA URL not configured");
         return ESP_ERR_INVALID_STATE;
@@ -671,6 +596,9 @@ esp_err_t ota_update_request_check(void)
 
 esp_err_t ota_update_request_install(void)
 {
+    if (!s_ota.initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!ota_manifest_url_configured()) {
         set_status("OTA URL not configured");
         return ESP_ERR_INVALID_STATE;

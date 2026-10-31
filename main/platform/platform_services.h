@@ -51,7 +51,9 @@ typedef struct {
 } display_service_t;
 
 typedef struct {
-    int (*init)(void);
+    /* network_available: the Wi-Fi started. A new image that came up without it could never be
+     * updated again, so it is not kept. */
+    int (*init)(bool network_available);
     void (*snapshot)(app_runtime_state_t *runtime);
     int (*request_check)(void);
     int (*request_install)(void);

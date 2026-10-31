@@ -104,6 +104,9 @@ function normalizeHeartbeat(input, req) {
     time_synced: Boolean(input.time_synced),
     uptime_sec: Number.isFinite(input.uptime_sec) ? Math.max(0, Math.floor(input.uptime_sec)) : null,
     free_heap: Number.isFinite(input.free_heap) ? Math.max(0, Math.floor(input.free_heap)) : null,
+    free_internal_heap: Number.isFinite(input.free_internal_heap)
+      ? Math.max(0, Math.floor(input.free_internal_heap))
+      : null,
     alarm_ringing: Boolean(input.alarm_ringing),
     next_alarm_epoch: Number.isFinite(input.next_alarm_epoch) ? Math.floor(input.next_alarm_epoch) : 0,
     timezone_id: Number.isFinite(input.timezone_id) ? Math.floor(input.timezone_id) : null,

@@ -34,10 +34,16 @@ typedef struct {
     int wifi_connect_calls;
     int wifi_forget_calls;
     int wifi_sync_calls;
+    int wifi_init_result;
+    int wifi_snapshot_calls;
     int ota_init_calls;
+    int ota_init_result;
+    bool ota_init_network_available;
+    int ota_snapshot_calls;
     int ota_check_calls;
     int ota_install_calls;
     int telemetry_init_calls;
+    int telemetry_init_result;
     int telemetry_tick_calls;
     char wifi_connect_ssid[33];
     char wifi_connect_password[65];
@@ -144,11 +150,12 @@ static int fake_wifi_init(const app_settings_t *settings)
 {
     g_env->wifi_init_calls += 1;
     EXPECT_STR_EQ(g_env->stored_settings.wifi.ssid, settings->wifi.ssid);
-    return 0;
+    return g_env->wifi_init_result;
 }
 
 static void fake_wifi_snapshot(app_runtime_state_t *runtime)
 {
+    g_env->wifi_snapshot_calls += 1;
     *runtime = g_env->wifi_snapshot;
 }
 
@@ -185,14 +192,16 @@ static int fake_wifi_set_auto_sync(bool enabled)
     return 0;
 }
 
-static int fake_ota_init(void)
+static int fake_ota_init(bool network_available)
 {
     g_env->ota_init_calls += 1;
-    return 0;
+    g_env->ota_init_network_available = network_available;
+    return g_env->ota_init_result;
 }
 
 static void fake_ota_snapshot(app_runtime_state_t *runtime)
 {
+    g_env->ota_snapshot_calls += 1;
     runtime->ota_configured = g_env->ota_snapshot.ota_configured;
     runtime->ota_busy = g_env->ota_snapshot.ota_busy;
     runtime->ota_update_available = g_env->ota_snapshot.ota_update_available;
@@ -224,7 +233,7 @@ static int fake_ota_request_install(void)
 static int fake_telemetry_init(void)
 {
     g_env->telemetry_init_calls += 1;
-    return 0;
+    return g_env->telemetry_init_result;
 }
 
 static void fake_telemetry_tick(const app_runtime_state_t *runtime, const app_settings_t *settings, time_t now)
@@ -379,6 +388,7 @@ static int test_bootstrap_and_action_flow(void)
     EXPECT_FALSE(env.audio_ascending_enabled);
     EXPECT_EQ_INT(1, env.wifi_init_calls);
     EXPECT_EQ_INT(1, env.ota_init_calls);
+    EXPECT_TRUE(env.ota_init_network_available);
     EXPECT_EQ_INT(1, env.telemetry_init_calls);
     EXPECT_EQ_INT(timezone_id_from_legacy_offset(2), env.applied_timezone);
     EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
@@ -772,11 +782,129 @@ static int test_boot_time_restore_and_manual_checkpoint(void)
     return 0;
 }
 
+/* Wi-Fi, updates and telemetry that fail to start leave a clock that boots, keeps time, rings
+ * and saves, and that never calls them again. */
+static int test_boot_survives_failed_network_services(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+    app_action_result_t result;
+    time_t alarm = make_utc_time(2026, 3, 12, 7, 0, 0);
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    snprintf(env.stored_settings.wifi.ssid, sizeof(env.stored_settings.wifi.ssid), "SavedWiFi");
+    env.stored_settings.alarms[0].enabled = true;
+    env.stored_settings.alarms[0].hour = 7;
+    env.stored_settings.alarms[0].minute = 0;
+    env.stored_settings.alarms[0].repeat_mode = ALARM_REPEAT_WEEKLY;
+    env.stored_settings.alarms[0].days_mask = 0x7F;
+    env.wifi_init_result = -1;
+    env.ota_init_result = -1;
+    env.telemetry_init_result = -1;
+    env.now = alarm - 120;
+    core = make_core(&env);
+
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    EXPECT_EQ_INT(1, env.wifi_init_calls);
+    EXPECT_EQ_INT(1, env.ota_init_calls);
+    EXPECT_FALSE(env.ota_init_network_available);
+    EXPECT_EQ_INT(1, env.telemetry_init_calls);
+    EXPECT_TRUE(core.state.audio_available);
+    EXPECT_STR_EQ("Wi-Fi unavailable", core.state.runtime.wifi_status);
+
+    /* The UI's network and update commands go nowhere. */
+    result = app_action_request_wifi_scan(&core.state);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    result = app_action_request_ota_check(&core.state);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    result = app_action_set_time_sync_mode(&core.state, TIME_SYNC_MODE_MANUAL, env.now);
+    app_controller_core_apply_action_result(&core, &result, env.now);
+    EXPECT_EQ_INT(0, env.wifi_scan_calls);
+    EXPECT_EQ_INT(0, env.ota_check_calls);
+    EXPECT_EQ_INT(0, env.wifi_set_auto_sync_calls);
+
+    env.monotonic_ms = 60 * 60 * 1000;
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(0, env.wifi_snapshot_calls);
+    EXPECT_EQ_INT(0, env.ota_snapshot_calls);
+    EXPECT_EQ_INT(0, env.ota_check_calls);
+    EXPECT_EQ_INT(0, env.telemetry_tick_calls);
+    EXPECT_EQ_INT(1, env.save_calls);
+    EXPECT_EQ_INT(TIME_SYNC_MODE_MANUAL, env.stored_settings.wifi.time_sync_mode);
+    EXPECT_FALSE(core.state.runtime.alarm_ringing);
+
+    env.now = alarm;
+    app_controller_core_tick(&core);
+    EXPECT_TRUE(core.state.runtime.alarm_ringing);
+    EXPECT_EQ_INT(1, env.audio_start_alarm_calls);
+    EXPECT_STR_EQ("Wi-Fi unavailable", core.state.runtime.wifi_status);
+    return 0;
+}
+
+/* Without the Wi-Fi, the update service still starts, told so (a new image is then not kept);
+ * with it, a failed update service leaves the Wi-Fi as it was. */
+static int test_update_service_follows_the_network(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.version = 5;
+    env.ota_init_result = -1;
+    env.now = make_utc_time(2026, 3, 12, 7, 0, 0);
+    core = make_core(&env);
+
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    EXPECT_TRUE(env.ota_init_network_available);
+    EXPECT_TRUE(core.state.wifi_available);
+    EXPECT_FALSE(core.state.ota_available);
+    EXPECT_TRUE(core.state.telemetry_available);
+    app_controller_core_tick(&core);
+    EXPECT_EQ_INT(1, env.wifi_snapshot_calls);
+    EXPECT_EQ_INT(0, env.ota_snapshot_calls);
+    EXPECT_EQ_INT(1, env.telemetry_tick_calls);
+    return 0;
+}
+
+/* Settings that do not load are the defaults: the clock boots on them. */
+static int test_boot_survives_failed_settings_load(void)
+{
+    fake_env_t env = {0};
+    app_controller_core_t core;
+
+    settings_policy_set_defaults(&env.stored_settings);
+    env.stored_settings.alarm_volume = 3;
+    env.load_result = -1;
+    env.now = make_utc_time(2026, 3, 12, 7, 0, 0);
+    core = make_core(&env);
+
+    EXPECT_EQ_INT(0, app_controller_core_bootstrap(&core, env.now));
+    EXPECT_EQ_INT(1, env.load_calls);
+    EXPECT_TRUE(core.state.settings.alarm_volume != 3);
+    return 0;
+}
+
 int main(void)
 {
     int status;
 
     test_use_utc();
+
+    status = test_boot_survives_failed_network_services();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_update_service_follows_the_network();
+    if (status != 0) {
+        return status;
+    }
+
+    status = test_boot_survives_failed_settings_load();
+    if (status != 0) {
+        return status;
+    }
 
     status = test_bootstrap_and_action_flow();
     if (status != 0) {

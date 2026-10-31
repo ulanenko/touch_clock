@@ -731,6 +731,16 @@ static const l10n_status_entry_t s_runtime_statuses[] = {
         },
     },
     {
+        "Wi-Fi unavailable",
+        {
+            [CLOCK_LANGUAGE_ENGLISH] = "Wi-Fi unavailable",
+            [CLOCK_LANGUAGE_POLISH] = "Wi-Fi niedostępne",
+            [CLOCK_LANGUAGE_UKRAINIAN] = "Wi-Fi недоступне",
+            [CLOCK_LANGUAGE_RUSSIAN] = "Wi-Fi недоступен",
+            [CLOCK_LANGUAGE_DUTCH] = "Wi-Fi niet beschikbaar",
+        },
+    },
+    {
         "Manual time mode",
         {
             [CLOCK_LANGUAGE_ENGLISH] = "Manual time mode",

@@ -206,9 +206,9 @@ static int esp_display_set_brightness(uint8_t hw_percent)
     return bsp_display_brightness_set(hw_percent);
 }
 
-static int esp_ota_init_service(void)
+static int esp_ota_init_service(bool network_available)
 {
-    return ota_update_init();
+    return ota_update_init(network_available);
 }
 
 static void esp_ota_snapshot(app_runtime_state_t *runtime)
