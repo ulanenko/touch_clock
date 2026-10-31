@@ -106,6 +106,7 @@ static void arc_from(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, 
                      lv_color_t color, bool rounded)
 {
     lv_draw_arc_dsc_t arc;
+    bool full = a1 - a0 >= 360.0f;
 
     while (a0 < 0) {
         a0 += 360.0f;
@@ -113,6 +114,9 @@ static void arc_from(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, 
     while (a1 < 0) {
         a1 += 360.0f;
     }
+    a0 = fmodf(a0, 360.0f);
+    /* A full turn kept as 0..360: normalised, its ends meet and nothing is drawn. */
+    a1 = full ? a0 + 360.0f : fmodf(a1, 360.0f);
     lv_draw_arc_dsc_init(&arc);
     arc.color = color;
     arc.width = (int32_t)width;
@@ -120,8 +124,8 @@ static void arc_from(lv_layer_t *layer, int32_t cx, int32_t cy, int32_t radius, 
     arc.center.x = cx;
     arc.center.y = cy;
     arc.radius = (uint16_t)radius;
-    arc.start_angle = (lv_value_precise_t)fmodf(a0, 360.0f);
-    arc.end_angle = (lv_value_precise_t)fmodf(a1, 360.0f);
+    arc.start_angle = (lv_value_precise_t)a0;
+    arc.end_angle = (lv_value_precise_t)a1;
     kit_draw_arc(layer, &arc);
 }
 
